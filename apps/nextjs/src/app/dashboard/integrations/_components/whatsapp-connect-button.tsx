@@ -6,13 +6,51 @@ import { Link2, Loader2 } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
 
+import { env } from "~/env";
+
 import { completeWhatsAppSignup } from "../actions";
+
+interface FacebookSDK {
+  init(options: {
+    appId: string;
+    version: string;
+    xfbml: boolean;
+    autoLogAppEvents: boolean;
+  }): void;
+  login(
+    callback: (response: { authResponse?: { code?: string } }) => void,
+    options: {
+      config_id: string;
+      response_type: "code";
+      override_default_response_type: true;
+      redirect_uri: string;
+      extras: {
+        setup: Record<string, never>;
+        featureType: string;
+        sessionInfoVersion: string;
+      };
+    },
+  ): void;
+}
+
+interface WhatsAppSignupMessage {
+  type?: string;
+  event?: string;
+  data?: {
+    waba_id?: string;
+    phone_number_id?: string;
+  };
+}
 
 declare global {
   interface Window {
-    FB: any;
+    FB?: FacebookSDK;
     fbAsyncInit: () => void;
   }
+}
+
+function isWhatsAppSignupMessage(value: unknown): value is WhatsAppSignupMessage {
+  return typeof value === "object" && value !== null;
 }
 
 /**
@@ -31,11 +69,11 @@ export function WhatsAppConnectButton() {
     if (sdkLoaded.current) return;
     sdkLoaded.current = true;
 
-    const appId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID;
+    const appId = env.NEXT_PUBLIC_FACEBOOK_APP_ID;
     if (!appId) return;
 
     window.fbAsyncInit = () => {
-      window.FB.init({
+      window.FB?.init({
         appId,
         version: "v25.0",
         xfbml: true,
@@ -58,12 +96,16 @@ export function WhatsAppConnectButton() {
       if (!event.origin.includes("facebook.com")) return;
 
       try {
-        const data = JSON.parse(event.data);
+        const data: unknown = JSON.parse(String(event.data));
 
-        if (data.type === "WA_EMBEDDED_SIGNUP" && data.event === "FINISH") {
+        if (
+          isWhatsAppSignupMessage(data) &&
+          data.type === "WA_EMBEDDED_SIGNUP" &&
+          data.event === "FINISH"
+        ) {
           signupIds.current = {
-            wabaId: data.data.waba_id,
-            phoneNumberId: data.data.phone_number_id,
+            wabaId: data.data?.waba_id,
+            phoneNumberId: data.data?.phone_number_id,
           };
         }
       } catch {
@@ -76,7 +118,10 @@ export function WhatsAppConnectButton() {
   }, []);
 
   function handleConnect() {
-    const configId = process.env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID;
+    const configId = env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID;
+    const redirectUri =
+      env.NEXT_PUBLIC_WHATSAPP_REDIRECT_URI ??
+      `${window.location.origin}/dashboard/integrations`;
 
     if (!window.FB) {
       console.error("Facebook SDK not loaded");
@@ -89,13 +134,14 @@ export function WhatsAppConnectButton() {
     }
 
     window.FB.login(
-      (response: any) => {
+      (response) => {
         const code = response.authResponse?.code;
         if (!code) return;
 
         startTransition(async () => {
           const result = await completeWhatsAppSignup({
             code,
+            redirectUri,
             ...signupIds.current,
           });
 
@@ -108,6 +154,7 @@ export function WhatsAppConnectButton() {
         config_id: configId,
         response_type: "code",
         override_default_response_type: true,
+        redirect_uri: redirectUri,
         extras: {
           setup: {},
           featureType: "whatsapp_business_app_onboarding",

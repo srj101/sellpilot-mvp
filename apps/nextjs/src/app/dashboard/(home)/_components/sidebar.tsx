@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -123,17 +124,36 @@ export function Sidebar() {
           <span className="bg-primary h-3 w-3 rounded-full" />
           <span className="text-lg font-bold text-foreground">SellPilot</span>
         </div>
-        <Sheet>
-          <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="Open menu">
-              <Menu className="h-5 w-5" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="top" className="rounded-b-[28px] px-0 py-0">
-            <SidebarContent />
-          </SheetContent>
-        </Sheet>
+        <MobileMenu />
       </div>
     </>
+  );
+}
+
+function MobileMenu() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <Button variant="ghost" size="icon" aria-label="Open menu">
+        <Menu className="h-5 w-5" />
+      </Button>
+    );
+  }
+
+  return (
+    <Sheet>
+      <SheetTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Open menu">
+          <Menu className="h-5 w-5" />
+        </Button>
+      </SheetTrigger>
+      <SheetContent side="top" className="rounded-b-[28px] px-0 py-0">
+        <SidebarContent />
+      </SheetContent>
+    </Sheet>
   );
 }

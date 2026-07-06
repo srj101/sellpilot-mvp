@@ -63,14 +63,19 @@ export interface TokenResponse {
  */
 export async function exchangeCodeForToken(
   code: string,
-  redirectUri: string,
+  redirectUri?: string,
 ): Promise<TokenResponse> {
-  return graphGet<TokenResponse>("/oauth/access_token", {
+  const params: Record<string, string> = {
     client_id: APP_ID,
     client_secret: APP_SECRET,
-    redirect_uri: redirectUri,
     code,
-  });
+  };
+
+  if (redirectUri) {
+    params.redirect_uri = redirectUri;
+  }
+
+  return graphGet<TokenResponse>("/oauth/access_token", params);
 }
 
 /**

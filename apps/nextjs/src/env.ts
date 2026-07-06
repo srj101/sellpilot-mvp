@@ -22,6 +22,7 @@ export const env = createEnv({
     FACEBOOK_APP_ID: z.string(),
     FACEBOOK_APP_SECRET: z.string(),
     META_CHANNEL_REDIRECT_URI: z.string().optional(),
+    WHATSAPP_REDIRECT_URI: z.string().optional(),
     FACEBOOK_GRAPH_VERSION: z.string().default("v25.0"),
     BETTER_AUTH_URL: z.string().optional(),
   },
@@ -33,6 +34,7 @@ export const env = createEnv({
   client: {
     NEXT_PUBLIC_FACEBOOK_APP_ID: z.string().optional(),
     NEXT_PUBLIC_WHATSAPP_CONFIG_ID: z.string().optional(),
+    NEXT_PUBLIC_WHATSAPP_REDIRECT_URI: z.string().optional(),
   },
   /**
    * Destructure all variables from `process.env` to make sure they aren't tree-shaken away.
@@ -41,6 +43,8 @@ export const env = createEnv({
     NODE_ENV: process.env.NODE_ENV,
     NEXT_PUBLIC_FACEBOOK_APP_ID: process.env.NEXT_PUBLIC_FACEBOOK_APP_ID,
     NEXT_PUBLIC_WHATSAPP_CONFIG_ID: process.env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID,
+    NEXT_PUBLIC_WHATSAPP_REDIRECT_URI:
+      process.env.NEXT_PUBLIC_WHATSAPP_REDIRECT_URI,
   },
   skipValidation:
     !!process.env.CI || process.env.npm_lifecycle_event === "lint",
