@@ -18,3 +18,18 @@ export async function signInWithGoogle() {
 
   redirect(res.url);
 }
+
+export async function signInWithFacebook() {
+  const res = await auth.api.signInSocial({
+    body: {
+      provider: "facebook",
+      callbackURL: "/dashboard",
+    },
+  });
+
+  if (!res.url) {
+    throw new Error("No URL returned from signInSocial");
+  }
+
+  redirect(res.url);
+}

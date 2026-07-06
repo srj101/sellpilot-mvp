@@ -1,12 +1,17 @@
 import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
-import { Link2, Settings2 } from "lucide-react";
+import { Link2, Settings2, Unlink } from "lucide-react";
 
 import {
   FacebookIcon,
   InstagramIcon,
   WhatsAppIcon,
 } from "./integration-icons";
+import { WhatsAppConnectButton } from "./whatsapp-connect-button";
+import {
+  connectFacebookAndInstagram,
+  disconnectChannel,
+} from "../actions";
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   facebook: FacebookIcon,
@@ -26,6 +31,7 @@ export interface IntegrationCardProps {
   description: string;
   connected: boolean;
   account?: string | null;
+  connectionId?: string;
 }
 
 export function IntegrationCard({
@@ -34,6 +40,7 @@ export function IntegrationCard({
   description,
   connected,
   account,
+  connectionId,
 }: IntegrationCardProps) {
   const Icon = ICONS[id] ?? FacebookIcon;
   const colorClass = COLORS[id] ?? "text-primary bg-primary/10";
@@ -62,17 +69,32 @@ export function IntegrationCard({
 
       <div className="mt-auto pt-2">
         {connected ? (
-          <Button variant="outline" size="sm" className="w-full">
-            <Settings2 className="mr-2 h-4 w-4" />
-            Manage
-          </Button>
+          <form
+            action={async () => {
+              "use server";
+              if (connectionId) {
+                const { disconnectChannel: dc } = await import("../actions");
+                await dc(connectionId);
+              }
+            }}
+          >
+            <Button variant="outline" size="sm" className="w-full" type="submit">
+              <Unlink className="mr-2 h-4 w-4" />
+              Disconnect
+            </Button>
+          </form>
+        ) : id === "whatsapp" ? (
+          <WhatsAppConnectButton />
         ) : (
-          <Button size="sm" className="w-full">
-            <Link2 className="mr-2 h-4 w-4" />
-            Connect
-          </Button>
+          <form action={connectFacebookAndInstagram}>
+            <Button size="sm" className="w-full" type="submit">
+              <Link2 className="mr-2 h-4 w-4" />
+              Connect
+            </Button>
+          </form>
         )}
       </div>
     </div>
   );
 }
+

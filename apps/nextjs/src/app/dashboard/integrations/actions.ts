@@ -1,0 +1,186 @@
+"use server";
+
+import crypto from "node:crypto";
+import { cookies, headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { eq, and } from "@acme/db";
+
+import { db } from "@acme/db/client";
+import { metaConnection } from "@acme/db/schema";
+
+import { getSession } from "~/auth/server";
+import { env } from "~/env";
+import { exchangeCodeForToken, exchangeForLongLivedToken } from "~/lib/meta";
+
+const FB_VERSION = env.FACEBOOK_GRAPH_VERSION ?? "v25.0";
+
+// ---------------------------------------------------------------------------
+// Connect Facebook Page + Instagram
+// ---------------------------------------------------------------------------
+
+/**
+ * Server action: Redirects the user to Facebook's OAuth dialog requesting
+ * Page and Instagram permissions.
+ *
+ * After the user grants access, Facebook redirects to /api/meta/callback
+ * which handles the token exchange and saves connections.
+ */
+export async function connectFacebookAndInstagram() {
+  const session = await getSession();
+  if (!session?.user) {
+    redirect("/login");
+  }
+
+  const state = crypto.randomBytes(24).toString("hex");
+  const cookieStore = await cookies();
+
+  cookieStore.set("meta_channel_state", state, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 10 * 60, // 10 minutes
+    path: "/",
+  });
+
+  const headersList = await headers();
+  const host = headersList.get("x-forwarded-host") ?? headersList.get("host") ?? "localhost:3000";
+  const protocol = headersList.get("x-forwarded-proto") ?? "http";
+
+  const redirectUri =
+    env.META_CHANNEL_REDIRECT_URI ??
+    `${protocol}://${host}/api/meta/callback`;
+
+  const url = new URL(`https://www.facebook.com/${FB_VERSION}/dialog/oauth`);
+
+  url.searchParams.set("client_id", env.FACEBOOK_APP_ID);
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("state", state);
+  url.searchParams.set(
+    "scope",
+    [
+      "pages_show_list",
+      "pages_read_engagement",
+      "instagram_basic",
+    ].join(","),
+  );
+
+  redirect(url.toString());
+}
+
+// ---------------------------------------------------------------------------
+// Disconnect a channel
+// ---------------------------------------------------------------------------
+
+/**
+ * Server action: Removes a meta_connection row by ID, only if it belongs
+ * to the current user.
+ */
+export async function disconnectChannel(connectionId: string) {
+  const session = await getSession();
+  if (!session?.user) {
+    redirect("/login");
+  }
+
+  await db
+    .delete(metaConnection)
+    .where(
+      and(
+        eq(metaConnection.id, connectionId),
+        eq(metaConnection.userId, session.user.id),
+      ),
+    );
+
+  redirect("/dashboard/integrations");
+}
+
+// ---------------------------------------------------------------------------
+// Complete WhatsApp Embedded Signup
+// ---------------------------------------------------------------------------
+
+/**
+ * Server action: Called from the WhatsApp Embedded Signup client component.
+ * Exchanges the code for an access token and saves the WABA connection.
+ */
+export async function completeWhatsAppSignup(input: {
+  code: string;
+  wabaId?: string;
+  phoneNumberId?: string;
+}) {
+  const session = await getSession();
+  if (!session?.user) {
+    return { ok: false, error: "Not authenticated" };
+  }
+
+  try {
+    const headersList = await headers();
+    const host = headersList.get("x-forwarded-host") ?? headersList.get("host") ?? "localhost:3000";
+    const protocol = headersList.get("x-forwarded-proto") ?? "http";
+
+    const redirectUri =
+      env.META_CHANNEL_REDIRECT_URI ??
+      `${protocol}://${host}/api/meta/callback`;
+
+    const tokenData = await exchangeCodeForToken(input.code, redirectUri);
+
+    if (!tokenData.access_token) {
+      return { ok: false, error: "No access token returned" };
+    }
+
+    const longToken = await exchangeForLongLivedToken(
+      tokenData.access_token,
+    );
+
+    // Upsert the WhatsApp connection
+    if (input.wabaId) {
+      const existing = await db
+        .select()
+        .from(metaConnection)
+        .where(
+          and(
+            eq(metaConnection.userId, session.user.id),
+            eq(metaConnection.platform, "whatsapp"),
+            eq(metaConnection.platformAccountId, input.wabaId),
+          ),
+        )
+        .limit(1);
+
+      if (existing.length > 0) {
+        await db
+          .update(metaConnection)
+          .set({
+            accessToken: longToken.access_token,
+            accessTokenExpiresAt: longToken.expires_in
+              ? new Date(Date.now() + longToken.expires_in * 1000)
+              : null,
+            metadata: {
+              phone_number_id: input.phoneNumberId,
+            },
+          })
+          .where(eq(metaConnection.id, existing[0]!.id));
+      } else {
+        await db.insert(metaConnection).values({
+          userId: session.user.id,
+          platform: "whatsapp",
+          platformAccountId: input.wabaId,
+          platformAccountName: `WhatsApp Business`,
+          accessToken: longToken.access_token,
+          accessTokenExpiresAt: longToken.expires_in
+            ? new Date(Date.now() + longToken.expires_in * 1000)
+            : null,
+          metadata: {
+            phone_number_id: input.phoneNumberId,
+          },
+        });
+      }
+    }
+
+    return { ok: true };
+  } catch (err) {
+    console.error("WhatsApp signup error:", err);
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    };
+  }
+}

@@ -1,10 +1,8 @@
 "use client";
 
-import { redirect } from "next/navigation";
-
 import { Button } from "@acme/ui/button";
 
-import { signInWithGoogle } from "../actions";
+import { signInWithFacebook, signInWithGoogle } from "../actions";
 
 function GoogleIcon(props: React.ComponentProps<"svg">) {
   return (
@@ -22,6 +20,19 @@ function GoogleIcon(props: React.ComponentProps<"svg">) {
   );
 }
 
+function FacebookIcon(props: React.ComponentProps<"svg">) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      {...props}
+    >
+      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+    </svg>
+  );
+}
+
 export function LoginCard() {
   return (
     <div className="bg-card/80 text-card-foreground w-full max-w-md rounded-2xl border p-8 shadow-xl backdrop-blur-xl">
@@ -33,12 +44,27 @@ export function LoginCard() {
         </p>
       </div>
 
-      <form action={signInWithGoogle}>
-        <Button size="lg" className="w-full" type="submit">
-          <GoogleIcon className="mr-2 size-5" />
-          Sign in with Google
-        </Button>
-      </form>
+      <div className="space-y-3">
+        <form action={signInWithGoogle}>
+          <Button size="lg" className="w-full" type="submit">
+            <GoogleIcon className="mr-2 size-5" />
+            Sign in with Google
+          </Button>
+        </form>
+
+        <form action={signInWithFacebook}>
+          <Button
+            size="lg"
+            variant="outline"
+            className="w-full"
+            type="submit"
+          >
+            <FacebookIcon className="mr-2 size-5 text-[#1877F2]" />
+            Sign in with Facebook
+          </Button>
+        </form>
+      </div>
     </div>
   );
 }
+
