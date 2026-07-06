@@ -14,6 +14,19 @@ import { exchangeCodeForToken, exchangeForLongLivedToken } from "~/lib/meta";
 
 const FB_VERSION = env.FACEBOOK_GRAPH_VERSION ?? "v25.0";
 
+function getDefaultHostAndProto() {
+  let host = "localhost:3000";
+  let protocol = "http";
+  if (env.BETTER_AUTH_URL) {
+    try {
+      const parsed = new URL(env.BETTER_AUTH_URL);
+      host = parsed.host;
+      protocol = parsed.protocol.replace(":", "");
+    } catch {}
+  }
+  return { host, protocol };
+}
+
 // ---------------------------------------------------------------------------
 // Connect Facebook Page + Instagram
 // ---------------------------------------------------------------------------
@@ -43,8 +56,9 @@ export async function connectFacebookAndInstagram() {
   });
 
   const headersList = await headers();
-  const host = headersList.get("x-forwarded-host") ?? headersList.get("host") ?? "localhost:3000";
-  const protocol = headersList.get("x-forwarded-proto") ?? "http";
+  const defaultUrl = getDefaultHostAndProto();
+  const host = headersList.get("x-forwarded-host") ?? headersList.get("host") ?? defaultUrl.host;
+  const protocol = headersList.get("x-forwarded-proto") ?? defaultUrl.protocol;
 
   const redirectUri =
     env.META_CHANNEL_REDIRECT_URI ??
@@ -114,8 +128,9 @@ export async function completeWhatsAppSignup(input: {
 
   try {
     const headersList = await headers();
-    const host = headersList.get("x-forwarded-host") ?? headersList.get("host") ?? "localhost:3000";
-    const protocol = headersList.get("x-forwarded-proto") ?? "http";
+    const defaultUrl = getDefaultHostAndProto();
+    const host = headersList.get("x-forwarded-host") ?? headersList.get("host") ?? defaultUrl.host;
+    const protocol = headersList.get("x-forwarded-proto") ?? defaultUrl.protocol;
 
     const redirectUri =
       env.META_CHANNEL_REDIRECT_URI ??

@@ -23,6 +23,7 @@ export const env = createEnv({
     FACEBOOK_APP_SECRET: z.string(),
     META_CHANNEL_REDIRECT_URI: z.string().optional(),
     FACEBOOK_GRAPH_VERSION: z.string().default("v25.0"),
+    BETTER_AUTH_URL: z.string().optional(),
   },
 
   /**
