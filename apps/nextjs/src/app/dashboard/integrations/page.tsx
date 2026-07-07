@@ -17,7 +17,11 @@ export default async function IntegrationsPage() {
 
   // Fetch real connections from DB
   const connections = await db
-    .select()
+    .select({
+      id: metaConnection.id,
+      platform: metaConnection.platform,
+      platformAccountName: metaConnection.platformAccountName,
+    })
     .from(metaConnection)
     .where(eq(metaConnection.userId, session.user.id));
 

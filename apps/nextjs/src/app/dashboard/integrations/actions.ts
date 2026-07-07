@@ -14,6 +14,8 @@ import {
   exchangeCodeForToken,
   exchangeForLongLivedToken,
   getWhatsAppPhoneNumbers,
+  subscribeInstagramWebhooks,
+  subscribeMetaPageWebhooks,
 } from "~/lib/meta";
 
 const FB_VERSION = env.FACEBOOK_GRAPH_VERSION;
@@ -34,24 +36,232 @@ function getDefaultHostAndProto() {
 }
 
 // ---------------------------------------------------------------------------
-// Connect Facebook Page + Instagram
+// Connect a Meta channel (Facebook Page, Instagram, or WhatsApp WABA)
 // ---------------------------------------------------------------------------
 
+type Channel = "facebook" | "instagram" | "whatsapp";
+
+function asChannel(value: unknown): Channel {
+  return value === "facebook" || value === "instagram" || value === "whatsapp"
+    ? value
+    : "facebook";
+}
+
+async function replaceWhatsAppConnection(input: {
+  userId: string;
+  wabaId: string;
+  phoneNumberId?: string;
+  displayPhoneName: string;
+  verifiedName: string;
+  displayPhoneNumber: string;
+  accessToken: string;
+  expiresIn?: number;
+}) {
+  const lookupIds = [input.phoneNumberId, input.wabaId].filter(
+    (value): value is string => Boolean(value),
+  );
+
+  const existing = await db
+    .select()
+    .from(metaConnection)
+    .where(
+      and(
+        eq(metaConnection.userId, input.userId),
+        eq(metaConnection.platform, "whatsapp"),
+        inArray(metaConnection.platformAccountId, lookupIds),
+      ),
+    )
+    .limit(1);
+
+  const values = {
+    platformAccountName: input.displayPhoneName,
+    whatsappBusinessAccountId: input.wabaId,
+    whatsappPhoneNumberId: input.phoneNumberId,
+    whatsappAccessToken: input.accessToken,
+    accessToken: input.accessToken,
+    accessTokenExpiresAt: input.expiresIn
+      ? new Date(Date.now() + input.expiresIn * 1000)
+      : null,
+    metadata: {
+      phone_number_id: input.phoneNumberId,
+      verified_name: input.verifiedName,
+      display_phone_number: input.displayPhoneNumber,
+    },
+    webhookSubscriptionStatus: "not_required",
+    webhookSubscribedAt: new Date(),
+    webhookSubscriptionError: null,
+  } as const;
+
+  if (existing[0]) {
+    await db
+      .update(metaConnection)
+      .set(values)
+      .where(eq(metaConnection.id, existing[0].id));
+    return;
+  }
+
+  await db.insert(metaConnection).values({
+    userId: input.userId,
+    platform: "whatsapp",
+    platformAccountId: input.phoneNumberId ?? input.wabaId,
+    ...values,
+  });
+}
+
+async function replaceMetaSelection(input: {
+  userId: string;
+  intent: "facebook" | "instagram";
+  pageId: string;
+  pageName: string;
+  pageToken: string;
+  instagramId?: string;
+  instagramUsername?: string;
+  instagramProfilePictureUrl?: string;
+}) {
+  const webhookSubscription = await (input.intent === "facebook"
+    ? subscribeMetaPageWebhooks(input.pageId, input.pageToken)
+    : subscribeInstagramWebhooks(input.pageId, input.pageToken));
+
+  await db
+    .delete(metaConnection)
+    .where(
+      and(
+        eq(metaConnection.userId, input.userId),
+        eq(
+          metaConnection.platform,
+          input.intent === "facebook" ? "facebook_page" : "instagram",
+        ),
+      ),
+    );
+
+  if (input.intent === "facebook") {
+    await db.insert(metaConnection).values({
+      userId: input.userId,
+      platform: "facebook_page",
+      platformAccountId: input.pageId,
+      platformAccountName: input.pageName,
+      facebookPageId: input.pageId,
+      facebookPageName: input.pageName,
+      facebookPageAccessToken: input.pageToken,
+      accessToken: input.pageToken,
+      webhookSubscriptionStatus: webhookSubscription.success
+        ? "subscribed"
+        : "failed",
+      webhookSubscribedAt: webhookSubscription.success ? new Date() : null,
+      webhookSubscriptionError: null,
+    });
+    return;
+  }
+
+  if (!input.instagramId) {
+    redirect("/dashboard/integrations?error=no_instagram_account");
+  }
+
+  await db.insert(metaConnection).values({
+    userId: input.userId,
+    platform: "instagram",
+    platformAccountId: input.instagramId,
+    platformAccountName: input.instagramUsername,
+    facebookPageId: input.pageId,
+    facebookPageName: input.pageName,
+    facebookPageAccessToken: input.pageToken,
+    instagramBusinessAccountId: input.instagramId,
+    instagramUsername: input.instagramUsername,
+    accessToken: input.pageToken,
+    metadata: {
+      profile_picture_url: input.instagramProfilePictureUrl || null,
+      facebook_page_id: input.pageId,
+    },
+    webhookSubscriptionStatus: webhookSubscription.success
+      ? "subscribed"
+      : "failed",
+    webhookSubscribedAt: webhookSubscription.success ? new Date() : null,
+    webhookSubscriptionError: null,
+  });
+}
+
+async function persistWhatsAppSignup(input: {
+  userId: string;
+  code: string;
+  redirectUri: string;
+  wabaId?: string;
+  phoneNumberId?: string;
+}) {
+  const tokenData = await exchangeCodeForToken(input.code, input.redirectUri);
+
+  if (!tokenData.access_token) {
+    return { ok: false, error: "No access token returned" };
+  }
+
+  const longToken = await exchangeForLongLivedToken(tokenData.access_token);
+
+  let displayPhoneName = "WhatsApp Business";
+  let verifiedName = "";
+  let displayPhoneNumber = "";
+
+  if (input.wabaId) {
+    try {
+      const phoneNumbers = await getWhatsAppPhoneNumbers(
+        input.wabaId,
+        longToken.access_token,
+      );
+      const mainNumber =
+        phoneNumbers.data.find((entry) => entry.id === input.phoneNumberId) ??
+        phoneNumbers.data[0];
+
+      if (mainNumber) {
+        verifiedName = mainNumber.verified_name;
+        displayPhoneNumber = mainNumber.display_phone_number;
+        displayPhoneName = `${mainNumber.verified_name} (${mainNumber.display_phone_number})`;
+      }
+    } catch (err) {
+      console.error("Failed to fetch WhatsApp phone details:", err);
+    }
+  }
+
+  if (input.wabaId) {
+    await replaceWhatsAppConnection({
+      userId: input.userId,
+      wabaId: input.wabaId,
+      phoneNumberId: input.phoneNumberId,
+      displayPhoneName,
+      verifiedName,
+      displayPhoneNumber,
+      accessToken: longToken.access_token,
+      expiresIn: longToken.expires_in,
+    });
+  }
+
+  return { ok: true };
+}
+
 /**
- * Server action: Redirects the user to Facebook's OAuth dialog requesting
- * Page and Instagram permissions.
+ * Server action: Routes the user to the right Meta OAuth flow for the
+ * selected channel. Sets a short-lived `meta_channel_intent` cookie so the
+ * callback and the selection page know which platform to scope to.
  *
- * After the user grants access, Facebook redirects to /api/meta/callback
- * which handles the token exchange and saves connections.
+ * - facebook / instagram → Facebook OAuth Dialog (page-level token)
+ * - whatsapp             → WhatsApp Embedded Signup is client-driven; this
+ *                          branch just bounces back to the integrations page.
  */
-export async function connectFacebookAndInstagram() {
+export async function connectChannel(formData: FormData) {
   const session = await getSession();
   if (!session?.user) {
     redirect("/login");
   }
 
+  const channel = asChannel(formData.get("channel"));
+
   const state = crypto.randomBytes(24).toString("hex");
   const cookieStore = await cookies();
+
+  cookieStore.set("meta_channel_intent", channel, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: env.NODE_ENV === "production",
+    maxAge: 10 * 60, // 10 minutes
+    path: "/",
+  });
 
   cookieStore.set("meta_channel_state", state, {
     httpOnly: true,
@@ -60,6 +270,11 @@ export async function connectFacebookAndInstagram() {
     maxAge: 10 * 60, // 10 minutes
     path: "/",
   });
+
+  if (channel === "whatsapp") {
+    // WhatsApp uses client-side Embedded Signup; nothing to do server-side.
+    redirect("/dashboard/integrations");
+  }
 
   const headersList = await headers();
   const defaultUrl = getDefaultHostAndProto();
@@ -80,7 +295,14 @@ export async function connectFacebookAndInstagram() {
   url.searchParams.set("state", state);
   url.searchParams.set(
     "scope",
-    ["pages_show_list", "pages_read_engagement"].join(","),
+    [
+      "pages_show_list",
+      "pages_read_engagement",
+      "pages_manage_metadata",
+      "pages_messaging",
+      "instagram_basic",
+      "instagram_manage_messages",
+    ].join(","),
   );
 
   redirect(url.toString());
@@ -137,91 +359,13 @@ export async function completeWhatsAppSignup(input: {
       return { ok: false, error: "Invalid WhatsApp redirect URI" };
     }
 
-    const tokenData = await exchangeCodeForToken(input.code, input.redirectUri);
-
-    if (!tokenData.access_token) {
-      return { ok: false, error: "No access token returned" };
-    }
-
-    const longToken = await exchangeForLongLivedToken(tokenData.access_token);
-
-    let displayPhoneName = "WhatsApp Business";
-    let verifiedName = "";
-    let displayPhoneNumber = "";
-
-    if (input.wabaId) {
-      try {
-        const phoneNumbers = await getWhatsAppPhoneNumbers(
-          input.wabaId,
-          longToken.access_token,
-        );
-        if (phoneNumbers.data.length > 0) {
-          const mainNumber =
-            phoneNumbers.data.find((n) => n.id === input.phoneNumberId) ??
-            phoneNumbers.data[0];
-          if (mainNumber) {
-            verifiedName = mainNumber.verified_name;
-            displayPhoneNumber = mainNumber.display_phone_number;
-            displayPhoneName = `${mainNumber.verified_name} (${mainNumber.display_phone_number})`;
-          }
-        }
-      } catch (err) {
-        console.error("Failed to fetch WhatsApp phone details:", err);
-      }
-    }
-
-    // Upsert the WhatsApp connection
-    if (input.wabaId) {
-      const existing = await db
-        .select()
-        .from(metaConnection)
-        .where(
-          and(
-            eq(metaConnection.userId, session.user.id),
-            eq(metaConnection.platform, "whatsapp"),
-            eq(metaConnection.platformAccountId, input.wabaId),
-          ),
-        )
-        .limit(1);
-
-      const existingConnection = existing[0];
-
-      if (existingConnection) {
-        await db
-          .update(metaConnection)
-          .set({
-            platformAccountName: displayPhoneName,
-            accessToken: longToken.access_token,
-            accessTokenExpiresAt: longToken.expires_in
-              ? new Date(Date.now() + longToken.expires_in * 1000)
-              : null,
-            metadata: {
-              phone_number_id: input.phoneNumberId,
-              verified_name: verifiedName,
-              display_phone_number: displayPhoneNumber,
-            },
-          })
-          .where(eq(metaConnection.id, existingConnection.id));
-      } else {
-        await db.insert(metaConnection).values({
-          userId: session.user.id,
-          platform: "whatsapp",
-          platformAccountId: input.wabaId,
-          platformAccountName: displayPhoneName,
-          accessToken: longToken.access_token,
-          accessTokenExpiresAt: longToken.expires_in
-            ? new Date(Date.now() + longToken.expires_in * 1000)
-            : null,
-          metadata: {
-            phone_number_id: input.phoneNumberId,
-            verified_name: verifiedName,
-            display_phone_number: displayPhoneNumber,
-          },
-        });
-      }
-    }
-
-    return { ok: true };
+    return await persistWhatsAppSignup({
+      userId: session.user.id,
+      code: input.code,
+      redirectUri: input.redirectUri,
+      wabaId: input.wabaId,
+      phoneNumberId: input.phoneNumberId,
+    });
   } catch (err) {
     console.error("WhatsApp signup error:", err);
     return {
@@ -232,8 +376,14 @@ export async function completeWhatsAppSignup(input: {
 }
 
 /**
- * Server action: Saves the selected Facebook Page and connected Instagram account
- * to the meta_connection table and removes the temporary user token cookie.
+ * Server action: Saves the user-selected account(s) for the channel in
+ * `meta_channel_intent` (facebook | instagram | whatsapp), and removes the
+ * temporary token cookie.
+ *
+ * - facebook  → save only the facebook_page row, drop any instagram row
+ * - instagram → save only the instagram row (uses the linked Page token),
+ *               drop the facebook_page row
+ * - whatsapp  → not handled here (Embedded Signup path)
  */
 export async function saveSelectedPage(formData: FormData) {
   const session = await getSession();
@@ -243,9 +393,45 @@ export async function saveSelectedPage(formData: FormData) {
 
   const cookieStore = await cookies();
   const tempToken = cookieStore.get("meta_temp_user_token")?.value;
+  const intent = asChannel(cookieStore.get("meta_channel_intent")?.value);
 
   if (!tempToken) {
     redirect("/dashboard/integrations?error=session_expired");
+  }
+
+  if (intent === "whatsapp") {
+    const wabaId = formData.get("wabaId") as string;
+    const wabaName = formData.get("wabaName") as string;
+    const phoneNumberId = formData.get("phoneNumberId") as string;
+    const phoneNumber = formData.get("phoneNumber") as string;
+
+    if (!wabaId || !phoneNumberId) {
+      redirect("/dashboard/integrations?error=invalid_selection");
+    }
+
+    try {
+      const longToken = await exchangeForLongLivedToken(tempToken);
+      const finalToken = longToken.access_token || tempToken;
+      await replaceWhatsAppConnection({
+        userId: session.user.id,
+        wabaId,
+        phoneNumberId,
+        displayPhoneName: wabaName,
+        verifiedName: wabaName,
+        displayPhoneNumber: phoneNumber,
+        accessToken: finalToken,
+        expiresIn: longToken.expires_in,
+      });
+
+      cookieStore.delete("meta_temp_user_token");
+      cookieStore.delete("meta_channel_intent");
+      cookieStore.delete("meta_channel_state");
+    } catch (err) {
+      console.error("Failed to save selected Meta connections:", err);
+      redirect("/dashboard/integrations?error=save_failed");
+    }
+
+    redirect("/dashboard/integrations?connected=whatsapp");
   }
 
   const pageId = formData.get("pageId") as string;
@@ -262,50 +448,29 @@ export async function saveSelectedPage(formData: FormData) {
   }
 
   try {
-    // Exchange short-lived page token for long-lived page token
     const longToken = await exchangeForLongLivedToken(pageAccessToken);
     const finalPageToken = longToken.access_token || pageAccessToken;
-
-    // Delete any existing facebook_page or instagram connections for this user
-    await db
-      .delete(metaConnection)
-      .where(
-        and(
-          eq(metaConnection.userId, session.user.id),
-          inArray(metaConnection.platform, ["facebook_page", "instagram"]),
-        ),
-      );
-
-    // Save Facebook Page connection
-    await db.insert(metaConnection).values({
+    await replaceMetaSelection({
       userId: session.user.id,
-      platform: "facebook_page",
-      platformAccountId: pageId,
-      platformAccountName: pageName,
-      accessToken: finalPageToken,
+      intent,
+      pageId,
+      pageName,
+      pageToken: finalPageToken,
+      instagramId,
+      instagramUsername,
+      instagramProfilePictureUrl,
     });
 
-    // Save Instagram Business connection if present
-    if (instagramId) {
-      await db.insert(metaConnection).values({
-        userId: session.user.id,
-        platform: "instagram",
-        platformAccountId: instagramId,
-        platformAccountName: instagramUsername,
-        accessToken: finalPageToken,
-        metadata: {
-          profile_picture_url: instagramProfilePictureUrl || null,
-          facebook_page_id: pageId,
-        },
-      });
-    }
-
-    // Clean up cookie
+    // Clean up cookies
     cookieStore.delete("meta_temp_user_token");
+    cookieStore.delete("meta_channel_intent");
+    cookieStore.delete("meta_channel_state");
   } catch (err) {
     console.error("Failed to save selected Meta connections:", err);
     redirect("/dashboard/integrations?error=save_failed");
   }
 
-  redirect("/dashboard/integrations?connected=meta");
+  redirect(
+    `/dashboard/integrations?connected=${intent === "facebook" ? "facebook" : "instagram"}`,
+  );
 }

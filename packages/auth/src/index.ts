@@ -15,6 +15,8 @@ export function initAuth<
 
   googleClientId: string;
   googleClientSecret: string;
+  facebookClientId: string;
+  facebookClientSecret: string;
   extraPlugins?: TExtraPlugins;
 }) {
   const config = {
@@ -23,6 +25,27 @@ export function initAuth<
     }),
     baseURL: options.baseUrl,
     secret: options.secret,
+    emailAndPassword: {
+      enabled: true,
+      minPasswordLength: 8,
+      resetPasswordTokenExpiresIn: 60 * 60,
+      revokeSessionsOnPasswordReset: true,
+      sendResetPassword: async ({ user, url, token }) => {
+        const appResetUrl = new URL("/reset-password", options.baseUrl);
+        appResetUrl.searchParams.set("token", token);
+
+        console.info("BETTER AUTH PASSWORD RESET", {
+          email: user.email,
+          url,
+          appResetUrl: appResetUrl.toString(),
+        });
+      },
+      onPasswordReset: async ({ user }) => {
+        console.info("BETTER AUTH PASSWORD RESET COMPLETE", {
+          email: user.email,
+        });
+      },
+    },
     plugins: [
       oAuthProxy({
         productionURL: options.productionUrl,
@@ -34,6 +57,10 @@ export function initAuth<
       google: {
         clientId: options.googleClientId,
         clientSecret: options.googleClientSecret,
+      },
+      facebook: {
+        clientId: options.facebookClientId,
+        clientSecret: options.facebookClientSecret,
       },
     },
     trustedOrigins: ["expo://"],

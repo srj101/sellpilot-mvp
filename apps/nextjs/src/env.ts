@@ -21,6 +21,8 @@ export const env = createEnv({
     GOOGLE_CLIENT_SECRET: z.string(),
     FACEBOOK_APP_ID: z.string(),
     FACEBOOK_APP_SECRET: z.string(),
+    META_APP_SECRET: z.string(),
+    META_WEBHOOK_VERIFY_TOKEN: z.string(),
     META_CHANNEL_REDIRECT_URI: z.string().optional(),
     WHATSAPP_REDIRECT_URI: z.string().optional(),
     FACEBOOK_GRAPH_VERSION: z.string().default("v25.0"),

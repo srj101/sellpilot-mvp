@@ -9,6 +9,7 @@ import { env } from "~/env";
 import { TRPCReactProvider } from "~/trpc/react";
 
 import "~/app/styles.css";
+
 import { BlobBackground } from "./_components/blob-background";
 
 export const metadata: Metadata = {
@@ -17,13 +18,13 @@ export const metadata: Metadata = {
       ? "https://turbo.t3.gg"
       : (env.BETTER_AUTH_URL ?? "http://localhost:3000"),
   ),
-  title: "Create T3 Turbo",
-  description: "Simple monorepo with shared backend for web & mobile apps",
+  title: "SellPilot",
+  description: "AI-powered social commerce cockpit for modern selling teams",
   openGraph: {
-    title: "Create T3 Turbo",
-    description: "Simple monorepo with shared backend for web & mobile apps",
-    url: "https://create-t3-turbo.vercel.app",
-    siteName: "Create T3 Turbo",
+    title: "SellPilot",
+    description: "AI-powered social commerce cockpit for modern selling teams",
+    url: "https://sellpilot.ai",
+    siteName: "SellPilot",
   },
   twitter: {
     card: "summary_large_image",

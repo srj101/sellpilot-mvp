@@ -1,18 +1,47 @@
 import { redirect } from "next/navigation";
 
+import { SignInForm } from "~/app/_components/auth/auth-forms";
+import { AuthShell } from "~/app/_components/auth/auth-shell";
 import { getSession } from "~/auth/server";
-import { LoginCard } from "./_components/login-card";
 
-export default async function LoginPage() {
+interface LoginPageProps {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}
+
+function getSearchValue(
+  params: Record<string, string | string[] | undefined>,
+  key: string,
+) {
+  const value = params[key];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
   const session = await getSession();
 
   if (session) {
     redirect("/dashboard");
   }
 
+  const params = searchParams ? await searchParams : {};
+  const reset = getSearchValue(params, "reset");
+
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-12">
-      <LoginCard />
-    </main>
+    <AuthShell
+      eyebrow="Welcome back"
+      title="Sign in to your command center"
+      description="Use email, Google, or Facebook to continue managing social commerce conversations."
+    >
+      <SignInForm
+        notice={
+          reset === "success"
+            ? {
+                tone: "success",
+                message: "Your password has been updated. Sign in to continue.",
+              }
+            : undefined
+        }
+      />
+    </AuthShell>
   );
 }

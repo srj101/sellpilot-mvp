@@ -8,10 +8,7 @@ import {
   WhatsAppIcon,
 } from "./integration-icons";
 import { WhatsAppConnectButton } from "./whatsapp-connect-button";
-import {
-  connectFacebookAndInstagram,
-  disconnectChannel,
-} from "../actions";
+import { connectChannel, disconnectChannel } from "../actions";
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   facebook: FacebookIcon,
@@ -86,7 +83,8 @@ export function IntegrationCard({
         ) : id === "whatsapp" ? (
           <WhatsAppConnectButton />
         ) : (
-          <form action={connectFacebookAndInstagram}>
+          <form action={connectChannel}>
+            <input type="hidden" name="channel" value={id} />
             <Button size="sm" className="w-full" type="submit">
               <Link2 className="mr-2 h-4 w-4" />
               Connect
