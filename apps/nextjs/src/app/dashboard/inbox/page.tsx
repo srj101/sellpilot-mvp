@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { desc, eq } from "@acme/db";
+import { and, desc, eq, inArray } from "@acme/db";
 import { db } from "@acme/db/client";
 import { metaConnection, metaWebhookEvent } from "@acme/db/schema";
 import { Badge } from "@acme/ui/badge";
@@ -28,6 +28,8 @@ import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { getSession } from "~/auth/server";
 import { buildInboxData } from "~/lib/meta-inbox";
 import { sendInboxReply } from "./actions";
+import { triggerInboxBroadcast } from "~/lib/inbox-broadcast";
+import { ScrollToBottom } from "./_components/scroll-to-bottom";
 
 interface InboxSearchParams {
   thread?: string;
@@ -201,11 +203,14 @@ function ThreadRow({
     preview: string;
     messageCount: number;
     lastMessageAt: Date;
+    messages: { direction: "inbound" | "outbound"; isRead: boolean }[];
   };
   selected: boolean;
   channel: string;
 }) {
   const Icon = channelIcon(thread.platform);
+  const latestMessage = thread.messages[thread.messages.length - 1];
+  const isUnread = latestMessage?.direction === "inbound" && !latestMessage?.isRead;
 
   return (
     <Link
@@ -214,7 +219,9 @@ function ThreadRow({
         "group flex items-start gap-3 rounded-2xl border p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md",
         selected
           ? "border-primary/40 bg-primary/5 shadow-sm"
-          : "bg-background hover:border-border/80",
+          : isUnread
+            ? "border-primary/20 bg-primary/2 hover:border-primary/40"
+            : "bg-background hover:border-border/80",
       )}
       aria-current={selected ? "page" : undefined}
     >
@@ -228,19 +235,31 @@ function ThreadRow({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-foreground">
-              {thread.contactLabel}
+          <div className="min-w-0 flex-1">
+            <div className={cn(
+              "truncate text-sm font-semibold text-foreground flex items-center gap-1.5",
+              isUnread && "font-bold text-foreground"
+            )}>
+              <span className="truncate">{thread.contactLabel}</span>
+              {isUnread && (
+                <span className="h-2 w-2 shrink-0 rounded-full bg-primary animate-pulse" />
+              )}
             </div>
             <div className="text-muted-foreground truncate text-xs">
               {thread.accountLabel}
             </div>
           </div>
-          <span className="text-muted-foreground shrink-0 text-[11px]">
+          <span className={cn(
+            "text-muted-foreground shrink-0 text-[11px]",
+            isUnread && "font-semibold text-primary"
+          )}>
             {formatRelativeTime(thread.lastMessageAt)}
           </span>
         </div>
-        <p className="text-muted-foreground mt-2 line-clamp-2 text-sm leading-6">
+        <p className={cn(
+          "text-muted-foreground mt-2 line-clamp-2 text-sm leading-6",
+          isUnread && "font-medium text-foreground/90"
+        )}>
           {thread.preview}
         </p>
         <div className="mt-3 flex items-center justify-between gap-2">
@@ -295,37 +314,60 @@ export default async function InboxPage(props: {
     filteredThreads[0] ??
     null;
 
+  if (selectedThread) {
+    const unreadEventIds = selectedThread.messages
+      .filter((m) => m.direction === "inbound" && !m.isRead)
+      .map((m) => m.id);
+
+    if (unreadEventIds.length > 0) {
+      await db
+        .update(metaWebhookEvent)
+        .set({ isRead: true })
+        .where(inArray(metaWebhookEvent.id, unreadEventIds));
+
+      for (const m of selectedThread.messages) {
+        if (unreadEventIds.includes(m.id)) {
+          m.isRead = true;
+        }
+      }
+
+      // Broadcast update to all active SSE subscribers for this user
+      void triggerInboxBroadcast(session.user.id);
+    }
+  }
+
   const latestEvent = events[0];
 
   return (
     <DashboardShell>
-      <div className="space-y-6">
-        <div className="bg-card/70 relative overflow-hidden rounded-[32px] border p-6 shadow-sm">
-          <div className="bg-primary/10 absolute inset-x-0 top-0 h-px" />
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-2xl space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full border bg-background/80 px-3 py-1 text-xs font-medium backdrop-blur">
+      <div className="space-y-6 xl:h-[calc(100vh-6rem)] xl:flex xl:flex-col xl:overflow-hidden">
+        {/* Responsive Header: clean single flex line on desktop, full decorative card on mobile */}
+        <div className="xl:bg-transparent xl:border-0 xl:p-0 xl:shadow-none bg-card/70 relative overflow-hidden rounded-[32px] border p-6 shadow-sm shrink-0">
+          <div className="bg-primary/10 absolute inset-x-0 top-0 h-px xl:hidden" />
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between xl:items-center">
+            <div className="max-w-2xl space-y-3 xl:space-y-0 xl:flex xl:items-center xl:gap-3">
+              <div className="inline-flex items-center gap-2 rounded-full border bg-background/80 px-3 py-1 text-xs font-medium backdrop-blur xl:py-0.5 shrink-0">
                 <Sparkles className="h-3.5 w-3.5 text-primary" />
                 Unified Meta inbox
               </div>
-              <div>
-                <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+              <div className="xl:flex xl:items-baseline xl:gap-2">
+                <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl xl:text-2xl xl:font-bold">
                   Inbox
                 </h1>
-                <p className="text-muted-foreground mt-2 max-w-2xl text-sm leading-6 sm:text-base">
+                <p className="text-muted-foreground mt-2 max-w-2xl text-sm leading-6 sm:text-base xl:hidden">
                   Monitor Facebook, Instagram, and WhatsApp conversations from a
                   single place, reply inline, and keep webhook traffic visible.
                 </p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-3">
-              <Button variant="outline" asChild>
+            <div className="flex flex-wrap gap-3 shrink-0">
+              <Button variant="outline" asChild size="sm">
                 <Link href="/dashboard/integrations">
                   Manage channels
                   <ArrowUpRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
-              <Button asChild>
+              <Button asChild size="sm">
                 <Link href="/dashboard/analytics">
                   View analytics
                   <MessageSquareText className="ml-2 h-4 w-4" />
@@ -334,7 +376,8 @@ export default async function InboxPage(props: {
             </div>
           </div>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {/* Stats grid: only visible on mobile/tablet, hidden on desktop to save height */}
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:hidden">
             <div className="bg-background/80 rounded-2xl border p-4 shadow-sm">
               <div className="text-muted-foreground text-xs uppercase tracking-[0.18em]">
                 Conversations
@@ -382,8 +425,8 @@ export default async function InboxPage(props: {
           </div>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)_300px]">
-          <section className="space-y-4">
+        <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)_300px] xl:flex-1 xl:min-h-0">
+          <section className="space-y-4 xl:h-full xl:flex xl:flex-col xl:overflow-hidden">
             <div className="bg-card rounded-[28px] border p-5 shadow-sm">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -418,7 +461,7 @@ export default async function InboxPage(props: {
               </div>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3 xl:flex-1 xl:overflow-y-auto xl:pr-1">
               {filteredThreads.length > 0 ? (
                 filteredThreads.map((thread) => (
                   <ThreadRow
@@ -434,7 +477,7 @@ export default async function InboxPage(props: {
             </div>
           </section>
 
-          <section className="bg-card flex min-h-[680px] flex-col rounded-[28px] border shadow-sm">
+          <section className="bg-card flex min-h-[500px] xl:h-full flex-col rounded-[28px] border shadow-sm xl:overflow-hidden">
             {selectedThread ? (
               <>
                 <div className="relative overflow-hidden rounded-t-[28px] border-b px-6 py-5">
@@ -479,8 +522,8 @@ export default async function InboxPage(props: {
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-hidden p-6">
-                  <div className="border-border/60 bg-background/70 flex h-full flex-col rounded-[24px] border">
+                <div className="flex-1 overflow-hidden p-6 xl:flex xl:flex-col xl:min-h-0">
+                  <div className="border-border/60 bg-background/70 flex h-full flex-col rounded-[24px] border xl:flex-1 xl:min-h-0">
                     <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
                       {selectedThread.messages.map((message) => (
                         <MessageBubble
@@ -491,6 +534,7 @@ export default async function InboxPage(props: {
                           timestamp={message.timestamp}
                         />
                       ))}
+                      <ScrollToBottom />
                     </div>
 
                     <Separator />
@@ -551,7 +595,34 @@ export default async function InboxPage(props: {
             )}
           </section>
 
-          <aside className="space-y-4">
+          <aside className="space-y-4 xl:h-full xl:overflow-y-auto xl:pr-1">
+            {/* Desktop Overview Stats Card */}
+            <div className="hidden xl:block bg-card rounded-[28px] border p-5 shadow-sm">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground/75 mb-3">
+                Overview
+              </h3>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-background rounded-2xl border p-3">
+                  <div className="text-muted-foreground text-[10px] uppercase tracking-wider">Threads</div>
+                  <div className="text-xl font-bold mt-1 tabular-nums">{data.stats.threadCount}</div>
+                </div>
+                <div className="bg-background rounded-2xl border p-3">
+                  <div className="text-muted-foreground text-[10px] uppercase tracking-wider">Messages</div>
+                  <div className="text-xl font-bold mt-1 tabular-nums">{data.stats.messageCount}</div>
+                </div>
+                <div className="bg-background rounded-2xl border p-3">
+                  <div className="text-muted-foreground text-[10px] uppercase tracking-wider">Channels</div>
+                  <div className="text-xl font-bold mt-1 tabular-nums">{connections.length}</div>
+                </div>
+                <div className="bg-background rounded-2xl border p-3">
+                  <div className="text-muted-foreground text-[10px] uppercase tracking-wider">Webhook</div>
+                  <div className="text-[11px] font-semibold mt-2 truncate">
+                    {latestEvent ? formatRelativeTime(latestEvent.receivedAt) : "Idle"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="bg-card rounded-[28px] border p-5 shadow-sm">
               <div className="flex items-center justify-between gap-3">
                 <div>

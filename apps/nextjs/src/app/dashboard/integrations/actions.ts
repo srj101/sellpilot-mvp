@@ -13,9 +13,11 @@ import { env } from "~/env";
 import {
   exchangeCodeForToken,
   exchangeForLongLivedToken,
+  getWhatsAppAccounts,
   getWhatsAppPhoneNumbers,
   subscribeInstagramWebhooks,
   subscribeMetaPageWebhooks,
+  subscribeWhatsAppWebhooks,
 } from "~/lib/meta";
 
 const FB_VERSION = env.FACEBOOK_GRAPH_VERSION;
@@ -195,18 +197,45 @@ async function persistWhatsAppSignup(input: {
 
   const longToken = await exchangeForLongLivedToken(tokenData.access_token);
 
+  let wabaId = input.wabaId;
+  let phoneNumberId = input.phoneNumberId;
+
+  if (!wabaId) {
+    try {
+      const accounts = await getWhatsAppAccounts(longToken.access_token);
+      if (accounts?.[0]) {
+        wabaId = accounts[0].id;
+        console.log("[persistWhatsAppSignup] Resolved missing wabaId:", wabaId);
+      }
+    } catch (err) {
+      console.error("Failed to fetch direct WhatsApp business accounts:", err);
+    }
+  }
+
+  if (wabaId && !phoneNumberId) {
+    try {
+      const phoneNumbers = await getWhatsAppPhoneNumbers(wabaId, longToken.access_token);
+      if (phoneNumbers.data?.[0]) {
+        phoneNumberId = phoneNumbers.data[0].id;
+        console.log("[persistWhatsAppSignup] Resolved missing phoneNumberId:", phoneNumberId);
+      }
+    } catch (err) {
+      console.error("Failed to fetch phone numbers for resolved WABA:", err);
+    }
+  }
+
   let displayPhoneName = "WhatsApp Business";
   let verifiedName = "";
   let displayPhoneNumber = "";
 
-  if (input.wabaId) {
+  if (wabaId) {
     try {
       const phoneNumbers = await getWhatsAppPhoneNumbers(
-        input.wabaId,
+        wabaId,
         longToken.access_token,
       );
       const mainNumber =
-        phoneNumbers.data.find((entry) => entry.id === input.phoneNumberId) ??
+        phoneNumbers.data.find((entry) => entry.id === phoneNumberId) ??
         phoneNumbers.data[0];
 
       if (mainNumber) {
@@ -219,11 +248,11 @@ async function persistWhatsAppSignup(input: {
     }
   }
 
-  if (input.wabaId) {
+  if (wabaId) {
     await replaceWhatsAppConnection({
       userId: input.userId,
-      wabaId: input.wabaId,
-      phoneNumberId: input.phoneNumberId,
+      wabaId,
+      phoneNumberId,
       displayPhoneName,
       verifiedName,
       displayPhoneNumber,
@@ -271,11 +300,6 @@ export async function connectChannel(formData: FormData) {
     path: "/",
   });
 
-  if (channel === "whatsapp") {
-    // WhatsApp uses client-side Embedded Signup; nothing to do server-side.
-    redirect("/dashboard/integrations");
-  }
-
   const headersList = await headers();
   const defaultUrl = getDefaultHostAndProto();
   const host =
@@ -293,17 +317,25 @@ export async function connectChannel(formData: FormData) {
   url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("state", state);
-  url.searchParams.set(
-    "scope",
-    [
-      "pages_show_list",
-      "pages_read_engagement",
-      "pages_manage_metadata",
-      "pages_messaging",
-      "instagram_basic",
-      "instagram_manage_messages",
-    ].join(","),
-  );
+
+  if (channel === "whatsapp") {
+    const configId = env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID;
+    if (configId) {
+      url.searchParams.set("config_id", configId);
+    }
+  } else {
+    url.searchParams.set(
+      "scope",
+      [
+        "pages_show_list",
+        "pages_read_engagement",
+        "pages_manage_metadata",
+        "pages_messaging",
+        "instagram_basic",
+        "instagram_manage_messages",
+      ].join(","),
+    );
+  }
 
   redirect(url.toString());
 }
@@ -354,11 +386,6 @@ export async function completeWhatsAppSignup(input: {
   }
 
   try {
-    const expectedRedirectUri = env.WHATSAPP_REDIRECT_URI;
-    if (expectedRedirectUri && input.redirectUri !== expectedRedirectUri) {
-      return { ok: false, error: "Invalid WhatsApp redirect URI" };
-    }
-
     return await persistWhatsAppSignup({
       userId: session.user.id,
       code: input.code,
@@ -412,6 +439,7 @@ export async function saveSelectedPage(formData: FormData) {
     try {
       const longToken = await exchangeForLongLivedToken(tempToken);
       const finalToken = longToken.access_token || tempToken;
+      await subscribeWhatsAppWebhooks(wabaId, finalToken);
       await replaceWhatsAppConnection({
         userId: session.user.id,
         wabaId,

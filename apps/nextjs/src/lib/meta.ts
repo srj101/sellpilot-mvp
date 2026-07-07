@@ -202,26 +202,55 @@ export async function getWhatsAppPhoneNumbers(
   });
 }
 
+
+
 export async function getWhatsAppAccounts(
   userAccessToken: string,
 ): Promise<WhatsAppBusinessAccount[]> {
-  const businessesResponse = await getWhatsAppBusinesses(userAccessToken);
-  const businesses = businessesResponse.data || [];
+  try {
+    const businessesResponse = await getWhatsAppBusinesses(userAccessToken);
+    const businesses = businessesResponse.data || [];
 
-  const accounts = await Promise.all(
-    businesses.map(async (business) => {
-      const phoneNumbersResponse = await getWhatsAppPhoneNumbers(
-        business.id,
-        userAccessToken,
-      );
-      return {
-        ...business,
-        phone_numbers: phoneNumbersResponse.data || [],
-      };
-    }),
-  );
+    const accountsList: WhatsAppBusinessAccount[] = [];
 
-  return accounts;
+    for (const business of businesses) {
+      try {
+        const wabaResponse = await graphGet<{ data: { id: string; name: string }[] }>(
+          `/${business.id}/owned_whatsapp_business_accounts`,
+          { access_token: userAccessToken },
+        );
+        const wabaAccounts = wabaResponse.data || [];
+
+        for (const waba of wabaAccounts) {
+          try {
+            const phoneNumbersResponse = await getWhatsAppPhoneNumbers(
+              waba.id,
+              userAccessToken,
+            );
+            accountsList.push({
+              id: waba.id,
+              name: waba.name,
+              phone_numbers: phoneNumbersResponse.data || [],
+            });
+          } catch (phoneErr) {
+            console.error(`Failed to fetch phone numbers for WABA ${waba.id}:`, phoneErr);
+            accountsList.push({
+              id: waba.id,
+              name: waba.name,
+              phone_numbers: [],
+            });
+          }
+        }
+      } catch (wabaErr) {
+        console.error(`Failed to fetch WABAs for business ${business.id}:`, wabaErr);
+      }
+    }
+
+    return accountsList;
+  } catch (err) {
+    console.error("Failed to fetch WhatsApp accounts:", err);
+    throw err;
+  }
 }
 
 /**
@@ -373,8 +402,16 @@ export async function subscribeInstagramWebhooks(
   );
 }
 
-export async function subscribeWhatsAppWebhooks(): Promise<MetaWebhookSubscriptionResponse> {
-  return { success: true };
+export async function subscribeWhatsAppWebhooks(
+  wabaId: string,
+  accessToken: string,
+): Promise<MetaWebhookSubscriptionResponse> {
+  return graphPost<MetaWebhookSubscriptionResponse>(
+    `/${wabaId}/subscribed_apps`,
+    {
+      access_token: accessToken,
+    },
+  );
 }
 
 export type MetaInboxPlatform = "facebook_page" | "instagram" | "whatsapp";

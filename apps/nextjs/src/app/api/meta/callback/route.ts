@@ -89,7 +89,11 @@ export async function GET(req: Request) {
     // right list. Default to "facebook" for backwards compatibility.
     const intent = cookieStore.get("meta_channel_intent")?.value;
     const channelParam =
-      intent === "instagram" ? "instagram" : "facebook";
+      intent === "instagram"
+        ? "instagram"
+        : intent === "whatsapp"
+          ? "whatsapp"
+          : "facebook";
 
     return NextResponse.redirect(
       `${protocol}://${host}/dashboard/integrations/select?channel=${channelParam}`,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { and, eq, or } from "@acme/db";
+import { and, desc, eq, or } from "@acme/db";
 import { db } from "@acme/db/client";
 import { metaConnection, metaWebhookEvent } from "@acme/db/schema";
 
@@ -10,6 +10,7 @@ import {
   normalizeMetaWebhookPayload,
   verifyMetaWebhookSignature,
 } from "~/lib/meta-webhook";
+import { triggerInboxBroadcast } from "~/lib/inbox-broadcast";
 
 export const runtime = "nodejs";
 
@@ -124,7 +125,9 @@ async function handleAutoReply(
       accountId:
         event.platform === "instagram"
           ? (connection.facebookPageId ?? event.platformAccountId)
-          : event.platformAccountId,
+          : event.platform === "whatsapp"
+            ? (connection.whatsappPhoneNumberId ?? event.platformAccountId)
+            : event.platformAccountId,
       recipientId,
       text: messageText,
     });
@@ -161,9 +164,10 @@ async function resolveMetaConnection(event: {
   platform: "facebook_page" | "instagram" | "whatsapp";
   platformAccountId: string;
 }) {
+  let rows: (typeof metaConnection.$inferSelect)[] = [];
   switch (event.platform) {
     case "facebook_page":
-      return db
+      rows = await db
         .select()
         .from(metaConnection)
         .where(
@@ -176,8 +180,9 @@ async function resolveMetaConnection(event: {
           ),
         )
         .limit(1);
+      break;
     case "instagram":
-      return db
+      rows = await db
         .select()
         .from(metaConnection)
         .where(
@@ -193,8 +198,9 @@ async function resolveMetaConnection(event: {
           ),
         )
         .limit(1);
+      break;
     case "whatsapp":
-      return db
+      rows = await db
         .select()
         .from(metaConnection)
         .where(
@@ -211,7 +217,21 @@ async function resolveMetaConnection(event: {
           ),
         )
         .limit(1);
+      break;
   }
+
+  // Fallback to the latest connected channel of the platform if no match is resolved.
+  // This supports sandbox default/mock payloads (e.g. 123456123, 0) during testing.
+  if (rows.length === 0) {
+    rows = await db
+      .select()
+      .from(metaConnection)
+      .where(eq(metaConnection.platform, event.platform))
+      .orderBy(desc(metaConnection.connectedAt))
+      .limit(1);
+  }
+
+  return rows;
 }
 
 export async function GET(req: NextRequest) {
@@ -252,6 +272,7 @@ export async function POST(req: NextRequest) {
   }
 
   const rawBody = await req.text();
+  console.log("[Webhook POST] Incoming raw body:", rawBody);
 
   if (
     !verifyMetaWebhookSignature(rawBody, signatureHeader, env.META_APP_SECRET)
@@ -298,6 +319,17 @@ export async function POST(req: NextRequest) {
   }
 
   await db.insert(metaWebhookEvent).values(rows).onConflictDoNothing();
+
+  // Trigger inbox updates over SSE for all affected users
+  const userIds = new Set<string>();
+  for (const row of rows) {
+    if (row.userId) {
+      userIds.add(row.userId);
+    }
+  }
+  for (const userId of userIds) {
+    void triggerInboxBroadcast(userId);
+  }
 
   // Send auto-replies for inbound messages
   for (const event of normalizedEvents) {

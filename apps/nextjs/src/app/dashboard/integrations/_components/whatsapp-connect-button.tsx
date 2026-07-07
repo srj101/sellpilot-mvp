@@ -91,15 +91,22 @@ export function WhatsAppConnectButton() {
       document.body.appendChild(script);
     }
 
-    // Listen for Embedded Signup completion events
     const onMessage = (event: MessageEvent) => {
       if (!event.origin.includes("facebook.com")) return;
 
       try {
-        const data: unknown = JSON.parse(String(event.data));
+        let data: any = event.data;
+        if (typeof data === "string") {
+          try {
+            data = JSON.parse(data);
+          } catch {
+            return;
+          }
+        }
 
         if (
-          isWhatsAppSignupMessage(data) &&
+          data &&
+          typeof data === "object" &&
           data.type === "WA_EMBEDDED_SIGNUP" &&
           data.event === "FINISH"
         ) {
@@ -107,9 +114,10 @@ export function WhatsAppConnectButton() {
             wabaId: data.data?.waba_id,
             phoneNumberId: data.data?.phone_number_id,
           };
+          console.log("[WhatsApp Connect Button] Embedded signup completed, stored IDs:", signupIds.current);
         }
-      } catch {
-        // Non-JSON message from Facebook iframe, ignore
+      } catch (err) {
+        console.error("[WhatsApp Connect Button] Error handling message:", err);
       }
     };
 

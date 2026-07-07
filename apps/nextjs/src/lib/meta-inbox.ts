@@ -17,6 +17,7 @@ export interface InboxMessage {
   status?: string;
   replyTargetId?: string;
   sourceId?: string;
+  isRead: boolean;
 }
 
 export interface InboxThread {
@@ -418,6 +419,7 @@ export function buildInboxData({
         status: asString(event.status),
         replyTargetId,
         sourceId: event.sourceId ?? undefined,
+        isRead: event.isRead,
       };
 
       const existingThread = threadsById.get(threadKey);
