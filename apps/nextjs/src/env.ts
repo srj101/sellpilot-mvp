@@ -27,6 +27,15 @@ export const env = createEnv({
     WHATSAPP_REDIRECT_URI: z.string().optional(),
     FACEBOOK_GRAPH_VERSION: z.string().default("v25.0"),
     BETTER_AUTH_URL: z.string().optional(),
+    CLOUDFLARE_ACCOUNT_ID: z.string().optional(),
+    CLOUDFLARE_API_TOKEN: z.string().optional(),
+    CLOUDFLARE_AGENT_MODEL: z.string().default("@cf/zai-org/glm-5.2"),
+    AGENT_SERVICE_URL: z.string().default("http://localhost:8787"),
+    CHROMA_URL: z.string().default("http://localhost:8000"),
+    CHROMA_AUTH_TOKEN: z.string().optional(),
+    REDIS_URL: z.string().default("redis://localhost:6379"),
+    OPENWA_URL: z.string().default("http://localhost:2785"),
+    OPENWA_API_KEY: z.string().default("owa_k1_302b9cd435a44a92c4c1190b123a586d1f29e9c94572e2ce20e5048e975ec063"),
   },
 
   /**

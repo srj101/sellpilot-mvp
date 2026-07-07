@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+  boolean,
   index,
   jsonb,
   pgTable,
@@ -52,6 +53,8 @@ export const metaWebhookEvent = pgTable(
 
     /** Selected headers for diagnostics. */
     headers: jsonb("headers").$type<Record<string, string>>(),
+
+    isRead: boolean("is_read").default(false).notNull(),
 
     receivedAt: timestamp("received_at").defaultNow().notNull(),
     processedAt: timestamp("processed_at"),

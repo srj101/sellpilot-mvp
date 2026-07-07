@@ -75,6 +75,17 @@ async function replaceWhatsAppConnection(input: {
     )
     .limit(1);
 
+  let webhookSubscriptionStatus = "failed";
+  let webhookSubscriptionError: string | null = null;
+  try {
+    const res = await subscribeWhatsAppWebhooks(input.wabaId, input.accessToken);
+    if (res.success) {
+      webhookSubscriptionStatus = "subscribed";
+    }
+  } catch (error: any) {
+    webhookSubscriptionError = error instanceof Error ? error.message : String(error);
+  }
+
   const values = {
     platformAccountName: input.displayPhoneName,
     whatsappBusinessAccountId: input.wabaId,
@@ -89,10 +100,10 @@ async function replaceWhatsAppConnection(input: {
       verified_name: input.verifiedName,
       display_phone_number: input.displayPhoneNumber,
     },
-    webhookSubscriptionStatus: "not_required",
-    webhookSubscribedAt: new Date(),
-    webhookSubscriptionError: null,
-  } as const;
+    webhookSubscriptionStatus,
+    webhookSubscribedAt: webhookSubscriptionStatus === "subscribed" ? new Date() : null,
+    webhookSubscriptionError,
+  };
 
   if (existing[0]) {
     await db

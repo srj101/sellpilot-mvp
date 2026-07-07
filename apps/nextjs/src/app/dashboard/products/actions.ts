@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 
 import { and, eq, inArray } from "@acme/db";
 import { db } from "@acme/db/client";
@@ -9,10 +8,10 @@ import { product, productVariant } from "@acme/db/schema";
 
 import { getSession } from "~/auth/server";
 import {
-  addProductImageToVectorDb,
   deleteProductImageFromVectorDb,
   searchProductsByImage,
 } from "~/lib/chromadb";
+import { queueProductImageIndexing } from "~/lib/queue";
 
 export interface VariantInput {
   id?: string;
@@ -83,10 +82,10 @@ export async function createProduct(input: ProductInput) {
       .returning();
 
     // 3. Index in ChromaDB
-    // Index variant-specific images
+    // Index variant-specific images in background queue
     for (const variant of insertedVariants) {
       if (variant.imageUrl) {
-        await addProductImageToVectorDb({
+        void queueProductImageIndexing({
           userId,
           productId: newProduct.id,
           variantId: variant.id,
@@ -97,13 +96,13 @@ export async function createProduct(input: ProductInput) {
     }
   }
 
-  // Index gallery images that aren't variant-specific
+  // Index gallery images that aren't variant-specific in background queue
   if (input.images && input.images.length > 0) {
     for (const imgUrl of input.images) {
       // Check if this image was already indexed as a variant image
       const isVariantImage = input.variants.some((v) => v.imageUrl === imgUrl);
       if (!isVariantImage) {
-        await addProductImageToVectorDb({
+        void queueProductImageIndexing({
           userId,
           productId: newProduct.id,
           imageUrl: imgUrl,
@@ -150,10 +149,14 @@ export async function updateProduct(input: ProductInput) {
     .where(eq(productVariant.productId, productId));
 
   const existingVariantIds = existingVariants.map((v) => v.id);
-  const inputVariantIds = input.variants.map((v) => v.id).filter(Boolean) as string[];
+  const inputVariantIds = input.variants
+    .map((v) => v.id)
+    .filter(Boolean) as string[];
 
   // Delete removed variants
-  const variantsToDelete = existingVariants.filter((v) => !inputVariantIds.includes(v.id));
+  const variantsToDelete = existingVariants.filter(
+    (v) => !inputVariantIds.includes(v.id),
+  );
   if (variantsToDelete.length > 0) {
     const idsToDelete = variantsToDelete.map((v) => v.id);
     await db
@@ -162,7 +165,7 @@ export async function updateProduct(input: ProductInput) {
 
     // Delete associated vector indices
     for (const v of variantsToDelete) {
-      await deleteProductImageFromVectorDb({ variantId: v.id });
+      void deleteProductImageFromVectorDb({ variantId: v.id });
     }
   }
 
@@ -186,9 +189,9 @@ export async function updateProduct(input: ProductInput) {
         .where(eq(productVariant.id, v.id))
         .returning();
 
-      if (updated && updated.imageUrl) {
-        // Re-index variant image
-        await addProductImageToVectorDb({
+      if (updated?.imageUrl) {
+        // Re-index variant image in background queue
+        void queueProductImageIndexing({
           userId,
           productId,
           variantId: updated.id,
@@ -197,7 +200,7 @@ export async function updateProduct(input: ProductInput) {
         });
       } else if (v.id) {
         // If imageUrl was removed, delete it from vector DB
-        await deleteProductImageFromVectorDb({ variantId: v.id });
+        void deleteProductImageFromVectorDb({ variantId: v.id });
       }
     } else {
       // Insert new
@@ -217,8 +220,8 @@ export async function updateProduct(input: ProductInput) {
         })
         .returning();
 
-      if (inserted && inserted.imageUrl) {
-        await addProductImageToVectorDb({
+      if (inserted?.imageUrl) {
+        void queueProductImageIndexing({
           userId,
           productId,
           variantId: inserted.id,
@@ -231,14 +234,14 @@ export async function updateProduct(input: ProductInput) {
 
   // Sync remaining product gallery images in ChromaDB
   // First, clear all product-level (non-variant-specific) image vectors
-  await deleteProductImageFromVectorDb({ productId });
+  void deleteProductImageFromVectorDb({ productId });
 
-  // Re-index remaining images
+  // Re-index remaining images in background queue
   if (input.images && input.images.length > 0) {
     for (const imgUrl of input.images) {
       const isVariantImage = input.variants.some((v) => v.imageUrl === imgUrl);
       if (!isVariantImage) {
-        await addProductImageToVectorDb({
+        void queueProductImageIndexing({
           userId,
           productId,
           imageUrl: imgUrl,
@@ -267,7 +270,7 @@ export async function deleteProduct(productId: string) {
 
   if (deleted) {
     // Delete vector index
-    await deleteProductImageFromVectorDb({ productId });
+    void deleteProductImageFromVectorDb({ productId });
   }
 
   revalidatePath("/dashboard/products");

@@ -439,6 +439,15 @@ export async function sendMetaInboxReply({
   });
 
   if (platform === "whatsapp") {
+    if (accessToken.startsWith("user-")) {
+      const { sendOpenWAText } = await import("./openwa");
+      const response = await sendOpenWAText(accessToken, recipientId, text);
+      return {
+        messageId: response.messageId,
+        raw: response,
+      };
+    }
+
     const response = await graphPostJson<any>(
       `/${accountId}/messages`,
       accessToken,

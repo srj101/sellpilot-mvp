@@ -18,6 +18,7 @@ import {
 
 import { Button } from "@acme/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@acme/ui/sheet";
+import { ThemeToggle } from "@acme/ui/theme";
 import { cn } from "@acme/ui";
 
 import { signOut } from "../actions";
@@ -190,8 +191,8 @@ function SidebarContent() {
       </nav>
 
       {/* ── Footer ───────────────────────────────────────────── */}
-      <div className="mt-4 border-t border-border/40 pt-4">
-        <form action={signOut}>
+      <div className="mt-4 border-t border-border/40 pt-4 flex items-center justify-between gap-2">
+        <form action={signOut} className="flex-1">
           <Button
             variant="ghost"
             type="submit"
@@ -201,6 +202,7 @@ function SidebarContent() {
             Log out
           </Button>
         </form>
+        <ThemeToggle />
       </div>
     </div>
   );

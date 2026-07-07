@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
 import { Link2, Settings2, Unlink } from "lucide-react";
@@ -69,8 +71,15 @@ export function IntegrationCard({
             action={async () => {
               "use server";
               if (connectionId) {
-                const { disconnectChannel: dc } = await import("../actions");
-                await dc(connectionId);
+                if (id === "whatsapp") {
+                  const { disconnectOpenWA } = await import("../openwa-actions");
+                  await disconnectOpenWA();
+                  const { redirect } = await import("next/navigation");
+                  redirect("/dashboard/integrations");
+                } else {
+                  const { disconnectChannel: dc } = await import("../actions");
+                  await dc(connectionId);
+                }
               }
             }}
           >
@@ -79,6 +88,13 @@ export function IntegrationCard({
               Disconnect
             </Button>
           </form>
+        ) : id === "whatsapp" ? (
+          <Link href="/dashboard/integrations/whatsapp">
+            <Button size="sm" className="w-full">
+              <Link2 className="mr-2 h-4 w-4" />
+              Connect
+            </Button>
+          </Link>
         ) : (
           <form action={connectChannel}>
             <input type="hidden" name="channel" value={id} />
@@ -92,4 +108,3 @@ export function IntegrationCard({
     </div>
   );
 }
-

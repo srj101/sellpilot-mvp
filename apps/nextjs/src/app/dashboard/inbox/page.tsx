@@ -27,6 +27,7 @@ import {
 import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { getSession } from "~/auth/server";
 import { buildInboxData } from "~/lib/meta-inbox";
+import { resolveContactNames } from "~/lib/resolve-contact-names";
 import { sendInboxReply } from "./actions";
 import { triggerInboxBroadcast } from "~/lib/inbox-broadcast";
 import { ScrollToBottom } from "./_components/scroll-to-bottom";
@@ -297,7 +298,8 @@ export default async function InboxPage(props: {
       .orderBy(desc(metaConnection.connectedAt)),
   ]);
 
-  const data = buildInboxData({ events, connections });
+  const resolvedNames = await resolveContactNames(events, connections);
+  const data = buildInboxData({ events, connections, resolvedNames });
   const selectedChannel =
     searchParams?.channel &&
       CHANNELS.some((channel) => channel.id === searchParams.channel)

@@ -46,6 +46,7 @@ export interface InboxActivityItem {
 export interface BuildInboxDataInput {
   events: MetaWebhookEventRow[];
   connections: MetaConnectionRow[];
+  resolvedNames?: Record<string, string>;
 }
 
 export interface BuildInboxDataResult {
@@ -278,6 +279,7 @@ function extractContactLabel(
   event: MetaWebhookEventRow,
   rawPayload: Record<string, unknown>,
   connection?: MetaConnectionRow,
+  resolvedNames?: Record<string, string>,
 ) {
   const directLabel = asString(rawPayload.contactLabel);
   if (directLabel) {
@@ -297,16 +299,29 @@ function extractContactLabel(
     }
   }
 
+  const direction = asString(rawPayload.direction);
+  const isOutbound = direction === "outbound" || event.eventType === "outbound";
+
   const payload = extractPageOrInstagramEntry(rawPayload);
   const sender = asRecord(payload.sender);
+
+  const customerId = isOutbound
+    ? (asString(rawPayload.recipientId) ?? event.sourceId)
+    : asString(sender.id);
+
   const senderName = asString(sender.name);
-  if (senderName) {
+  if (senderName && !isOutbound) {
     return senderName;
   }
 
-  const senderId = asString(sender.id);
-  if (senderId) {
-    return `Contact ${shortId(senderId)}`;
+  if (customerId) {
+    if (resolvedNames) {
+      const resolved = resolvedNames[`${event.platform}:${customerId}`];
+      if (resolved) {
+        return resolved;
+      }
+    }
+    return `Contact ${shortId(customerId)}`;
   }
 
   return defaultAccountLabel(connection);
@@ -376,6 +391,7 @@ function sortNewestFirst(
 export function buildInboxData({
   events,
   connections,
+  resolvedNames,
 }: BuildInboxDataInput): BuildInboxDataResult {
   const threadsById = new Map<string, InboxThread>();
   const activity: InboxActivityItem[] = [];
@@ -400,7 +416,7 @@ export function buildInboxData({
         event.platform as MetaInboxPlatform,
       );
       const replyTargetId = extractReplyTargetId(event, rawPayload) ?? "";
-      const contactLabel = extractContactLabel(event, rawPayload, connection);
+      const contactLabel = extractContactLabel(event, rawPayload, connection, resolvedNames);
       const messageText = extractMessageText(event, rawPayload);
       const direction =
         asString(rawPayload.direction) === "outbound" ? "outbound" : "inbound";

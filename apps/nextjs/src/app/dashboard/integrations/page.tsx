@@ -25,6 +25,7 @@ export default async function IntegrationsPage() {
     .from(metaConnection)
     .where(eq(metaConnection.userId, session.user.id));
 
+
   const fbConnection = connections.find(
     (c) => c.platform === "facebook_page",
   );
