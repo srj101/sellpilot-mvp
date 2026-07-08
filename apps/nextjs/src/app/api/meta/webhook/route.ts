@@ -5,30 +5,48 @@ import { db } from "@acme/db/client";
 import { metaConnection, metaWebhookEvent } from "@acme/db/schema";
 
 import { env } from "~/env";
+import { triggerInboxBroadcast } from "~/lib/inbox-broadcast";
 import { sendMetaInboxReply } from "~/lib/meta";
 import {
   normalizeMetaWebhookPayload,
   verifyMetaWebhookSignature,
 } from "~/lib/meta-webhook";
-import { triggerInboxBroadcast } from "~/lib/inbox-broadcast";
 
 export const runtime = "nodejs";
 
-function isInboundCustomerMessage(event: { platform: string; eventType: string; rawPayload: Record<string, unknown> }) {
-  const isMsg = ["message", "messages", "quick_reply", "postback"].includes(event.eventType);
+function isInboundCustomerMessage(event: {
+  platform: string;
+  eventType: string;
+  rawPayload: Record<string, unknown>;
+}) {
+  const isMsg = ["message", "messages", "quick_reply", "postback"].includes(
+    event.eventType,
+  );
   if (!isMsg) return false;
 
   const rawPayload = event.rawPayload;
-  
+
   if (rawPayload.direction === "outbound") return false;
 
   if (event.platform === "facebook_page" || event.platform === "instagram") {
     const entry = Array.isArray(rawPayload.entry) ? rawPayload.entry : [];
-    const firstEntry = typeof entry[0] === "object" && entry[0] !== null ? entry[0] as Record<string, unknown> : {};
-    const messaging = Array.isArray(firstEntry.messaging) ? firstEntry.messaging : [];
-    const firstMessaging = typeof messaging[0] === "object" && messaging[0] !== null ? messaging[0] as Record<string, unknown> : {};
-    const message = typeof firstMessaging.message === "object" && firstMessaging.message !== null ? firstMessaging.message as Record<string, unknown> : {};
-    
+    const firstEntry =
+      typeof entry[0] === "object" && entry[0] !== null
+        ? (entry[0] as Record<string, unknown>)
+        : {};
+    const messaging = Array.isArray(firstEntry.messaging)
+      ? firstEntry.messaging
+      : [];
+    const firstMessaging =
+      typeof messaging[0] === "object" && messaging[0] !== null
+        ? (messaging[0] as Record<string, unknown>)
+        : {};
+    const message =
+      typeof firstMessaging.message === "object" &&
+      firstMessaging.message !== null
+        ? (firstMessaging.message as Record<string, unknown>)
+        : {};
+
     if (message.is_echo === true) {
       return false;
     }
@@ -37,55 +55,125 @@ function isInboundCustomerMessage(event: { platform: string; eventType: string; 
   return true;
 }
 
-function getRecipientId(event: { platform: string; eventType: string; rawPayload: Record<string, unknown> }, sourceId?: string) {
+function getRecipientId(
+  event: {
+    platform: string;
+    eventType: string;
+    rawPayload: Record<string, unknown>;
+  },
+  sourceId?: string,
+) {
   const rawPayload = event.rawPayload;
   if (event.platform === "whatsapp") {
     const entry = Array.isArray(rawPayload.entry) ? rawPayload.entry : [];
-    const firstEntry = typeof entry[0] === "object" && entry[0] !== null ? entry[0] as Record<string, unknown> : {};
+    const firstEntry =
+      typeof entry[0] === "object" && entry[0] !== null
+        ? (entry[0] as Record<string, unknown>)
+        : {};
     const changes = Array.isArray(firstEntry.changes) ? firstEntry.changes : [];
-    const firstChange = typeof changes[0] === "object" && changes[0] !== null ? changes[0] as Record<string, unknown> : {};
-    const value = typeof firstChange.value === "object" && firstChange.value !== null ? firstChange.value as Record<string, unknown> : {};
+    const firstChange =
+      typeof changes[0] === "object" && changes[0] !== null
+        ? (changes[0] as Record<string, unknown>)
+        : {};
+    const value =
+      typeof firstChange.value === "object" && firstChange.value !== null
+        ? (firstChange.value as Record<string, unknown>)
+        : {};
     const messages = Array.isArray(value.messages) ? value.messages : [];
-    const firstMessage = typeof messages[0] === "object" && messages[0] !== null ? messages[0] as Record<string, unknown> : {};
+    const firstMessage =
+      typeof messages[0] === "object" && messages[0] !== null
+        ? (messages[0] as Record<string, unknown>)
+        : {};
     const contacts = Array.isArray(value.contacts) ? value.contacts : [];
-    const contact = typeof contacts[0] === "object" && contacts[0] !== null ? contacts[0] as Record<string, unknown> : {};
+    const contact =
+      typeof contacts[0] === "object" && contacts[0] !== null
+        ? (contacts[0] as Record<string, unknown>)
+        : {};
 
     return (
-      (firstMessage.from as string) ?? (contact.wa_id as string) ?? (value.from as string) ?? sourceId
+      (firstMessage.from as string) ??
+      (contact.wa_id as string) ??
+      (value.from as string) ??
+      sourceId
     );
   }
 
   const entry = Array.isArray(rawPayload.entry) ? rawPayload.entry : [];
-  const firstEntry = typeof entry[0] === "object" && entry[0] !== null ? entry[0] as Record<string, unknown> : {};
-  const messaging = Array.isArray(firstEntry.messaging) ? firstEntry.messaging : [];
-  const firstMessaging = typeof messaging[0] === "object" && messaging[0] !== null ? messaging[0] as Record<string, unknown> : {};
-  const sender = typeof firstMessaging.sender === "object" && firstMessaging.sender !== null ? firstMessaging.sender as Record<string, unknown> : {};
+  const firstEntry =
+    typeof entry[0] === "object" && entry[0] !== null
+      ? (entry[0] as Record<string, unknown>)
+      : {};
+  const messaging = Array.isArray(firstEntry.messaging)
+    ? firstEntry.messaging
+    : [];
+  const firstMessaging =
+    typeof messaging[0] === "object" && messaging[0] !== null
+      ? (messaging[0] as Record<string, unknown>)
+      : {};
+  const sender =
+    typeof firstMessaging.sender === "object" && firstMessaging.sender !== null
+      ? (firstMessaging.sender as Record<string, unknown>)
+      : {};
   return (sender.id as string) ?? sourceId;
 }
 
-function getThreadId(event: { platform: string; platformAccountId: string; rawPayload: Record<string, unknown> }, sourceId?: string) {
+function getThreadId(
+  event: {
+    platform: string;
+    platformAccountId: string;
+    rawPayload: Record<string, unknown>;
+  },
+  sourceId?: string,
+) {
   const rawPayload = event.rawPayload;
   if (event.platform === "whatsapp") {
     const entry = Array.isArray(rawPayload.entry) ? rawPayload.entry : [];
-    const firstEntry = typeof entry[0] === "object" && entry[0] !== null ? entry[0] as Record<string, unknown> : {};
+    const firstEntry =
+      typeof entry[0] === "object" && entry[0] !== null
+        ? (entry[0] as Record<string, unknown>)
+        : {};
     const changes = Array.isArray(firstEntry.changes) ? firstEntry.changes : [];
-    const firstChange = typeof changes[0] === "object" && changes[0] !== null ? changes[0] as Record<string, unknown> : {};
-    const value = typeof firstChange.value === "object" && firstChange.value !== null ? firstChange.value as Record<string, unknown> : {};
+    const firstChange =
+      typeof changes[0] === "object" && changes[0] !== null
+        ? (changes[0] as Record<string, unknown>)
+        : {};
+    const value =
+      typeof firstChange.value === "object" && firstChange.value !== null
+        ? (firstChange.value as Record<string, unknown>)
+        : {};
     const messages = Array.isArray(value.messages) ? value.messages : [];
-    const firstMessage = typeof messages[0] === "object" && messages[0] !== null ? messages[0] as Record<string, unknown> : {};
+    const firstMessage =
+      typeof messages[0] === "object" && messages[0] !== null
+        ? (messages[0] as Record<string, unknown>)
+        : {};
     const contacts = Array.isArray(value.contacts) ? value.contacts : [];
-    const contact = typeof contacts[0] === "object" && contacts[0] !== null ? contacts[0] as Record<string, unknown> : {};
-    const contactId = (firstMessage.from as string) ?? (contact.wa_id as string) ?? sourceId;
+    const contact =
+      typeof contacts[0] === "object" && contacts[0] !== null
+        ? (contacts[0] as Record<string, unknown>)
+        : {};
+    const contactId =
+      (firstMessage.from as string) ?? (contact.wa_id as string) ?? sourceId;
     if (contactId) {
       return `whatsapp:${contactId}`;
     }
   }
 
   const entry = Array.isArray(rawPayload.entry) ? rawPayload.entry : [];
-  const firstEntry = typeof entry[0] === "object" && entry[0] !== null ? entry[0] as Record<string, unknown> : {};
-  const messaging = Array.isArray(firstEntry.messaging) ? firstEntry.messaging : [];
-  const firstMessaging = typeof messaging[0] === "object" && messaging[0] !== null ? messaging[0] as Record<string, unknown> : {};
-  const sender = typeof firstMessaging.sender === "object" && firstMessaging.sender !== null ? firstMessaging.sender as Record<string, unknown> : {};
+  const firstEntry =
+    typeof entry[0] === "object" && entry[0] !== null
+      ? (entry[0] as Record<string, unknown>)
+      : {};
+  const messaging = Array.isArray(firstEntry.messaging)
+    ? firstEntry.messaging
+    : [];
+  const firstMessaging =
+    typeof messaging[0] === "object" && messaging[0] !== null
+      ? (messaging[0] as Record<string, unknown>)
+      : {};
+  const sender =
+    typeof firstMessaging.sender === "object" && firstMessaging.sender !== null
+      ? (firstMessaging.sender as Record<string, unknown>)
+      : {};
   const contactId = (sender.id as string) ?? sourceId;
   if (contactId) {
     return `${event.platform}:${contactId}`;
@@ -93,10 +181,7 @@ function getThreadId(event: { platform: string; platformAccountId: string; rawPa
   return null;
 }
 
-async function handleAutoReply(
-  event: any,
-  connection: any
-) {
+async function handleAutoReply(event: any, connection: any) {
   try {
     const accessToken =
       connection.accessToken ??
@@ -104,7 +189,10 @@ async function handleAutoReply(
       connection.whatsappAccessToken;
 
     if (!accessToken) {
-      console.warn("[Webhook AutoReply] Access token missing for connection:", connection.id);
+      console.warn(
+        "[Webhook AutoReply] Access token missing for connection:",
+        connection.id,
+      );
       return;
     }
 
@@ -112,13 +200,63 @@ async function handleAutoReply(
     const threadId = getThreadId(event, event.sourceId);
 
     if (!recipientId || !threadId) {
-      console.warn("[Webhook AutoReply] Could not resolve recipientId or threadId");
+      console.warn(
+        "[Webhook AutoReply] Could not resolve recipientId or threadId",
+      );
       return;
     }
 
-    const messageText = "AUTOMATED_RESPONSE FROM SellPIlot";
+    // Extract a reasonable incoming message text to seed the AI
+    const raw = event.rawPayload ?? {};
+    let incomingText: string | null = null;
 
-    console.log(`[Webhook AutoReply] Sending auto-reply to ${recipientId} via ${event.platform}...`);
+    try {
+      if (event.platform === "whatsapp") {
+        const entry = Array.isArray(raw.entry) ? raw.entry[0] : raw.entry;
+        const value = entry?.changes?.[0]?.value ?? entry?.value ?? raw;
+        incomingText =
+          value?.messages?.[0]?.text?.body ??
+          value?.messages?.[0]?.text ??
+          null;
+      } else {
+        const entry = Array.isArray(raw.entry) ? raw.entry[0] : raw.entry;
+        const messaging = Array.isArray(entry?.messaging)
+          ? entry.messaging[0]
+          : (entry?.messaging ?? entry);
+        incomingText =
+          messaging?.message?.text?.body ??
+          messaging?.message?.text ??
+          messaging?.message?.text?.text ??
+          messaging?.postback?.payload ??
+          messaging?.message?.quick_reply?.payload ??
+          null;
+      }
+    } catch (err) {
+      incomingText = null;
+    }
+
+    const userMessage =
+      typeof incomingText === "string" && incomingText.trim().length > 0
+        ? incomingText
+        : "";
+
+    // Ask the AI to produce a reply
+    let aiReply = "";
+    try {
+      const { runChat } = await import("~/lib/ai");
+      aiReply = await runChat(userMessage, connection.userId, threadId);
+    } catch (e) {
+      console.error(
+        "[Webhook AutoReply] AI runChat failed, falling back to neutral reply:",
+        e,
+      );
+      aiReply =
+        "Sorry — I'm having trouble processing your message right now. We'll get back to you shortly.";
+    }
+
+    console.log(
+      `[Webhook AutoReply] Sending AI-reply to ${recipientId} via ${event.platform}...`,
+    );
     const sent = await sendMetaInboxReply({
       platform: event.platform,
       accessToken,
@@ -129,11 +267,11 @@ async function handleAutoReply(
             ? (connection.whatsappPhoneNumberId ?? event.platformAccountId)
             : event.platformAccountId,
       recipientId,
-      text: messageText,
+      text: aiReply,
     });
 
     await db.insert(metaWebhookEvent).values({
-      dedupeKey: `outbound:autoreply:${threadId}:${Date.now()}:${crypto.randomUUID()}`,
+      dedupeKey: `outbound:aireply:${threadId}:${Date.now()}:${crypto.randomUUID()}`,
       platform: event.platform,
       object: event.object,
       eventType: "outbound",
@@ -147,14 +285,14 @@ async function handleAutoReply(
         recipientId,
         accountId: event.platformAccountId,
         platform: event.platform,
-        text: messageText,
+        text: aiReply,
         response: sent.raw,
       },
       headers: {},
       status: "sent",
       processedAt: new Date(),
     });
-    console.log("[Webhook AutoReply] Auto-reply successfully sent and logged!");
+    console.log("[Webhook AutoReply] AI-reply successfully sent and logged!");
   } catch (error) {
     console.error("[Webhook AutoReply] Error handling auto reply:", error);
   }
@@ -318,7 +456,13 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  await db.insert(metaWebhookEvent).values(rows).onConflictDoNothing();
+  const inserted = await db
+    .insert(metaWebhookEvent)
+    .values(rows)
+    .onConflictDoNothing()
+    .returning();
+
+  const insertedDedupeKeys = new Set(inserted.map((r) => r.dedupeKey));
 
   // Trigger inbox updates over SSE for all affected users
   const userIds = new Set<string>();
@@ -333,6 +477,10 @@ export async function POST(req: NextRequest) {
 
   // Send auto-replies for inbound messages
   for (const event of normalizedEvents) {
+    if (!insertedDedupeKeys.has(event.dedupeKey)) {
+      console.log("[Webhook] Duplicate event ignored for auto-reply:", event.dedupeKey);
+      continue;
+    }
     const connectionRows = await resolveMetaConnection(event);
     const connection = connectionRows[0];
 

@@ -116,15 +116,18 @@ export async function getQrCode(sessionId: string): Promise<{ qrCode: string | n
     },
   });
 
-  if (res.status === 400) {
-    const data = await res.json().catch(() => ({}));
-    if (data.message?.includes("not ready")) {
-      return { qrCode: null, status: "initializing" };
-    }
-  }
-
   if (!res.ok) {
-    const errorText = await res.text();
+    const errorText = await res.text().catch(() => "");
+
+    if (res.status === 400) {
+      try {
+        const data = JSON.parse(errorText) as { message?: string };
+        if (data.message?.includes("not ready")) {
+          return { qrCode: null, status: "initializing" };
+        }
+      } catch {}
+    }
+
     console.error(`[OpenWA API Error] ${res.status}: ${errorText}`);
     throw new Error(errorText || `API error ${res.status}`);
   }

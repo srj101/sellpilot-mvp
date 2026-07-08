@@ -34,8 +34,15 @@ export const env = createEnv({
     CHROMA_URL: z.string().default("http://localhost:8000"),
     CHROMA_AUTH_TOKEN: z.string().optional(),
     REDIS_URL: z.string().default("redis://localhost:6379"),
+    OPENAI_API_KEY: z.string().optional(),
+    OPENAI_BASE_URL: z.string().url().optional(),
+    OPENAI_MODEL: z.string().default("openai/gpt-oss-120b"),
     OPENWA_URL: z.string().default("http://localhost:2785"),
-    OPENWA_API_KEY: z.string().default("owa_k1_302b9cd435a44a92c4c1190b123a586d1f29e9c94572e2ce20e5048e975ec063"),
+    OPENWA_API_KEY: z
+      .string()
+      .default(
+        "owa_k1_302b9cd435a44a92c4c1190b123a586d1f29e9c94572e2ce20e5048e975ec063",
+      ),
   },
 
   /**

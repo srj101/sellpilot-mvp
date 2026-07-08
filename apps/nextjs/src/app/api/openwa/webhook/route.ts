@@ -143,7 +143,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const isOutbound = data.fromMe === true || event === "message.sent";
+  const isOutbound =
+    data.fromMe === true ||
+    data.fromMe === "true" ||
+    data.key?.fromMe === true ||
+    data.key?.fromMe === "true" ||
+    data.id?.fromMe === true ||
+    data.sender?.isMe === true ||
+    data.isMe === true ||
+    data.self === true ||
+    data.self === "true" ||
+    event === "message.sent" ||
+    event === "outbound";
   const timestamp = data.timestamp
     ? new Date(data.timestamp * 1000)
     : new Date();
@@ -206,7 +217,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Insert normalized event into DB
-  await db
+  const inserted = await db
     .insert(metaWebhookEvent)
     .values({
       dedupeKey: `openwa:${sessionId}:${data.id}`,
@@ -222,12 +233,18 @@ export async function POST(req: NextRequest) {
       receivedAt: timestamp,
       processedAt: new Date(),
     })
-    .onConflictDoNothing();
+    .onConflictDoNothing()
+    .returning();
+
+  if (inserted.length === 0) {
+    console.log("[OpenWA Webhook] Duplicate message ignored:", data.id);
+    return new NextResponse(null, { status: 200 });
+  }
 
   // Trigger inbox updates over SSE for this user
   void triggerInboxBroadcast(userId);
 
-  // Trigger auto-reply for incoming messages
+  // Trigger AI-driven reply for incoming messages
   if (!isOutbound) {
     const accessToken =
       connection.accessToken ??
@@ -235,26 +252,44 @@ export async function POST(req: NextRequest) {
       connection.whatsappAccessToken;
 
     if (accessToken) {
-      const messageText =
-        "Automated reply from SellPilot , what do you want to know?";
-      console.log(
-        `[OpenWA Webhook AutoReply] Sending auto-reply to ${contactPhone}...`,
-      );
-
       // Run asynchronously so we don't block the webhook response
       void (async () => {
         try {
-          const sent = await sendMetaInboxReply({
-            platform: "whatsapp",
-            accessToken,
-            accountId:
-              connection.whatsappPhoneNumberId ?? connection.platformAccountId,
-            recipientId: contactPhone,
-            text: messageText,
-          });
+          const { runChat } = await import("~/lib/ai");
+          const userMessage = data.body || "";
+          let aiReply = "";
+          try {
+            const threadId = `whatsapp:${contactPhone}`;
+            aiReply = await runChat(userMessage, userId, threadId);
+          } catch (e) {
+            console.error(
+              "[OpenWA Webhook AIReply] runChat failed, using neutral fallback:",
+              e,
+            );
+            aiReply =
+              "Sorry — I'm having trouble processing your message right now. We'll get back to you shortly.";
+          }
+
+          let sent: any = {};
+          try {
+            sent = await sendMetaInboxReply({
+              platform: "whatsapp",
+              accessToken,
+              accountId:
+                connection.whatsappPhoneNumberId ??
+                connection.platformAccountId,
+              recipientId: contactPhone,
+              text: aiReply,
+            });
+          } catch (sendErr) {
+            console.error(
+              "[OpenWA Webhook AIReply] sendMetaInboxReply failed:",
+              sendErr,
+            );
+          }
 
           await db.insert(metaWebhookEvent).values({
-            dedupeKey: `outbound:autoreply:${contactPhone}:${Date.now()}:${crypto.randomUUID()}`,
+            dedupeKey: `outbound:aireply:${contactPhone}:${Date.now()}:${crypto.randomUUID()}`,
             platform: "whatsapp",
             object: "whatsapp_business_account",
             eventType: "outbound",
@@ -268,21 +303,18 @@ export async function POST(req: NextRequest) {
               recipientId: contactPhone,
               accountId: connection.platformAccountId,
               platform: "whatsapp",
-              text: messageText,
+              text: aiReply,
               response: sent.raw,
             },
             status: "sent",
             processedAt: new Date(),
           });
 
-          console.log(
-            "[OpenWA Webhook AutoReply] Auto-reply successfully sent and logged!",
-          );
-          // Trigger inbox updates again so the reply shows up in the UI
+          // Trigger inbox updates so the reply shows up in the UI
           void triggerInboxBroadcast(userId);
         } catch (error) {
           console.error(
-            "[OpenWA Webhook AutoReply] Error handling auto reply:",
+            "[OpenWA Webhook AIReply] Error handling AI reply:",
             error,
           );
         }

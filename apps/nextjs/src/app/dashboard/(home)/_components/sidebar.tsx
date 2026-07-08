@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  BarChart3,
   CreditCard,
   Inbox,
   LayoutDashboard,
@@ -12,6 +11,7 @@ import {
   LogOut,
   Menu,
   Package,
+  Percent,
   Settings,
   ShoppingBag,
 } from "lucide-react";
@@ -35,8 +35,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/inbox", icon: Inbox, label: "Inbox" },
   { href: "/dashboard/products", icon: ShoppingBag, label: "Products" },
   { href: "/dashboard/orders", icon: Package, label: "Orders" },
+  { href: "/dashboard/offers", icon: Percent, label: "Offers" },
   { href: "/dashboard/payments", icon: CreditCard, label: "Payments" },
-  { href: "/dashboard/analytics", icon: BarChart3, label: "Analytics" },
   { href: "/dashboard/integrations", icon: Link2, label: "Integrations" },
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
