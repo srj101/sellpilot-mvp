@@ -4,6 +4,13 @@ import { z } from "zod/v4";
 
 import { authEnv } from "@acme/auth/env";
 
+console.log("ENV VALIDATION DEBUG (nextjs):", {
+  CI: process.env.CI,
+  VERCEL: process.env.VERCEL,
+  SKIP_ENV_VALIDATION: process.env.SKIP_ENV_VALIDATION,
+  npm_lifecycle_event: process.env.npm_lifecycle_event,
+});
+
 export const env = createEnv({
   extends: [authEnv(), vercel()],
   shared: {
