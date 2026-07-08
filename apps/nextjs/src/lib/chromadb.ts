@@ -3,10 +3,11 @@ import { getImageEmbedding } from "./embeddings";
 import { env } from "~/env";
 
 const getChromaConfig = () => {
-  let urlString = env.CHROMA_URL;
-  if (!urlString.startsWith("http://") && !urlString.startsWith("https://")) {
-    urlString = "http://" + urlString;
-  }
+  const raw = env.CHROMA_URL ?? "";
+  const urlString =
+    raw.startsWith("http://") || raw.startsWith("https://")
+      ? raw
+      : "http://" + raw;
   const url = new URL(urlString);
   return {
     host: url.hostname,
@@ -15,19 +16,24 @@ const getChromaConfig = () => {
   };
 };
 
-const { host, port, ssl } = getChromaConfig();
-
-const client = new ChromaClient({
-  host,
-  port,
-  ssl,
-  auth: env.CHROMA_AUTH_TOKEN
-    ? {
-        provider: "token",
-        credentials: env.CHROMA_AUTH_TOKEN,
-      }
-    : undefined,
-});
+// Lazy so build-time module evaluation never touches env-required code paths.
+let _client: ChromaClient | null = null;
+function getClient(): ChromaClient {
+  if (_client) return _client;
+  const { host, port, ssl } = getChromaConfig();
+  _client = new ChromaClient({
+    host,
+    port,
+    ssl,
+    auth: env.CHROMA_AUTH_TOKEN
+      ? {
+          provider: "token",
+          credentials: env.CHROMA_AUTH_TOKEN,
+        }
+      : undefined,
+  });
+  return _client;
+}
 
 const COLLECTION_NAME = "product_images";
 
@@ -65,7 +71,7 @@ export async function getOrCreateCollection() {
 
   try {
     const collection = await withTimeout(
-      client.getOrCreateCollection({
+      getClient().getOrCreateCollection({
         name: COLLECTION_NAME,
         embeddingFunction: dummyEmbeddingFunction,
       }),
