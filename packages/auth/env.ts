@@ -16,6 +16,9 @@ export function authEnv() {
     },
     runtimeEnv: process.env,
     skipValidation:
-      !!process.env.CI || process.env.npm_lifecycle_event === "lint",
+      !!process.env.CI ||
+      !!process.env.SKIP_ENV_VALIDATION ||
+      !!process.env.VERCEL ||
+      process.env.npm_lifecycle_event === "lint",
   });
 }
