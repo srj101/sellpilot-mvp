@@ -36,7 +36,7 @@ export const env = createEnv({
     REDIS_URL: z.string().default("redis://localhost:6379"),
     OPENAI_API_KEY: z.string().optional(),
     OPENAI_BASE_URL: z.string().url().optional(),
-    OPENAI_MODEL: z.string().default("openai/gpt-oss-120b"),
+    OPENAI_MODEL: z.string().default("meta-llama/llama-prompt-guard-2-86m"),
     OPENWA_URL: z.string().default("http://localhost:2785"),
     OPENWA_API_KEY: z
       .string()
