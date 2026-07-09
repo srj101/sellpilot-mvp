@@ -71,12 +71,11 @@ function getMessagingEventType(
   const quickReply = asRecord(message.quick_reply);
   const read = asRecord(messagingEvent.read);
 
-  if (asString(message.text)) {
+  if (messagingEvent.message) {
+    if (asString(quickReply.payload)) {
+      return "quick_reply";
+    }
     return "message";
-  }
-
-  if (asString(quickReply.payload)) {
-    return "quick_reply";
   }
 
   if (asString(postback.payload)) {

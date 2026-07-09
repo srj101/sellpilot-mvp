@@ -24,6 +24,7 @@ export default function WhatsAppConnectPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isMounted = useRef(true);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -34,10 +35,12 @@ export default function WhatsAppConnectPage() {
 
   // Boot the session and enter QR phase
   const initSession = useCallback(async () => {
+    if (!isMounted.current) return;
     setStep("starting");
     setError(null);
 
     const result = await startOpenWASession();
+    if (!isMounted.current) return;
     if (!result.ok) {
       setError(result.error);
       setStep("error");
@@ -49,11 +52,21 @@ export default function WhatsAppConnectPage() {
 
     // First, try to fetch the QR immediately
     const qr = await fetchOpenWAQr();
+    if (!isMounted.current) return;
     if (qr.ok) setQrCode(qr.qrCode);
+
+    // Stop any existing polling before starting a new one
+    stopPolling();
 
     // Then poll status + QR every 3 seconds
     pollRef.current = setInterval(async () => {
+      if (!isMounted.current) {
+        stopPolling();
+        return;
+      }
+
       const status = await checkOpenWAStatus();
+      if (!isMounted.current) return;
       if (!status.ok) return;
 
       if (status.status === "ready") {
@@ -65,6 +78,7 @@ export default function WhatsAppConnectPage() {
         // Auto-save the connection
         setSaving(true);
         const save = await saveOpenWAConnection();
+        if (!isMounted.current) return;
         setSaving(false);
         if (!save.ok) {
           setError(save.error);
@@ -88,16 +102,20 @@ export default function WhatsAppConnectPage() {
       // Still in qr_ready — refresh QR
       if (status.status === "qr_ready") {
         const qr = await fetchOpenWAQr();
+        if (!isMounted.current) return;
         if (qr.ok) setQrCode(qr.qrCode);
       }
     }, 3000);
   }, [stopPolling]);
 
   useEffect(() => {
+    isMounted.current = true;
     void initSession();
-    return () => stopPolling();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => {
+      isMounted.current = false;
+      stopPolling();
+    };
+  }, [initSession, stopPolling]);
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">

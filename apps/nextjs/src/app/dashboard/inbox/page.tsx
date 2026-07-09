@@ -155,11 +155,13 @@ function MessageBubble({
   authorLabel,
   text,
   timestamp,
+  imageUrl,
 }: {
   direction: "inbound" | "outbound";
   authorLabel: string;
   text: string;
   timestamp: Date;
+  imageUrl?: string;
 }) {
   const outbound = direction === "outbound";
 
@@ -175,13 +177,20 @@ function MessageBubble({
       </div>
       <div
         className={cn(
-          "rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm",
+          "rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm flex flex-col gap-2",
           outbound
             ? "bg-primary text-primary-foreground rounded-br-md"
             : "bg-muted rounded-bl-md text-foreground",
         )}
       >
-        {text}
+        {imageUrl && (
+          <img
+            src={imageUrl}
+            alt="Sent attachment"
+            className="max-w-[240px] max-h-[240px] rounded-lg object-contain border bg-background/50 shadow-sm"
+          />
+        )}
+        {text && (text !== "Sent an image" || !imageUrl) && <div>{text}</div>}
       </div>
       <div className="text-muted-foreground text-[11px]">
         {formatDetailedTime(timestamp)}
@@ -534,6 +543,7 @@ export default async function InboxPage(props: {
                           authorLabel={message.authorLabel}
                           text={message.text}
                           timestamp={message.timestamp}
+                          imageUrl={message.imageUrl}
                         />
                       ))}
                       <ScrollToBottom />

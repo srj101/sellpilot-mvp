@@ -18,6 +18,7 @@ export interface InboxMessage {
   replyTargetId?: string;
   sourceId?: string;
   isRead: boolean;
+  imageUrl?: string;
 }
 
 export interface InboxThread {
@@ -363,12 +364,28 @@ function extractMessageText(
   }
 
   if (event.platform === "whatsapp") {
-    return extractTextFromWhatsAppPayload(extractWhatsAppValue(rawPayload));
+    const value = extractWhatsAppValue(rawPayload);
+    const messages = asArray(value.messages);
+    const m = asRecord(messages[0]);
+    if (asString(m.type) === "image") {
+      const img = asRecord(m.image);
+      const caption = asString(img.caption);
+      return caption ?? "Sent an image";
+    }
+    return extractTextFromWhatsAppPayload(value);
   }
 
-  return extractTextFromMessengerPayload(
-    extractPageOrInstagramEntry(rawPayload),
-  );
+  const payload = extractPageOrInstagramEntry(rawPayload);
+  const message = asRecord(payload.message);
+  const attachments = asArray(message.attachments);
+  if (attachments.length > 0) {
+    const firstAttachment = asRecord(attachments[0]);
+    if (asString(firstAttachment.type) === "image") {
+      return "Sent an image";
+    }
+  }
+
+  return extractTextFromMessengerPayload(payload);
 }
 
 function isMessageEvent(event: MetaWebhookEventRow) {
@@ -423,6 +440,30 @@ export function buildInboxData({
       const accountLabel =
         asString(rawPayload.accountLabel) ?? defaultAccountLabel(connection);
 
+      let imageUrl: string | undefined = undefined;
+      if (direction === "inbound") {
+        if (event.platform === "whatsapp") {
+          const val = extractWhatsAppValue(rawPayload);
+          const msgs = asArray(val.messages);
+          const m = asRecord(msgs[0]);
+          if (asString(m.type) === "image") {
+            const img = asRecord(m.image);
+            imageUrl = asString(img.url);
+          }
+        } else {
+          const payload = extractPageOrInstagramEntry(rawPayload);
+          const message = asRecord(payload.message);
+          const attachments = asArray(message.attachments);
+          if (attachments.length > 0) {
+            const firstAttachment = asRecord(attachments[0]);
+            if (asString(firstAttachment.type) === "image") {
+              const attachmentPayload = asRecord(firstAttachment.payload);
+              imageUrl = asString(attachmentPayload.url);
+            }
+          }
+        }
+      }
+
       const message: InboxMessage = {
         id: event.id,
         threadId: threadKey,
@@ -436,6 +477,7 @@ export function buildInboxData({
         replyTargetId,
         sourceId: event.sourceId ?? undefined,
         isRead: event.isRead,
+        imageUrl,
       };
 
       const existingThread = threadsById.get(threadKey);

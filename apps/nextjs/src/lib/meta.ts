@@ -422,6 +422,19 @@ export interface SendMetaInboxReplyInput {
   accountId: string;
   recipientId: string;
   text: string;
+  imageUrl?: string;
+}
+
+async function downloadImage(url: string): Promise<{ buffer: Buffer; contentType: string }> {
+  console.log(`[sendMetaInboxReply] Downloading image from URL: ${url}`);
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Failed to download image: ${res.statusText}`);
+  }
+  const arrayBuffer = await res.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  const contentType = res.headers.get("content-type") || "image/jpeg";
+  return { buffer, contentType };
 }
 
 export async function sendMetaInboxReply({
@@ -430,22 +443,125 @@ export async function sendMetaInboxReply({
   accountId,
   recipientId,
   text,
+  imageUrl,
 }: SendMetaInboxReplyInput): Promise<{ messageId?: string; raw: unknown }> {
   console.log("[sendMetaInboxReply] Parameters:", {
     platform,
     accountId,
     recipientId,
+    imageUrl,
     accessToken: accessToken ? `${accessToken.slice(0, 15)}...` : "missing",
   });
 
   if (platform === "whatsapp") {
     if (accessToken.startsWith("user-")) {
-      const { sendOpenWAText } = await import("./openwa");
-      const response = await sendOpenWAText(accessToken, recipientId, text);
-      return {
-        messageId: response.messageId,
-        raw: response,
-      };
+      if (imageUrl) {
+        try {
+          const { buffer, contentType } = await downloadImage(imageUrl);
+          const base64Data = buffer.toString("base64");
+          const dataUrl = `data:${contentType};base64,${base64Data}`;
+          const { sendOpenWAImage } = await import("./openwa");
+          const response = await sendOpenWAImage(accessToken, recipientId, dataUrl, text);
+          return {
+            messageId: response.messageId,
+            raw: response,
+          };
+        } catch (downloadErr) {
+          console.error("[sendMetaInboxReply] Failed OpenWA image download, falling back to URL sending:", downloadErr);
+          const { sendOpenWAImage } = await import("./openwa");
+          const response = await sendOpenWAImage(accessToken, recipientId, imageUrl, text);
+          return {
+            messageId: response.messageId,
+            raw: response,
+          };
+        }
+      } else {
+        const { sendOpenWAText } = await import("./openwa");
+        const response = await sendOpenWAText(accessToken, recipientId, text);
+        return {
+          messageId: response.messageId,
+          raw: response,
+        };
+      }
+    }
+
+    if (imageUrl) {
+      try {
+        const { buffer, contentType } = await downloadImage(imageUrl);
+        
+        // Step 1: Upload media to WhatsApp media endpoint to get a media ID
+        const uploadForm = new FormData();
+        uploadForm.append("messaging_product", "whatsapp");
+        const uploadBlob = new Blob([new Uint8Array(buffer)], { type: contentType });
+        uploadForm.append("file", uploadBlob, "image.jpg");
+
+        const uploadRes = await fetch(
+          `https://graph.facebook.com/${FB_VERSION}/${accountId}/media`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: uploadForm,
+          }
+        );
+
+        if (!uploadRes.ok) {
+          const errText = await uploadRes.text();
+          throw new Error(`WhatsApp media upload failed: ${uploadRes.status} ${errText}`);
+        }
+
+        const uploadData = (await uploadRes.json()) as { id: string };
+        const mediaId = uploadData.id;
+
+        // Step 2: Send message referencing the media ID
+        const response = await graphPostJson<any>(
+          `/${accountId}/messages`,
+          accessToken,
+          {
+            messaging_product: "whatsapp",
+            recipient_type: "individual",
+            to: recipientId,
+            type: "image",
+            image: {
+              id: mediaId,
+              caption: text || undefined,
+            },
+          },
+        );
+
+        return {
+          messageId:
+            typeof response.messages?.[0]?.id === "string"
+              ? response.messages[0].id
+              : undefined,
+          raw: response,
+        };
+      } catch (err: any) {
+        console.error("[sendMetaInboxReply] WhatsApp media upload failed, falling back to link:", err);
+        // Fallback to sending standard link
+        const response = await graphPostJson<any>(
+          `/${accountId}/messages`,
+          accessToken,
+          {
+            messaging_product: "whatsapp",
+            recipient_type: "individual",
+            to: recipientId,
+            type: "image",
+            image: {
+              link: imageUrl,
+              caption: text || undefined,
+            },
+          },
+        );
+        return {
+          messageId:
+            typeof response.messages?.[0]?.id === "string"
+              ? response.messages[0].id
+              : undefined,
+          raw: response,
+        };
+      }
     }
 
     const response = await graphPostJson<any>(
@@ -471,6 +587,129 @@ export async function sendMetaInboxReply({
     };
   }
 
+  // Messenger / Instagram
+  if (imageUrl) {
+    try {
+      const { buffer, contentType } = await downloadImage(imageUrl);
+
+      const formData = new FormData();
+      formData.append("recipient", JSON.stringify({ id: recipientId }));
+      formData.append(
+        "message",
+        JSON.stringify({
+          attachment: {
+            type: "image",
+            payload: {
+              is_reusable: true,
+            },
+          },
+        })
+      );
+      const blob = new Blob([new Uint8Array(buffer)], { type: contentType });
+      formData.append("filedata", blob, "image.jpg");
+
+      const res = await fetch(
+        `https://graph.facebook.com/${FB_VERSION}/${accountId}/messages`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: formData,
+        }
+      );
+
+      const response = (await res.json()) as any;
+
+      if (!res.ok) {
+        throw new Error(`Meta multipart send failed ${res.status}: ${JSON.stringify(response)}`);
+      }
+
+      // Then send text if any
+      if (text) {
+        try {
+          await graphPostJson<any>(
+            `/${accountId}/messages`,
+            accessToken,
+            {
+              recipient: {
+                id: recipientId,
+              },
+              messaging_type: "RESPONSE",
+              message: {
+                text,
+              },
+            },
+          );
+        } catch (err) {
+          console.error("[sendMetaInboxReply] Failed to send follow up text after image:", err);
+        }
+      }
+
+      return {
+        messageId:
+          typeof response.message_id === "string"
+            ? response.message_id
+            : typeof response.messages?.[0]?.id === "string"
+              ? response.messages[0].id
+              : undefined,
+        raw: response,
+      };
+    } catch (err: any) {
+      console.error("[sendMetaInboxReply] Meta multipart send failed, falling back to link:", err);
+      // Fallback to URL link sending
+      const response = await graphPostJson<any>(
+        `/${accountId}/messages`,
+        accessToken,
+        {
+          recipient: {
+            id: recipientId,
+          },
+          messaging_type: "RESPONSE",
+          message: {
+            attachment: {
+              type: "image",
+              payload: {
+                url: imageUrl,
+                is_reusable: true,
+              },
+            },
+          },
+        },
+      );
+
+      if (text) {
+        try {
+          await graphPostJson<any>(
+            `/${accountId}/messages`,
+            accessToken,
+            {
+              recipient: {
+                id: recipientId,
+              },
+              messaging_type: "RESPONSE",
+              message: {
+                text,
+              },
+            },
+          );
+        } catch (sendErr) {
+          console.error("[sendMetaInboxReply] Failed to send follow up text after image link:", sendErr);
+        }
+      }
+
+      return {
+        messageId:
+          typeof response.message_id === "string"
+            ? response.message_id
+            : typeof response.messages?.[0]?.id === "string"
+              ? response.messages[0].id
+              : undefined,
+        raw: response,
+      };
+    }
+  }
+
   const response = await graphPostJson<any>(
     `/${accountId}/messages`,
     accessToken,
@@ -494,4 +733,19 @@ export async function sendMetaInboxReply({
           : undefined,
     raw: response,
   };
+}
+
+export async function getWhatsAppMediaUrl(
+  mediaId: string,
+  accessToken: string,
+): Promise<string | null> {
+  try {
+    const data = await graphGet<{ url?: string }>(`/${mediaId}`, {
+      access_token: accessToken,
+    });
+    return data.url ?? null;
+  } catch (error) {
+    console.error("[Meta] Failed to get WhatsApp media URL:", error);
+    return null;
+  }
 }

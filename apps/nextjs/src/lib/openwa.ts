@@ -125,11 +125,14 @@ export async function getQrCode(sessionId: string): Promise<{ qrCode: string | n
         if (data.message?.includes("not ready")) {
           return { qrCode: null, status: "initializing" };
         }
+        if (data.message?.includes("not active") || data.message?.includes("Start the session")) {
+          return { qrCode: null, status: "disconnected" };
+        }
       } catch {}
     }
 
     console.error(`[OpenWA API Error] ${res.status}: ${errorText}`);
-    throw new Error(errorText || `API error ${res.status}`);
+    return { qrCode: null, status: "disconnected" };
   }
 
   return res.json() as Promise<{ qrCode: string; status: string }>;
@@ -139,8 +142,31 @@ export async function getQrCode(sessionId: string): Promise<{ qrCode: string | n
  * Retrieve session details and connection status
  */
 export async function getSessionStatus(sessionId: string): Promise<OpenWASession> {
-  const uuid = await resolveSessionId(sessionId);
-  return apiCall<OpenWASession>(`/sessions/${uuid}`);
+  try {
+    const uuid = await resolveSessionId(sessionId);
+    return await apiCall<OpenWASession>(`/sessions/${uuid}`);
+  } catch (err: any) {
+    console.warn(`[OpenWA] Failed to get session status for ${sessionId}:`, err.message);
+
+    const msg = String(err.message || "");
+    if (
+      msg.includes("not active") ||
+      msg.includes("Start the session") ||
+      msg.includes("400") ||
+      msg.includes("API error 400")
+    ) {
+      return {
+        id: sessionId,
+        name: sessionId,
+        status: "disconnected",
+        phone: null,
+        pushName: null,
+        lastError: err.message || "Disconnected",
+      };
+    }
+
+    throw err;
+  }
 }
 
 /**
@@ -154,6 +180,20 @@ export async function deleteSession(sessionId: string): Promise<void> {
       "X-API-Key": API_KEY,
     },
   });
+}
+
+/**
+ * Logout the session from WhatsApp Web (clears saved credentials)
+ */
+export async function logoutSession(sessionId: string): Promise<void> {
+  try {
+    const uuid = await resolveSessionId(sessionId);
+    await apiCall<void>(`/sessions/${uuid}/logout`, {
+      method: "POST",
+    });
+  } catch (err) {
+    console.warn("[OpenWA] Logout session request failed (possibly already logged out):", err);
+  }
 }
 
 /**
@@ -175,6 +215,32 @@ export async function sendOpenWAText(
       body: JSON.stringify({
         chatId,
         text,
+      }),
+    },
+  );
+}
+
+/**
+ * Send a WhatsApp image message
+ * Recipient JID format: "<phone>@c.us"
+ */
+export async function sendOpenWAImage(
+  sessionId: string,
+  to: string,
+  imageUrl: string,
+  caption?: string,
+): Promise<{ messageId: string; timestamp: number }> {
+  const uuid = await resolveSessionId(sessionId);
+  const chatId = to.includes("@") ? to : `${to}@c.us`;
+  return apiCall<{ messageId: string; timestamp: number }>(
+    `/sessions/${uuid}/messages/send-image`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        chatId,
+        file: imageUrl,
+        filename: "image.jpg",
+        caption: caption || "",
       }),
     },
   );

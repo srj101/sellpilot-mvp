@@ -175,6 +175,12 @@ export async function POST(req: NextRequest) {
     // Simulated Meta WhatsApp Cloud API incoming payload
     const senderName =
       data.pushname || data.senderName || data.authorName || contactPhone;
+
+    const isImage = data.type === "image" || (data.mimetype && data.mimetype.startsWith("image/"));
+    const imageUrl = data.body && data.body.startsWith("data:image")
+      ? data.body
+      : (data.clientUrl || data.deprecatedMms3Url || undefined);
+
     rawPayload = {
       entry: [
         {
@@ -198,7 +204,19 @@ export async function POST(req: NextRequest) {
                   },
                 ],
                 messages: [
-                  {
+                  isImage ? {
+                    from: contactPhone,
+                    id: data.id,
+                    timestamp: String(Math.floor(timestamp.getTime() / 1000)),
+                    type: "image",
+                    image: {
+                      mime_type: data.mimetype || "image/jpeg",
+                      sha256: data.sha || "",
+                      url: imageUrl,
+                      id: data.id,
+                      caption: data.caption || "",
+                    },
+                  } : {
                     from: contactPhone,
                     id: data.id,
                     timestamp: String(Math.floor(timestamp.getTime() / 1000)),
@@ -256,11 +274,83 @@ export async function POST(req: NextRequest) {
       void (async () => {
         try {
           const { runChat } = await import("~/lib/ai");
-          const userMessage = data.body || "";
+
+          const isImage = data.type === "image" || (data.mimetype && data.mimetype.startsWith("image/"));
+          const imageUrl = data.body && data.body.startsWith("data:image")
+            ? data.body
+            : (data.clientUrl || data.deprecatedMms3Url || null);
+
+          let imageSearchResultsText = "";
+          if (isImage && imageUrl) {
+            try {
+              const { searchProductsByImage } = await import("~/lib/chromadb");
+              const matches = await searchProductsByImage({
+                userId,
+                imageUrl,
+                limit: 3,
+              });
+
+              if (matches.length > 0) {
+                imageSearchResultsText = `[Customer sent an image. Image search matches found:\n` +
+                  matches.map((m) => `- Product: ${m.productTitle} (ID: ${m.productId}). Similarity distance: ${m.distance.toFixed(4)}`).join("\n") +
+                  `\nUse this context to answer. If a match is close, mention the product name, price, stock, and offer to show images or details. If no good match, politely ask if they want to search for something else.]`;
+              } else {
+                imageSearchResultsText = `[Customer sent an image. No product matches were found in the database. Politely inform them and offer to search manually.]`;
+              }
+            } catch (err) {
+              console.error("[OpenWA Webhook AIReply] Image search failed:", err);
+            }
+          }
+
+          const userMessage = isImage
+            ? (data.caption || "")
+            : (data.body || "");
+          const finalMessage = imageSearchResultsText
+            ? `${imageSearchResultsText}\n\n${userMessage}`.trim()
+            : userMessage;
+
           let aiReply = "";
           try {
             const threadId = `whatsapp:${contactPhone}`;
-            aiReply = await runChat(userMessage, userId, threadId);
+
+            // Send a friendly patience message if AI takes more than 8 seconds
+            let patienceSent = false;
+            const patienceTimer = setTimeout(async () => {
+              patienceSent = true;
+              const patienceMessages = [
+                "Just a moment, I'm looking into this for you...",
+                "Give me a second, I'm checking that for you...",
+                "One moment please, I'm finding the best answer...",
+                "Hold on, I'm pulling up the details for you...",
+              ];
+              const msg = patienceMessages[Math.floor(Math.random() * patienceMessages.length)]!;
+              try {
+                await sendMetaInboxReply({
+                  platform: "whatsapp",
+                  accessToken,
+                  accountId:
+                    connection.whatsappPhoneNumberId ??
+                    connection.platformAccountId,
+                  recipientId: contactPhone,
+                  text: msg,
+                });
+                console.log("[OpenWA Webhook AIReply] Patience message sent");
+              } catch (err) {
+                console.error("[OpenWA Webhook AIReply] Failed to send patience message:", err);
+              }
+            }, 8000);
+
+            aiReply = await runChat(finalMessage, userId, threadId, {
+              platform: "whatsapp",
+              accessToken,
+              accountId:
+                connection.whatsappPhoneNumberId ??
+                connection.platformAccountId,
+              recipientId: contactPhone,
+              connectionId: connection.id,
+            });
+
+            clearTimeout(patienceTimer);
           } catch (e) {
             console.error(
               "[OpenWA Webhook AIReply] runChat failed, using neutral fallback:",

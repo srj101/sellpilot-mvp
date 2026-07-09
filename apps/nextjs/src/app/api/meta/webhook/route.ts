@@ -240,11 +240,106 @@ async function handleAutoReply(event: any, connection: any) {
         ? incomingText
         : "";
 
+    // Extract if there is an image URL
+    let imageSearchQueryUrl: string | null = null;
+    try {
+      if (event.platform === "whatsapp") {
+        const entry = Array.isArray(raw.entry) ? raw.entry[0] : raw.entry;
+        const value = entry?.changes?.[0]?.value ?? entry?.value ?? raw;
+        const messages = Array.isArray(value?.messages) ? value.messages : [];
+        if (messages[0]?.type === "image") {
+          imageSearchQueryUrl = messages[0].image?.url || null;
+        }
+      } else {
+        const entry = Array.isArray(raw.entry) ? raw.entry[0] : raw.entry;
+        const messaging = Array.isArray(entry?.messaging)
+          ? entry.messaging[0]
+          : (entry?.messaging ?? entry);
+        const attachments = Array.isArray(messaging?.message?.attachments)
+          ? messaging.message.attachments
+          : [];
+        if (attachments[0]?.type === "image") {
+          imageSearchQueryUrl = attachments[0].payload?.url || null;
+        }
+      }
+    } catch (err) {
+      imageSearchQueryUrl = null;
+    }
+
+    let imageSearchResultsText = "";
+    if (imageSearchQueryUrl) {
+      try {
+        const { searchProductsByImage } = await import("~/lib/chromadb");
+        const matches = await searchProductsByImage({
+          userId: connection.userId,
+          imageUrl: imageSearchQueryUrl,
+          limit: 3,
+        });
+
+        if (matches.length > 0) {
+          imageSearchResultsText = `[Customer sent an image. Image search matches found:\n` +
+            matches.map((m) => `- Product: ${m.productTitle} (ID: ${m.productId}). Similarity distance: ${m.distance.toFixed(4)}`).join("\n") +
+            `\nUse this context to answer. If a match is close, mention the product name, price, stock, and offer to show images or details. If no good match, politely ask if they want to search for something else.]`;
+        } else {
+          imageSearchResultsText = `[Customer sent an image. No product matches were found in the database. Politely inform them and offer to search manually.]`;
+        }
+      } catch (err) {
+        console.error("[Webhook AutoReply] Image search failed:", err);
+      }
+    }
+
     // Ask the AI to produce a reply
     let aiReply = "";
     try {
       const { runChat } = await import("~/lib/ai");
-      aiReply = await runChat(userMessage, connection.userId, threadId);
+      const finalMessage = imageSearchResultsText
+        ? `${imageSearchResultsText}\n\n${userMessage}`.trim()
+        : userMessage;
+
+      // Send a friendly patience message if AI takes more than 8 seconds
+      let patienceSent = false;
+      const patienceTimer = setTimeout(async () => {
+        patienceSent = true;
+        const patienceMessages = [
+          "Just a moment, I'm looking into this for you...",
+          "Give me a second, I'm checking that for you...",
+          "One moment please, I'm finding the best answer...",
+          "Hold on, I'm pulling up the details for you...",
+        ];
+        const msg = patienceMessages[Math.floor(Math.random() * patienceMessages.length)]!;
+        try {
+          await sendMetaInboxReply({
+            platform: event.platform,
+            accessToken,
+            accountId:
+              event.platform === "instagram"
+                ? (connection.facebookPageId ?? event.platformAccountId)
+                : event.platform === "whatsapp"
+                  ? (connection.whatsappPhoneNumberId ?? event.platformAccountId)
+                  : event.platformAccountId,
+            recipientId,
+            text: msg,
+          });
+          console.log("[Webhook AutoReply] Patience message sent");
+        } catch (err) {
+          console.error("[Webhook AutoReply] Failed to send patience message:", err);
+        }
+      }, 8000);
+
+      aiReply = await runChat(finalMessage, connection.userId, threadId, {
+        platform: event.platform,
+        accessToken,
+        accountId:
+          event.platform === "instagram"
+            ? (connection.facebookPageId ?? event.platformAccountId)
+            : event.platform === "whatsapp"
+              ? (connection.whatsappPhoneNumberId ?? event.platformAccountId)
+              : event.platformAccountId,
+        recipientId,
+        connectionId: connection.id,
+      });
+
+      clearTimeout(patienceTimer);
     } catch (e) {
       console.error(
         "[Webhook AutoReply] AI runChat failed, falling back to neutral reply:",

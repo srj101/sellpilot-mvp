@@ -11,6 +11,7 @@ import {
   getQrCode,
   getSessionStatus,
   deleteSession,
+  logoutSession,
   registerOpenWAWebhook,
 } from "~/lib/openwa";
 import { env } from "~/env";
@@ -203,6 +204,13 @@ export async function disconnectOpenWA(): Promise<
   const name = sessionName(session.user.id);
 
   try {
+    // Logout from WhatsApp Web client (clears browser profile storage)
+    try {
+      await logoutSession(name);
+    } catch {
+      // ignore
+    }
+
     // Stop the OpenWA session (best-effort)
     try {
       await deleteSession(name);
