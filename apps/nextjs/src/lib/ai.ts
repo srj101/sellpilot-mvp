@@ -1327,10 +1327,14 @@ Think like a top-performing human sales executive, not a chatbot.`,
       (tc: any) =>
         tc.type === "function" && !validToolNames.has(tc.function?.name),
     );
-    for (const badCall of hallucinatedCalls) {
-      console.warn(
-        `[AI] LLM hallucinated unknown tool: "${(badCall as any).function?.name}", injecting error result`,
-      );
+    let sawInvalidToolCalls = false;
+    if (hallucinatedCalls.length > 0) {
+      sawInvalidToolCalls = true;
+      for (const badCall of hallucinatedCalls) {
+        console.warn(
+          `[AI] LLM hallucinated unknown tool: "${(badCall as any).function?.name}", injecting error result`,
+        );
+      }
     }
 
     // Push a sanitized version of the assistant (without hallucinated calls) into messages
@@ -1412,6 +1416,9 @@ Think like a top-performing human sales executive, not a chatbot.`,
         (tc: any) =>
           tc.type === "function" && !validToolNames.has(tc.function?.name),
       );
+      if (followUpBadCalls.length > 0) {
+        sawInvalidToolCalls = true;
+      }
       for (const badCall of followUpBadCalls) {
         console.warn(
           `[AI] LLM hallucinated unknown tool in follow-up: "${(badCall as any).function?.name}"`,
@@ -1449,6 +1456,46 @@ Think like a top-performing human sales executive, not a chatbot.`,
         })
         .filter(Boolean)
         .join("\n");
+    }
+
+    if (sawInvalidToolCalls && !contentStr.trim()) {
+      console.warn(
+        "[AI] runChat encountered invalid tool-only response; retrying with plain text instruction without tool support",
+      );
+      messages.push({
+        role: "user",
+        content:
+          "Please answer the customer in plain text only. Do not use unavailable tools. If you cannot answer, apologize and say you are unable to help right now.",
+      });
+      const retry = await client.chat.completions.create({
+        model,
+        messages,
+      });
+      const retryChoice = retry.choices[0];
+      if (retryChoice?.message) {
+        assistant = retryChoice.message as ChatCompletionAssistantMessageParam;
+        if (typeof assistant.content === "string") {
+          contentStr = assistant.content;
+        } else if (Array.isArray(assistant.content)) {
+          contentStr = assistant.content
+            .map((part) => {
+              if (part.type === "text") {
+                return part.text;
+              }
+              if (part.type === "refusal") {
+                return part.refusal;
+              }
+              return "";
+            })
+            .filter(Boolean)
+            .join("\n");
+        }
+      }
+    }
+
+    if (!contentStr.trim()) {
+      contentStr =
+        "Sorry — I couldn't process your question right now. Please try again in a moment.";
     }
 
     console.log("[AI] runChat finished successfully", { userId });
