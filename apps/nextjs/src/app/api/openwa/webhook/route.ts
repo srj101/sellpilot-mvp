@@ -6,6 +6,7 @@ import { and, eq } from "@acme/db";
 import { db } from "@acme/db/client";
 import { metaConnection, metaWebhookEvent } from "@acme/db/schema";
 
+import { env } from "~/env";
 import { triggerInboxBroadcast } from "~/lib/inbox-broadcast";
 import { sendMetaInboxReply } from "~/lib/meta";
 
@@ -38,13 +39,16 @@ export async function POST(req: NextRequest) {
   const signatureHeader = req.headers.get("x-openwa-signature");
   const rawBody = await req.text();
 
-  // If a webhook secret is defined in environment, verify signature
-  const webhookSecret = process.env.OPENWA_WEBHOOK_SECRET;
-  if (
-    webhookSecret &&
-    !verifyOpenWASignature(rawBody, signatureHeader, webhookSecret)
-  ) {
-    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  const webhookSecret =
+    env.OPENWA_WEBHOOK_SECRET ?? env.META_WEBHOOK_VERIFY_TOKEN;
+  if (webhookSecret) {
+    if (!verifyOpenWASignature(rawBody, signatureHeader, webhookSecret)) {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    }
+  } else {
+    console.warn(
+      "[OpenWA Webhook] No webhook secret configured; skipping signature verification.",
+    );
   }
 
   let body: any;
@@ -136,7 +140,7 @@ export async function POST(req: NextRequest) {
 
   const contactJid = data.chatId || data.from || "";
   const contactPhone = contactJid.split("@")[0] || "";
-  if (!contactPhone) {
+  if (!contactPhone || !contactJid) {
     return NextResponse.json(
       { error: "Invalid contact phone" },
       { status: 400 },
@@ -176,10 +180,11 @@ export async function POST(req: NextRequest) {
     const senderName =
       data.pushname || data.senderName || data.authorName || contactPhone;
 
-    const isImage = data.type === "image" || (data.mimetype && data.mimetype.startsWith("image/"));
-    const imageUrl = data.body && data.body.startsWith("data:image")
+    const isImage =
+      data.type === "image" || data.mimetype?.startsWith("image/");
+    const imageUrl = data.body?.startsWith("data:image")
       ? data.body
-      : (data.clientUrl || data.deprecatedMms3Url || undefined);
+      : data.clientUrl || data.deprecatedMms3Url || undefined;
 
     rawPayload = {
       entry: [
@@ -204,27 +209,33 @@ export async function POST(req: NextRequest) {
                   },
                 ],
                 messages: [
-                  isImage ? {
-                    from: contactPhone,
-                    id: data.id,
-                    timestamp: String(Math.floor(timestamp.getTime() / 1000)),
-                    type: "image",
-                    image: {
-                      mime_type: data.mimetype || "image/jpeg",
-                      sha256: data.sha || "",
-                      url: imageUrl,
-                      id: data.id,
-                      caption: data.caption || "",
-                    },
-                  } : {
-                    from: contactPhone,
-                    id: data.id,
-                    timestamp: String(Math.floor(timestamp.getTime() / 1000)),
-                    text: {
-                      body: data.body || "",
-                    },
-                    type: "text",
-                  },
+                  isImage
+                    ? {
+                        from: contactPhone,
+                        id: data.id,
+                        timestamp: String(
+                          Math.floor(timestamp.getTime() / 1000),
+                        ),
+                        type: "image",
+                        image: {
+                          mime_type: data.mimetype || "image/jpeg",
+                          sha256: data.sha || "",
+                          url: imageUrl,
+                          id: data.id,
+                          caption: data.caption || "",
+                        },
+                      }
+                    : {
+                        from: contactPhone,
+                        id: data.id,
+                        timestamp: String(
+                          Math.floor(timestamp.getTime() / 1000),
+                        ),
+                        text: {
+                          body: data.body || "",
+                        },
+                        type: "text",
+                      },
                 ],
               },
             },
@@ -275,10 +286,11 @@ export async function POST(req: NextRequest) {
         try {
           const { runChat } = await import("~/lib/ai");
 
-          const isImage = data.type === "image" || (data.mimetype && data.mimetype.startsWith("image/"));
-          const imageUrl = data.body && data.body.startsWith("data:image")
+          const isImage =
+            data.type === "image" || data.mimetype?.startsWith("image/");
+          const imageUrl = data.body?.startsWith("data:image")
             ? data.body
-            : (data.clientUrl || data.deprecatedMms3Url || null);
+            : data.clientUrl || data.deprecatedMms3Url || null;
 
           let imageSearchResultsText = "";
           if (isImage && imageUrl) {
@@ -291,20 +303,27 @@ export async function POST(req: NextRequest) {
               });
 
               if (matches.length > 0) {
-                imageSearchResultsText = `[Customer sent an image. Image search matches found:\n` +
-                  matches.map((m) => `- Product: ${m.productTitle} (ID: ${m.productId}). Similarity distance: ${m.distance.toFixed(4)}`).join("\n") +
+                imageSearchResultsText =
+                  `[Customer sent an image. Image search matches found:\n` +
+                  matches
+                    .map(
+                      (m) =>
+                        `- Product: ${m.productTitle} (ID: ${m.productId}). Similarity distance: ${m.distance.toFixed(4)}`,
+                    )
+                    .join("\n") +
                   `\nUse this context to answer. If a match is close, mention the product name, price, stock, and offer to show images or details. If no good match, politely ask if they want to search for something else.]`;
               } else {
                 imageSearchResultsText = `[Customer sent an image. No product matches were found in the database. Politely inform them and offer to search manually.]`;
               }
             } catch (err) {
-              console.error("[OpenWA Webhook AIReply] Image search failed:", err);
+              console.error(
+                "[OpenWA Webhook AIReply] Image search failed:",
+                err,
+              );
             }
           }
 
-          const userMessage = isImage
-            ? (data.caption || "")
-            : (data.body || "");
+          const userMessage = isImage ? data.caption || "" : data.body || "";
           const finalMessage = imageSearchResultsText
             ? `${imageSearchResultsText}\n\n${userMessage}`.trim()
             : userMessage;
@@ -323,7 +342,10 @@ export async function POST(req: NextRequest) {
                 "One moment please, I'm finding the best answer...",
                 "Hold on, I'm pulling up the details for you...",
               ];
-              const msg = patienceMessages[Math.floor(Math.random() * patienceMessages.length)]!;
+              const msg =
+                patienceMessages[
+                  Math.floor(Math.random() * patienceMessages.length)
+                ]!;
               try {
                 await sendMetaInboxReply({
                   platform: "whatsapp",
@@ -331,12 +353,15 @@ export async function POST(req: NextRequest) {
                   accountId:
                     connection.whatsappPhoneNumberId ??
                     connection.platformAccountId,
-                  recipientId: contactPhone,
+                  recipientId: contactJid,
                   text: msg,
                 });
                 console.log("[OpenWA Webhook AIReply] Patience message sent");
               } catch (err) {
-                console.error("[OpenWA Webhook AIReply] Failed to send patience message:", err);
+                console.error(
+                  "[OpenWA Webhook AIReply] Failed to send patience message:",
+                  err,
+                );
               }
             }, 8000);
 
@@ -368,7 +393,7 @@ export async function POST(req: NextRequest) {
               accountId:
                 connection.whatsappPhoneNumberId ??
                 connection.platformAccountId,
-              recipientId: contactPhone,
+              recipientId: contactJid,
               text: aiReply,
             });
           } catch (sendErr) {

@@ -6,20 +6,22 @@ import type {
 } from "openai/resources/chat/completions";
 import OpenAI from "openai";
 
-import { and, eq, desc } from "@acme/db";
+import { and, desc, eq, inArray } from "@acme/db";
+// no raw sql import here to avoid cross-package types issues
 import { db } from "@acme/db/client";
 import {
   customer,
+  metaConnection,
+  metaWebhookEvent,
   order,
   orderItem,
   product,
   productVariant,
-  metaConnection,
-  metaWebhookEvent,
 } from "@acme/db/schema";
-import { buildInboxData } from "./meta-inbox";
 
 import { env } from "~/env";
+import { aiHelpers } from "../../../../packages/db/src/helpers/aiHelpers";
+import { buildInboxData } from "./meta-inbox";
 
 const apiKey = env.OPENAI_API_KEY;
 const baseURL = env.OPENAI_BASE_URL;
@@ -62,19 +64,72 @@ interface SendProductImageArgs {
   };
 }
 
+interface GetTopSellingProductsArgs {
+  userId: string;
+  limit?: number;
+}
+interface ListActiveProductsArgs {
+  userId: string;
+  limit?: number;
+}
+interface GetProductVariantsArgs {
+  productId: string;
+}
+interface GetRecentOrdersArgs {
+  userId: string;
+  limit?: number;
+}
+interface GetCustomerByPhoneArgs {
+  userId: string;
+  phone: string;
+}
+interface GetBusinessProfileArgs {
+  userId: string;
+}
+interface GetOfferByCodeArgs {
+  userId: string;
+  code: string;
+}
+interface GetFAQMatchesArgs {
+  userId: string;
+  query: string;
+  limit?: number;
+}
+interface GetLowStockProductsArgs {
+  userId: string;
+  threshold?: number;
+}
+interface GetProductsByTagArgs {
+  userId: string;
+  tag: string;
+  limit?: number;
+}
+
 interface ToolHandlerMap {
   searchProducts(args: SearchProductsArgs): Promise<unknown>;
   getProduct(args: GetProductArgs): Promise<unknown>;
   checkStock(args: CheckStockArgs): Promise<unknown>;
   createOrder(args: CreateOrderArgs): Promise<unknown>;
   sendProductImage(args: SendProductImageArgs): Promise<unknown>;
+  // aiHelpers direct mappings
+  getTopSellingProducts(args: GetTopSellingProductsArgs): Promise<unknown>;
+  getProductById(args: GetProductArgs): Promise<unknown>;
+  listActiveProducts(args: ListActiveProductsArgs): Promise<unknown>;
+  searchProductsByKeyword(args: SearchProductsArgs): Promise<unknown>;
+  getProductVariants(args: GetProductVariantsArgs): Promise<unknown>;
+  getRecentOrders(args: GetRecentOrdersArgs): Promise<unknown>;
+  getCustomerByPhone(args: GetCustomerByPhoneArgs): Promise<unknown>;
+  getBusinessProfile(args: GetBusinessProfileArgs): Promise<unknown>;
+  getOfferByCode(args: GetOfferByCodeArgs): Promise<unknown>;
+  getFAQMatches(args: GetFAQMatchesArgs): Promise<unknown>;
+  getLowStockProducts(args: GetLowStockProductsArgs): Promise<unknown>;
+  getProductsByTag(args: GetProductsByTagArgs): Promise<unknown>;
 }
 
 type ToolName = keyof ToolHandlerMap;
 
 type ChatMessage = ChatCompletionMessageParam;
 
-// Minimal tool wrappers the model can call via the OpenAI-compatible tool-calling flow
 export const tools: ChatCompletionTool[] = [
   {
     type: "function",
@@ -85,8 +140,164 @@ export const tools: ChatCompletionTool[] = [
         type: "object",
         properties: {
           keyword: { type: "string" },
+          userId: { type: "string" },
         },
-        required: ["keyword"],
+        required: ["keyword", "userId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getTopSellingProducts",
+      description: "Return top selling products for a user",
+      parameters: {
+        type: "object",
+        properties: { userId: { type: "string" }, limit: { type: "number" } },
+        required: ["userId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getProductById",
+      description: "Get product details by id",
+      parameters: {
+        type: "object",
+        properties: { id: { type: "string" }, userId: { type: "string" } },
+        required: ["id", "userId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "listActiveProducts",
+      description: "List active products for a user",
+      parameters: {
+        type: "object",
+        properties: { userId: { type: "string" }, limit: { type: "number" } },
+        required: ["userId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "searchProductsByKeyword",
+      description: "Search products by keyword (helper)",
+      parameters: {
+        type: "object",
+        properties: { keyword: { type: "string" }, userId: { type: "string" } },
+        required: ["keyword", "userId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getProductVariants",
+      description: "Get variants for a product",
+      parameters: {
+        type: "object",
+        properties: { productId: { type: "string" } },
+        required: ["productId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getRecentOrders",
+      description: "Get recent orders for a user",
+      parameters: {
+        type: "object",
+        properties: { userId: { type: "string" }, limit: { type: "number" } },
+        required: ["userId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getCustomerByPhone",
+      description: "Lookup customer by phone",
+      parameters: {
+        type: "object",
+        properties: { userId: { type: "string" }, phone: { type: "string" } },
+        required: ["userId", "phone"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getBusinessProfile",
+      description: "Get business profile for a user",
+      parameters: {
+        type: "object",
+        properties: { userId: { type: "string" } },
+        required: ["userId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getOfferByCode",
+      description: "Get offer by code",
+      parameters: {
+        type: "object",
+        properties: { userId: { type: "string" }, code: { type: "string" } },
+        required: ["userId", "code"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getFAQMatches",
+      description: "Search FAQ entries",
+      parameters: {
+        type: "object",
+        properties: {
+          userId: { type: "string" },
+          query: { type: "string" },
+          limit: { type: "number" },
+        },
+        required: ["userId", "query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getLowStockProducts",
+      description: "Get low stock products",
+      parameters: {
+        type: "object",
+        properties: {
+          userId: { type: "string" },
+          threshold: { type: "number" },
+        },
+        required: ["userId"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "getProductsByTag",
+      description: "Get products by tag",
+      parameters: {
+        type: "object",
+        properties: {
+          userId: { type: "string" },
+          tag: { type: "string" },
+          limit: { type: "number" },
+        },
+        required: ["userId", "tag"],
       },
     },
   },
@@ -97,8 +308,8 @@ export const tools: ChatCompletionTool[] = [
       description: "Get product by id",
       parameters: {
         type: "object",
-        properties: { id: { type: "string" } },
-        required: ["id"],
+        properties: { id: { type: "string" }, userId: { type: "string" } },
+        required: ["id", "userId"],
       },
     },
   },
@@ -109,8 +320,8 @@ export const tools: ChatCompletionTool[] = [
       description: "Check product stock",
       parameters: {
         type: "object",
-        properties: { id: { type: "string" } },
-        required: ["id"],
+        properties: { id: { type: "string" }, userId: { type: "string" } },
+        required: ["id", "userId"],
       },
     },
   },
@@ -127,6 +338,7 @@ export const tools: ChatCompletionTool[] = [
           customerName: { type: "string" },
           phone: { type: "string" },
           address: { type: "string" },
+          userId: { type: "string" },
         },
         required: [
           "productId",
@@ -134,6 +346,7 @@ export const tools: ChatCompletionTool[] = [
           "customerName",
           "phone",
           "address",
+          "userId",
         ],
       },
     },
@@ -142,13 +355,31 @@ export const tools: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "sendProductImage",
-      description: "Send the actual image of a product directly to the customer's chat screen.",
+      description:
+        "Send the actual image of a product directly to the customer's chat screen.",
       parameters: {
         type: "object",
         properties: {
-          productId: { type: "string", description: "The ID of the product to send" },
+          productId: {
+            type: "string",
+            description: "The ID of the product to send",
+          },
+          userId: { type: "string" },
+          connectionContext: {
+            type: "object",
+            properties: {
+              platform: {
+                type: "string",
+                enum: ["whatsapp", "instagram", "facebook_page"],
+              },
+              accessToken: { type: "string" },
+              accountId: { type: "string" },
+              recipientId: { type: "string" },
+              connectionId: { type: "string" },
+            },
+          },
         },
-        required: ["productId"],
+        required: ["productId", "userId"],
       },
     },
   },
@@ -157,65 +388,103 @@ export const tools: ChatCompletionTool[] = [
 export const availableTools: ToolHandlerMap = {
   async searchProducts({ keyword, userId }: SearchProductsArgs) {
     console.log("[AI][tool] searchProducts called", { keyword, userId });
+
     const rows = await db
       .select()
       .from(product)
-      .where(eq(product.userId, userId));
+      .where(and(eq(product.userId, userId), eq(product.status, "active")));
 
-    const searchWords = keyword
-      .toLowerCase()
+    const normalizedKeyword = keyword.trim().toLowerCase();
+    const searchWords = normalizedKeyword
       .split(/\s+/)
       .map((w) => w.trim())
       .filter(Boolean);
 
-    const matches = rows.filter((p) => {
-      const title = (p.title ?? "").toLowerCase();
-      const description = (p.description ?? "").toLowerCase();
-      if (searchWords.length === 0) return false;
-      return searchWords.every((word) => title.includes(word) || description.includes(word));
-    });
+    const isBestSellerQuery =
+      /best[\s-]*sell|top[\s-]*sell|popular|most popular|hot selling|hot seller|best product|best seller/.test(
+        normalizedKeyword,
+      );
 
-    const results = [];
-    for (const p of matches) {
-      const variants = await db
-        .select()
-        .from(productVariant)
-        .where(eq(productVariant.productId, p.id));
-      const first = variants[0];
-      results.push({
-        id: p.id,
-        name: p.title,
-        price: first?.price ?? 0,
-        stock: first?.inventoryQuantity ?? 0,
-      });
+    const formatResults = async (products: typeof rows) => {
+      const results = [];
+      for (const p of products) {
+        const variants = await db
+          .select()
+          .from(productVariant)
+          .where(eq(productVariant.productId, p.id));
+        const first = variants[0];
+        results.push({
+          id: p.id,
+          name: (p as any).title,
+          price: first?.price ?? 0,
+          stock: first?.inventoryQuantity ?? 0,
+        });
+      }
+      return results;
+    };
+
+    if (isBestSellerQuery) {
+      // Use centralized helper for top-selling products
+      const tops = await aiHelpers.getTopSellingProducts(userId, 5);
+      if (tops && tops.length > 0) {
+        // map helper results to same format
+        const results = [] as {
+          id: string;
+          name: string;
+          price: number;
+          stock: number;
+        }[];
+        for (const t of tops) {
+          const variants = await db
+            .select()
+            .from(productVariant)
+            .where(eq(productVariant.productId, t.id));
+          const first = variants[0];
+          results.push({
+            id: t.id,
+            name: (t as any).title ?? "",
+            price: first?.price ?? 0,
+            stock: first?.inventoryQuantity ?? 0,
+          });
+        }
+        return results;
+      }
+
+      // Fallback to recent updated
+      const fallback = [...rows]
+        .sort(
+          (a, b) =>
+            (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0),
+        )
+        .slice(0, 5);
+      return await formatResults(fallback);
     }
 
-    return results;
+    // Use helper search first
+    const helperMatches = await aiHelpers.searchProductsByKeyword(
+      userId,
+      keyword,
+      10,
+    );
+    if (helperMatches && helperMatches.length > 0) {
+      // map to same format
+      return await formatResults(helperMatches as any);
+    }
+
+    const fallback = [...rows].slice(0, 5);
+    return await formatResults(fallback);
   },
 
   async getProduct({ id, userId }: GetProductArgs) {
     console.log("[AI][tool] getProduct called", { id, userId });
-    const [p] = await db
-      .select()
-      .from(product)
-      .where(and(eq(product.id, id), eq(product.userId, userId)));
-    if (!p) return null;
-    const variants = await db
-      .select()
-      .from(productVariant)
-      .where(eq(productVariant.productId, p.id));
-    return { product: p, variants };
+    const res = await aiHelpers.getProductById(userId, id);
+    return res;
   },
 
   async checkStock({ id, userId }: CheckStockArgs) {
     console.log("[AI][tool] checkStock called", { id, userId });
-    const variants = await db
-      .select()
-      .from(productVariant)
-      .where(eq(productVariant.productId, id));
-    if (variants.length === 0) return { stock: 0 };
-    const total = variants.reduce((sum, v) => sum + v.inventoryQuantity, 0);
-    return { stock: total };
+    const res = await aiHelpers.checkProductStock(id);
+    return { stock: res.stock, variants: res.variants };
   },
 
   async createOrder({
@@ -234,81 +503,29 @@ export const availableTools: ToolHandlerMap = {
       address,
       userId,
     });
-    // Very small, transactional-like creation. Validate product and stock
-    // Find product and a variant (use first variant if none specified)
-    const [p] = await db
-      .select()
-      .from(product)
-      .where(and(eq(product.id, productId), eq(product.userId, userId)));
-    if (!p) return { success: false, error: "Product not found" };
-
-    const variants = await db
-      .select()
-      .from(productVariant)
-      .where(eq(productVariant.productId, p.id));
-    const variant = variants[0];
-    if (!variant)
-      return { success: false, error: "No variant available for product" };
-    if (variant.inventoryQuantity < quantity)
-      return { success: false, error: "Insufficient stock" };
-
-    const [cust] = await db
-      .insert(customer)
-      .values({ userId, name: customerName, phone, address })
-      .returning();
-
-    if (!cust) {
-      return { success: false, error: "Unable to create customer" };
-    }
-
-    const [created] = await db
-      .insert(order)
-      .values({
-        userId,
-        customerId: cust.id,
-        orderNumber: `SP-${Date.now()}`,
-        status: "pending",
-        subtotal: variant.price * quantity,
-        shippingCost: 0,
-        discountAmount: 0,
-        total: variant.price * quantity,
-        customerName,
-        customerPhone: phone,
-        customerEmail: null,
-        shippingAddress: address,
-      })
-      .returning();
-
-    if (!created) {
-      return { success: false, error: "Unable to create order" };
-    }
-
-    await db.insert(orderItem).values({
-      orderId: created.id,
+    // Delegate transactional creation to helper
+    const res = await aiHelpers.createCustomerAndOrder(
+      userId,
       productId,
-      variantId: variant.id,
-      name: p.title,
-      variantTitle: variant.title,
-      qty: quantity,
-      unitPrice: variant.price,
-      lineTotal: variant.price * quantity,
-      imageUrl: variant.imageUrl,
-    });
-
-    // decrement variant inventory
-    await db
-      .update(productVariant)
-      .set({ inventoryQuantity: variant.inventoryQuantity - quantity })
-      .where(eq(productVariant.id, variant.id))
-      .returning();
-
-    return { success: true, orderId: created.id };
+      quantity,
+      customerName,
+      phone,
+      address,
+    );
+    return res;
   },
 
-  async sendProductImage({ productId, userId, connectionContext }: SendProductImageArgs) {
+  async sendProductImage({
+    productId,
+    userId,
+    connectionContext,
+  }: SendProductImageArgs) {
     console.log("[AI][tool] sendProductImage called", { productId, userId });
     if (!connectionContext) {
-      return { success: false, error: "Connection context not available for sending media." };
+      return {
+        success: false,
+        error: "Connection context not available for sending media.",
+      };
     }
 
     const [p] = await db
@@ -339,7 +556,12 @@ export const availableTools: ToolHandlerMap = {
       await db.insert(metaWebhookEvent).values({
         dedupeKey: `outbound:media:${connectionContext.recipientId}:${Date.now()}:${crypto.randomUUID()}`,
         platform: connectionContext.platform,
-        object: connectionContext.platform === "whatsapp" ? "whatsapp_business_account" : connectionContext.platform === "instagram" ? "instagram" : "page",
+        object:
+          connectionContext.platform === "whatsapp"
+            ? "whatsapp_business_account"
+            : connectionContext.platform === "instagram"
+              ? "instagram"
+              : "page",
         eventType: "outbound",
         metaConnectionId: connectionContext.connectionId,
         userId: userId,
@@ -363,11 +585,51 @@ export const availableTools: ToolHandlerMap = {
       const { triggerInboxBroadcast } = await import("~/lib/inbox-broadcast");
       void triggerInboxBroadcast(userId);
 
-      return { success: true, message: `Image of ${p.title} sent successfully.` };
+      return {
+        success: true,
+        message: `Image of ${p.title} sent successfully.`,
+      };
     } catch (err: any) {
       console.error("[AI][tool] sendProductImage failed to send image:", err);
       return { success: false, error: `Failed to send image: ${err.message}` };
     }
+  },
+  // Direct aiHelpers mappings
+  async getTopSellingProducts({ userId, limit }: GetTopSellingProductsArgs) {
+    return await aiHelpers.getTopSellingProducts(userId, limit ?? 5);
+  },
+  async getProductById({ id, userId }: GetProductArgs) {
+    return await aiHelpers.getProductById(userId, id);
+  },
+  async listActiveProducts({ userId, limit }: ListActiveProductsArgs) {
+    return await aiHelpers.listActiveProducts(userId, limit ?? 20);
+  },
+  async searchProductsByKeyword({ keyword, userId }: SearchProductsArgs) {
+    return await aiHelpers.searchProductsByKeyword(userId, keyword, 10);
+  },
+  async getProductVariants({ productId }: GetProductVariantsArgs) {
+    return await aiHelpers.getProductVariants(productId);
+  },
+  async getRecentOrders({ userId, limit }: GetRecentOrdersArgs) {
+    return await aiHelpers.getRecentOrders(userId, limit ?? 10);
+  },
+  async getCustomerByPhone({ userId, phone }: GetCustomerByPhoneArgs) {
+    return await aiHelpers.getCustomerByPhone(userId, phone);
+  },
+  async getBusinessProfile({ userId }: GetBusinessProfileArgs) {
+    return await aiHelpers.getBusinessProfile(userId);
+  },
+  async getOfferByCode({ userId, code }: GetOfferByCodeArgs) {
+    return await aiHelpers.getOfferByCode(userId, code);
+  },
+  async getFAQMatches({ userId, query, limit }: GetFAQMatchesArgs) {
+    return await aiHelpers.getFAQMatches(userId, query, limit ?? 5);
+  },
+  async getLowStockProducts({ userId, threshold }: GetLowStockProductsArgs) {
+    return await aiHelpers.getLowStockProducts(userId, threshold ?? 5);
+  },
+  async getProductsByTag({ userId, tag, limit }: GetProductsByTagArgs) {
+    return await aiHelpers.getProductsByTag(userId, tag, limit ?? 10);
   },
 };
 
@@ -383,7 +645,11 @@ export async function runChat(
     connectionId: string;
   },
 ): Promise<string> {
-  console.log("[AI] runChat start", { userId, message: message.slice(0, 200), threadId });
+  console.log("[AI] runChat start", {
+    userId,
+    message: message.slice(0, 200),
+    threadId,
+  });
   const messages: ChatMessage[] = [
     {
       role: "system",
@@ -983,15 +1249,11 @@ Think like a top-performing human sales executive, not a chatbot.`,
           (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
         );
 
-        let history = sorted;
+        const history = sorted;
         const lastMsg = history[history.length - 1];
         let includeCurrentInHistory = false;
 
-        if (
-          lastMsg &&
-          lastMsg.text === message &&
-          lastMsg.direction === "inbound"
-        ) {
+        if (lastMsg?.text === message && lastMsg.direction === "inbound") {
           includeCurrentInHistory = true;
         }
 
@@ -1041,10 +1303,13 @@ Think like a top-performing human sales executive, not a chatbot.`,
 
     // Helper to filter out hallucinated tool calls from assistant messages
     const validToolNames = new Set(Object.keys(availableTools));
-    function sanitizeAssistant(msg: ChatCompletionAssistantMessageParam): ChatCompletionAssistantMessageParam {
+    function sanitizeAssistant(
+      msg: ChatCompletionAssistantMessageParam,
+    ): ChatCompletionAssistantMessageParam {
       if (!msg.tool_calls?.length) return msg;
       const validCalls = msg.tool_calls.filter(
-        (tc: any) => tc.type === "function" && validToolNames.has(tc.function?.name),
+        (tc: any) =>
+          tc.type === "function" && validToolNames.has(tc.function?.name),
       );
       // If all calls were valid, return as-is
       if (validCalls.length === msg.tool_calls.length) return msg;
@@ -1059,10 +1324,13 @@ Think like a top-performing human sales executive, not a chatbot.`,
 
     // Check for hallucinated tool calls and produce error tool results for them
     const hallucinatedCalls = (assistant.tool_calls ?? []).filter(
-      (tc: any) => tc.type === "function" && !validToolNames.has(tc.function?.name),
+      (tc: any) =>
+        tc.type === "function" && !validToolNames.has(tc.function?.name),
     );
     for (const badCall of hallucinatedCalls) {
-      console.warn(`[AI] LLM hallucinated unknown tool: "${(badCall as any).function?.name}", injecting error result`);
+      console.warn(
+        `[AI] LLM hallucinated unknown tool: "${(badCall as any).function?.name}", injecting error result`,
+      );
     }
 
     // Push a sanitized version of the assistant (without hallucinated calls) into messages
@@ -1082,7 +1350,12 @@ Think like a top-performing human sales executive, not a chatbot.`,
     }
 
     // follow tool call loop
-    while (assistant.tool_calls?.some((tc: any) => tc.type === "function" && validToolNames.has(tc.function?.name))) {
+    while (
+      assistant.tool_calls?.some(
+        (tc: any) =>
+          tc.type === "function" && validToolNames.has(tc.function?.name),
+      )
+    ) {
       for (const toolCall of assistant.tool_calls) {
         if (toolCall.type !== "function") continue;
 
@@ -1104,7 +1377,11 @@ Think like a top-performing human sales executive, not a chatbot.`,
         const handler = availableTools[fnName] as unknown as (
           args: Record<string, unknown>,
         ) => Promise<unknown>;
-        const mergedArgs = { ...(args as Record<string, unknown>), userId, connectionContext };
+        const mergedArgs = {
+          ...(args as Record<string, unknown>),
+          userId,
+          connectionContext,
+        };
         const result = await handler(mergedArgs);
         console.log("[AI] tool_result", { fnName, result });
 
@@ -1132,10 +1409,13 @@ Think like a top-performing human sales executive, not a chatbot.`,
 
       // Check for hallucinated tool calls in follow-up responses too
       const followUpBadCalls = (assistant.tool_calls ?? []).filter(
-        (tc: any) => tc.type === "function" && !validToolNames.has(tc.function?.name),
+        (tc: any) =>
+          tc.type === "function" && !validToolNames.has(tc.function?.name),
       );
       for (const badCall of followUpBadCalls) {
-        console.warn(`[AI] LLM hallucinated unknown tool in follow-up: "${(badCall as any).function?.name}"`);
+        console.warn(
+          `[AI] LLM hallucinated unknown tool in follow-up: "${(badCall as any).function?.name}"`,
+        );
       }
 
       messages.push(sanitizeAssistant(assistant));

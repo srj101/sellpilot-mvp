@@ -3,12 +3,11 @@ import { env } from "~/env";
 const OPENWA_URL = env.OPENWA_URL;
 const API_KEY = env.OPENWA_API_KEY;
 
-async function apiCall<T>(
-  endpoint: string,
-  options?: RequestInit,
-): Promise<T> {
+async function apiCall<T>(endpoint: string, options?: RequestInit): Promise<T> {
   // Ensure the base URL does not have a trailing slash, and endpoint starts with a slash
-  const baseUrl = OPENWA_URL.endsWith("/") ? OPENWA_URL.slice(0, -1) : OPENWA_URL;
+  const baseUrl = OPENWA_URL.endsWith("/")
+    ? OPENWA_URL.slice(0, -1)
+    : OPENWA_URL;
   const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
 
   const res = await fetch(`${baseUrl}/api${path}`, {
@@ -16,7 +15,7 @@ async function apiCall<T>(
     headers: {
       "Content-Type": "application/json",
       "X-API-Key": API_KEY,
-      ...(options?.headers ?? {}),
+      ...options?.headers,
     },
   });
 
@@ -26,13 +25,25 @@ async function apiCall<T>(
     throw new Error(errorText || `API error ${res.status}`);
   }
 
-  return res.json() as Promise<T>;
+  if (res.status === 204) {
+    return undefined as unknown as T;
+  }
+
+  const text = await res.text();
+  return text ? (JSON.parse(text) as T) : (undefined as unknown as T);
 }
 
 export interface OpenWASession {
   id: string;
   name: string;
-  status: "created" | "initializing" | "qr_ready" | "authenticating" | "ready" | "disconnected" | "failed";
+  status:
+    | "created"
+    | "initializing"
+    | "qr_ready"
+    | "authenticating"
+    | "ready"
+    | "disconnected"
+    | "failed";
   phone: string | null;
   pushName: string | null;
   lastError: string | null;
@@ -51,23 +62,36 @@ export async function listSessions(): Promise<OpenWASession[]> {
 }
 
 function isUuid(str: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    str,
+  );
 }
 
 /**
  * Resolve friendly session name (like 'user-xxxx') or uuid to the active session uuid.
  */
-export async function resolveSessionId(idOrName: string): Promise<string> {
+export async function resolveSessionId(
+  idOrName: string,
+  opts?: { createIfMissing?: boolean },
+): Promise<string> {
+  const optsWithDefault = opts
+    ? { createIfMissing: true, ...opts }
+    : { createIfMissing: true };
+
   if (isUuid(idOrName)) {
     return idOrName;
   }
-  // Try to find existing session by name
+
   const sessions = await listSessions();
   const found = sessions.find((s) => s.name === idOrName);
   if (found) {
     return found.id;
   }
-  // If not found, create it
+
+  if (optsWithDefault.createIfMissing === false) {
+    throw new Error(`Session not found: ${idOrName}`);
+  }
+
   const created = await createSession(idOrName);
   return created.id;
 }
@@ -95,8 +119,10 @@ export async function startSession(sessionId: string): Promise<OpenWASession> {
 /**
  * Stop the session engine
  */
-export async function stopSession(sessionId: string): Promise<{ success: boolean }> {
-  const uuid = await resolveSessionId(sessionId);
+export async function stopSession(
+  sessionId: string,
+): Promise<{ success: boolean }> {
+  const uuid = await resolveSessionId(sessionId, { createIfMissing: false });
   return apiCall<{ success: boolean }>(`/sessions/${uuid}/stop`, {
     method: "POST",
   });
@@ -106,9 +132,13 @@ export async function stopSession(sessionId: string): Promise<{ success: boolean
  * Fetch the active QR code as a PNG data URL.
  * Returns null if the engine is still initializing/booting.
  */
-export async function getQrCode(sessionId: string): Promise<{ qrCode: string | null; status: string }> {
+export async function getQrCode(
+  sessionId: string,
+): Promise<{ qrCode: string | null; status: string }> {
   const uuid = await resolveSessionId(sessionId);
-  const baseUrl = OPENWA_URL.endsWith("/") ? OPENWA_URL.slice(0, -1) : OPENWA_URL;
+  const baseUrl = OPENWA_URL.endsWith("/")
+    ? OPENWA_URL.slice(0, -1)
+    : OPENWA_URL;
 
   const res = await fetch(`${baseUrl}/api/sessions/${uuid}/qr`, {
     headers: {
@@ -125,7 +155,10 @@ export async function getQrCode(sessionId: string): Promise<{ qrCode: string | n
         if (data.message?.includes("not ready")) {
           return { qrCode: null, status: "initializing" };
         }
-        if (data.message?.includes("not active") || data.message?.includes("Start the session")) {
+        if (
+          data.message?.includes("not active") ||
+          data.message?.includes("Start the session")
+        ) {
           return { qrCode: null, status: "disconnected" };
         }
       } catch {}
@@ -141,12 +174,17 @@ export async function getQrCode(sessionId: string): Promise<{ qrCode: string | n
 /**
  * Retrieve session details and connection status
  */
-export async function getSessionStatus(sessionId: string): Promise<OpenWASession> {
+export async function getSessionStatus(
+  sessionId: string,
+): Promise<OpenWASession> {
   try {
     const uuid = await resolveSessionId(sessionId);
     return await apiCall<OpenWASession>(`/sessions/${uuid}`);
   } catch (err: any) {
-    console.warn(`[OpenWA] Failed to get session status for ${sessionId}:`, err.message);
+    console.warn(
+      `[OpenWA] Failed to get session status for ${sessionId}:`,
+      err.message,
+    );
 
     const msg = String(err.message || "");
     if (
@@ -173,13 +211,22 @@ export async function getSessionStatus(sessionId: string): Promise<OpenWASession
  * Delete a session permanently
  */
 export async function deleteSession(sessionId: string): Promise<void> {
-  const uuid = await resolveSessionId(sessionId);
-  await fetch(`${OPENWA_URL}/api/sessions/${uuid}`, {
-    method: "DELETE",
-    headers: {
-      "X-API-Key": API_KEY,
-    },
-  });
+  try {
+    const uuid = await resolveSessionId(sessionId, { createIfMissing: false });
+    await apiCall<void>(`/sessions/${uuid}`, {
+      method: "DELETE",
+    });
+  } catch (err: any) {
+    const msg = String(err?.message || "").toLowerCase();
+    if (
+      msg.includes("session not found") ||
+      msg.includes("404") ||
+      msg.includes("not found")
+    ) {
+      return;
+    }
+    throw err;
+  }
 }
 
 /**
@@ -187,12 +234,36 @@ export async function deleteSession(sessionId: string): Promise<void> {
  */
 export async function logoutSession(sessionId: string): Promise<void> {
   try {
-    const uuid = await resolveSessionId(sessionId);
-    await apiCall<void>(`/sessions/${uuid}/logout`, {
+    const uuid = await resolveSessionId(sessionId, { createIfMissing: false });
+    const baseUrl = OPENWA_URL.endsWith("/")
+      ? OPENWA_URL.slice(0, -1)
+      : OPENWA_URL;
+
+    const res = await fetch(`${baseUrl}/api/sessions/${uuid}/logout`, {
       method: "POST",
+      headers: {
+        "X-API-Key": API_KEY,
+        "Content-Type": "application/json",
+      },
     });
+
+    if (res.ok || res.status === 204) {
+      return;
+    }
+
+    const errorText = await res.text().catch(() => "");
+    if (res.status === 404) {
+      await apiCall<void>(`/sessions/${uuid}/stop`, { method: "POST" });
+      return;
+    }
+
+    console.error(`[OpenWA API Error] ${res.status}: ${errorText}`);
+    throw new Error(errorText || `API error ${res.status}`);
   } catch (err) {
-    console.warn("[OpenWA] Logout session request failed (possibly already logged out):", err);
+    console.warn(
+      "[OpenWA] Logout session request failed (possibly already logged out):",
+      err,
+    );
   }
 }
 
@@ -208,7 +279,8 @@ export async function sendOpenWAText(
   const uuid = await resolveSessionId(sessionId);
   // Ensure the JID format is correct
   const chatId = to.includes("@") ? to : `${to}@c.us`;
-  return apiCall<{ messageId: string; timestamp: number }>(
+  console.log(`[OpenWA] sendOpenWAText -> session=${uuid} chatId=${chatId}`);
+  const res = await apiCall<{ messageId: string; timestamp: number }>(
     `/sessions/${uuid}/messages/send-text`,
     {
       method: "POST",
@@ -218,6 +290,8 @@ export async function sendOpenWAText(
       }),
     },
   );
+  console.log(`[OpenWA] sendOpenWAText response ->`, res);
+  return res;
 }
 
 /**
@@ -232,7 +306,10 @@ export async function sendOpenWAImage(
 ): Promise<{ messageId: string; timestamp: number }> {
   const uuid = await resolveSessionId(sessionId);
   const chatId = to.includes("@") ? to : `${to}@c.us`;
-  return apiCall<{ messageId: string; timestamp: number }>(
+  console.log(
+    `[OpenWA] sendOpenWAImage -> session=${uuid} chatId=${chatId} imageUrl=${imageUrl}`,
+  );
+  const res = await apiCall<{ messageId: string; timestamp: number }>(
     `/sessions/${uuid}/messages/send-image`,
     {
       method: "POST",
@@ -244,6 +321,8 @@ export async function sendOpenWAImage(
       }),
     },
   );
+  console.log(`[OpenWA] sendOpenWAImage response ->`, res);
+  return res;
 }
 
 /**

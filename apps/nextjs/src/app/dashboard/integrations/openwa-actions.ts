@@ -5,22 +5,75 @@ import { db } from "@acme/db/client";
 import { metaConnection } from "@acme/db/schema";
 
 import { getSession } from "~/auth/server";
+import { env } from "~/env";
 import {
   createSession,
-  startSession,
+  deleteSession,
   getQrCode,
   getSessionStatus,
-  deleteSession,
+  listSessions,
   logoutSession,
   registerOpenWAWebhook,
+  startSession,
+  stopSession,
 } from "~/lib/openwa";
-import { env } from "~/env";
 
 /**
  * Derive a deterministic OpenWA session name from the user id.
  */
 function sessionName(userId: string) {
   return `user-${userId}`;
+}
+
+async function cleanupExistingSession(name: string) {
+  const sessions = await listSessions();
+  const existingSessions = sessions.filter((session) => session.name === name);
+  if (!existingSessions.length) return;
+
+  for (const existing of existingSessions) {
+    try {
+      await logoutSession(existing.id);
+    } catch (err) {
+      console.warn(
+        "[OpenWA] cleanupExistingSession logoutSession failed:",
+        err,
+      );
+    }
+
+    try {
+      await stopSession(existing.id);
+    } catch (err) {
+      console.warn("[OpenWA] cleanupExistingSession stopSession failed:", err);
+    }
+
+    try {
+      await deleteSession(existing.id);
+    } catch (err) {
+      console.warn(
+        "[OpenWA] cleanupExistingSession deleteSession failed:",
+        err,
+      );
+    }
+  }
+}
+
+async function getOpenWASessionIdForUser(userId: string) {
+  const connection = await db.query.metaConnection.findFirst({
+    where: and(
+      eq(metaConnection.userId, userId),
+      eq(metaConnection.platform, "whatsapp"),
+    ),
+    columns: {
+      metadata: true,
+    },
+  });
+
+  if (!connection?.metadata || typeof connection.metadata !== "object") {
+    return null;
+  }
+
+  const sessionId = (connection.metadata as any).sessionId;
+  return typeof sessionId === "string" ? sessionId : null;
 }
 
 /**
@@ -35,34 +88,27 @@ export async function startOpenWASession(): Promise<
   const name = sessionName(session.user.id);
 
   try {
-    // Try to create the session — it may already exist (409)
-    try {
-      await createSession(name);
-    } catch (err: any) {
-      // 409 Conflict = session already exists — that's fine
-      if (!err.message?.includes("409") && !err.message?.includes("already exists")) {
-        throw err;
-      }
-    }
+    // Clean up any stale existing session with this name before creating a fresh one.
+    await cleanupExistingSession(name);
 
-    // Start the session engine
-    try {
-      const started = await startSession(name);
-      return { ok: true, sessionId: started.id };
-    } catch (err: any) {
-      // If already running, just get the session id
-      if (err.message?.includes("400") || err.message?.includes("already")) {
+    const created = await createSession(name);
+    const started = await startSession(created.id);
+    return { ok: true, sessionId: started.id };
+  } catch (err: any) {
+    // If the session already exists and cannot be recreated, try using it anyway.
+    if (
+      err.message?.includes("409") ||
+      err.message?.includes("already exists") ||
+      err.message?.includes("already")
+    ) {
+      try {
         const s = await getSessionStatus(name);
         return { ok: true, sessionId: s.id };
+      } catch (innerErr) {
+        console.error("[OpenWA] startOpenWASession fallback failed:", innerErr);
       }
-      throw err;
     }
-  } catch (err) {
-    console.error("[OpenWA] startOpenWASession error:", err);
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : "Unknown error",
-    };
+    throw err;
   }
 }
 
@@ -170,11 +216,9 @@ export async function saveOpenWAConnection(): Promise<
     }
 
     // Register webhook on OpenWA so we receive messages
-    const baseUrl =
-      env.BETTER_AUTH_URL ??
-      `http://localhost:3000`;
+    const baseUrl = env.BETTER_AUTH_URL ?? `http://localhost:3000`;
     const webhookUrl = `${baseUrl}/api/openwa/webhook`;
-    const secret = env.META_WEBHOOK_VERIFY_TOKEN; // reuse existing secret
+    const secret = env.OPENWA_WEBHOOK_SECRET ?? env.META_WEBHOOK_VERIFY_TOKEN;
 
     try {
       await registerOpenWAWebhook(s.id, webhookUrl, secret);
@@ -202,23 +246,88 @@ export async function disconnectOpenWA(): Promise<
   if (!session?.user) return { ok: false, error: "Not authenticated" };
 
   const name = sessionName(session.user.id);
+  const storedSessionId = await getOpenWASessionIdForUser(session.user.id);
+
+  console.log("[OpenWA] disconnectOpenWA called", {
+    userId: session.user.id,
+    name,
+    storedSessionId,
+  });
 
   try {
-    // Logout from WhatsApp Web client (clears browser profile storage)
-    try {
-      await logoutSession(name);
-    } catch {
-      // ignore
+    // Prefer deleting the actual stored OpenWA UUID first.
+    if (storedSessionId) {
+      console.log("[OpenWA] disconnectOpenWA deleting stored sessionId", {
+        storedSessionId,
+      });
+      try {
+        await logoutSession(storedSessionId);
+      } catch (err) {
+        console.warn(
+          "[OpenWA] logoutSession failed during disconnect (stored sessionId):",
+          err,
+        );
+      }
+
+      try {
+        await stopSession(storedSessionId);
+      } catch (err) {
+        console.warn(
+          "[OpenWA] stopSession failed during disconnect (stored sessionId):",
+          err,
+        );
+      }
+
+      try {
+        await deleteSession(storedSessionId);
+      } catch (err) {
+        console.warn(
+          "[OpenWA] deleteSession failed during disconnect (stored sessionId):",
+          err,
+        );
+      }
     }
 
-    // Stop the OpenWA session (best-effort)
+    // Also delete any session currently registered under the deterministic name.
+    console.log("[OpenWA] disconnectOpenWA deleting sessions by name", {
+      name,
+    });
     try {
-      await deleteSession(name);
-    } catch {
-      // If the session doesn't exist in OpenWA, that's fine
+      const sessions = await listSessions();
+      const namedSessions = sessions.filter((session) => session.name === name);
+      for (const session of namedSessions) {
+        try {
+          await logoutSession(session.id);
+        } catch (err) {
+          console.warn(
+            "[OpenWA] logoutSession failed during disconnect (named session):",
+            err,
+          );
+        }
+
+        try {
+          await stopSession(session.id);
+        } catch (err) {
+          console.warn(
+            "[OpenWA] stopSession failed during disconnect (named session):",
+            err,
+          );
+        }
+
+        try {
+          await deleteSession(session.id);
+        } catch (err) {
+          console.warn(
+            "[OpenWA] deleteSession failed during disconnect (named session):",
+            err,
+          );
+        }
+      }
+    } catch (err) {
+      console.warn("[OpenWA] delete by name cleanup failed:", err);
     }
 
-    // Remove the DB connection row
+    // Remove the DB connection row regardless of OpenWA outcome
     await db
       .delete(metaConnection)
       .where(

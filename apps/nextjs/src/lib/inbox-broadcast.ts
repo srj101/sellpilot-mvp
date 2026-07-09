@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "@acme/db";
+import { and, desc, eq, inArray } from "@acme/db";
 import { db } from "@acme/db/client";
 import { metaWebhookEvent } from "@acme/db/schema";
 
@@ -41,27 +41,46 @@ export function broadcast(userId: string, data: InboxUpdate): void {
 
 export async function triggerInboxBroadcast(userId: string): Promise<void> {
   try {
-    const unreadEvents = await db
-      .select({
-        id: metaWebhookEvent.id,
-        receivedAt: metaWebhookEvent.receivedAt,
-      })
-      .from(metaWebhookEvent)
-      .where(
-        and(
-          eq(metaWebhookEvent.userId, userId),
-          eq(metaWebhookEvent.isRead, false),
-          inArray(metaWebhookEvent.eventType, [
-            "message",
-            "messages",
-            "postback",
-            "quick_reply",
-          ]),
-        ),
-      )
-      .orderBy(metaWebhookEvent.receivedAt);
+    const [unreadEvents, latestEvent] = await Promise.all([
+      db
+        .select({
+          id: metaWebhookEvent.id,
+          receivedAt: metaWebhookEvent.receivedAt,
+        })
+        .from(metaWebhookEvent)
+        .where(
+          and(
+            eq(metaWebhookEvent.userId, userId),
+            eq(metaWebhookEvent.isRead, false),
+            inArray(metaWebhookEvent.eventType, [
+              "message",
+              "messages",
+              "postback",
+              "quick_reply",
+            ]),
+          ),
+        )
+        .orderBy(metaWebhookEvent.receivedAt),
+      db
+        .select({ id: metaWebhookEvent.id })
+        .from(metaWebhookEvent)
+        .where(
+          and(
+            eq(metaWebhookEvent.userId, userId),
+            inArray(metaWebhookEvent.eventType, [
+              "message",
+              "messages",
+              "postback",
+              "quick_reply",
+              "outbound",
+            ]),
+          ),
+        )
+        .orderBy(desc(metaWebhookEvent.receivedAt))
+        .limit(1),
+    ]);
 
-    const latestEventId = unreadEvents[unreadEvents.length - 1]?.id ?? null;
+    const latestEventId = latestEvent[0]?.id ?? null;
     broadcast(userId, {
       unreadCount: unreadEvents.length,
       latestEventId,
