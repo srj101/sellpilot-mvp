@@ -495,6 +495,31 @@ function NavRow({
   );
 }
 
+/* ─── Header logo ──────────────────────────────────────────────────── */
+
+function HeaderLogo({ isCollapsed }: { isCollapsed: boolean }) {
+  if (isCollapsed) {
+    return (
+      <div className="flex shrink-0 items-center justify-center border-b border-border/40 py-2.5">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/15">
+          <span className="h-2.5 w-2.5 rounded-full bg-primary" />
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex shrink-0 items-center gap-2.5 border-b border-border/40 px-3 py-2.5">
+      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/15">
+        <span className="h-2.5 w-2.5 rounded-full bg-primary" />
+      </span>
+      <span className="select-none text-sm font-bold tracking-tight text-foreground">
+        SellPilot AI
+      </span>
+    </div>
+  );
+}
+
 /* ─── Footer (sign out + theme + live status) ───────────────────────── */
 
 function SidebarFooter({ isCollapsed }: { isCollapsed: boolean }) {
@@ -526,20 +551,6 @@ function SidebarFooter({ isCollapsed }: { isCollapsed: boolean }) {
 
   return (
     <div className="w-full shrink-0 space-y-2 px-2 pb-3 pt-2">
-      <div className="flex min-w-0 items-center justify-between gap-2 rounded-xl bg-muted px-3 py-2.5">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-[11px] font-semibold text-foreground">
-            SellPilot
-          </span>
-          <span className="shrink-0 text-[11px] text-muted-foreground/60">
-            v{APP_VERSION}
-          </span>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-          Live
-        </div>
-      </div>
       <div className="flex items-center gap-2">
         <form action={signOut} className="flex-1">
           <Button
@@ -573,10 +584,6 @@ function useSidebarData() {
   return { pathname, active, unreadCount };
 }
 
-const APP_VERSION = "1.0.0";
-
-const BRAND = { name: "SellPilot", plan: "Pro", active: true, role: "Admin" };
-void BRAND; // kept for future brand metadata; header is logo-only for now
 
 /* ─── Desktop sidebar ──────────────────────────────────────────────── */
 
@@ -591,6 +598,8 @@ function SidebarBody({ isCollapsed }: { isCollapsed: boolean }) {
         isCollapsed ? "px-2" : "px-3",
       )}
     >
+      <HeaderLogo isCollapsed={isCollapsed} />
+
       {/* Nav */}
       <nav
         className={cn(
@@ -635,6 +644,8 @@ function MobileSidebarSheet() {
 
   return (
     <div className="flex h-full flex-col px-3 py-5">
+      <HeaderLogo isCollapsed={false} />
+
       <nav className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-1">
         {NAV_GROUPS.map((group) => (
           <div key={group.title} className="mb-1">
@@ -779,6 +790,14 @@ export function Sidebar() {
       </aside>
 
       <div className="fixed left-4 right-4 top-4 z-40 flex h-16 w-full items-center justify-between rounded-[24px] border bg-card px-4 shadow-lg md:hidden">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/15">
+            <span className="h-2.5 w-2.5 rounded-full bg-primary" />
+          </span>
+          <span className="select-none text-sm font-bold tracking-tight text-foreground">
+            SellPilot AI
+          </span>
+        </div>
         <MobileMenu />
       </div>
     </>
