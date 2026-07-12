@@ -78,7 +78,7 @@ const STATUS_ICONS: Record<string, typeof Clock> = {
 /* ─── Bar chart component ─────────────────────────────────────────── */
 function MiniBarChart({
   data,
-  colors,
+  colors: _colors,
 }: {
   data: { label: string; value: number; color: string }[];
   colors?: string[];
@@ -107,6 +107,77 @@ function MiniBarChart({
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ─── Order status stacked-bar widget ─────────────────────────────── */
+function OrderStatusBreakdown({
+  data,
+  total,
+}: {
+  data: { label: string; value: number; color: string }[];
+  total: number;
+}) {
+  if (data.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-10 text-center">
+        <p className="text-sm text-muted-foreground">No orders yet</p>
+        <p className="text-xs text-muted-foreground/70">
+          Order status will appear here as customers place them.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Stacked progress bar */}
+      <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
+        {data.map((seg) => {
+          const pct = (seg.value / total) * 100;
+          if (pct === 0) return null;
+          return (
+            <div
+              key={seg.label}
+              className={cn("h-full transition-all duration-700", seg.color)}
+              style={{ width: `${pct}%` }}
+              aria-label={`${seg.label}: ${seg.value} (${pct.toFixed(0)}%)`}
+            />
+          );
+        })}
+      </div>
+
+      {/* Legend grid */}
+      <ul className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+        {data.map((seg) => {
+          const pct = total === 0 ? 0 : (seg.value / total) * 100;
+          return (
+            <li
+              key={seg.label}
+              className="flex items-center justify-between gap-3"
+            >
+              <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span
+                  className={cn(
+                    "h-2.5 w-2.5 shrink-0 rounded-full",
+                    seg.color,
+                  )}
+                />
+                {seg.label}
+              </span>
+              <span className="flex items-baseline gap-1.5">
+                <span className="text-sm font-bold tabular-nums text-foreground">
+                  {seg.value}
+                </span>
+                <span className="text-[10px] font-medium text-muted-foreground tabular-nums">
+                  {pct.toFixed(0)}%
+                </span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -335,16 +406,18 @@ export function DashboardClient({
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Order Status Chart */}
         <div className="rounded-2xl border bg-card p-6">
-          <h3 className="mb-4 text-sm font-semibold text-foreground">
-            Order Status Breakdown
-          </h3>
-          {statusBreakdown.length > 0 ? (
-            <MiniBarChart data={statusBreakdown} />
-          ) : (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No orders yet
-            </p>
-          )}
+          <div className="mb-5 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-foreground">
+              Order Status Breakdown
+            </h3>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {stats.totalOrders} total
+            </span>
+          </div>
+          <OrderStatusBreakdown
+            data={statusBreakdown}
+            total={stats.totalOrders}
+          />
         </div>
 
         {/* Channel Distribution */}

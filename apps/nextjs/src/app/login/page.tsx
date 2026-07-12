@@ -30,7 +30,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     <AuthShell
       eyebrow="Welcome back"
       title="Sign in to your command center"
-      description="Use email, Google, or Facebook to continue managing social commerce conversations."
+      description="Pick up where you left off — your AI agent, inbox, and orders are waiting."
     >
       <SignInForm
         notice={

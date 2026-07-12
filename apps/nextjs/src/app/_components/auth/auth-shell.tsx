@@ -1,17 +1,23 @@
 import Link from "next/link";
 import {
   BarChart3,
+  Bot,
   CheckCircle2,
   Facebook,
+  Globe,
   Instagram,
   MessageCircle,
-  RadioTower,
+  MessageSquare,
+  Quote,
   ShieldCheck,
+  ShoppingBag,
   Sparkles,
+  Star,
+  Zap,
 } from "lucide-react";
 
-import { cn } from "@acme/ui";
 import { ThemeToggle } from "@acme/ui/theme";
+import { cn } from "@acme/ui";
 
 interface AuthShellProps {
   eyebrow: string;
@@ -20,56 +26,110 @@ interface AuthShellProps {
   children: React.ReactNode;
 }
 
+const features = [
+  {
+    icon: Bot,
+    title: "AI sales agent",
+    body: "Bangla, English, Banglish across WhatsApp, Facebook, Instagram.",
+  },
+  {
+    icon: ShoppingBag,
+    title: "End-to-end checkout",
+    body: "Stock check, upsell, payment links, abandoned-cart recovery.",
+  },
+  {
+    icon: MessageSquare,
+    title: "Unified inbox",
+    body: "Every DM, comment, and status in one conversation view.",
+  },
+  {
+    icon: Zap,
+    title: "Live in minutes",
+    body: "Connect channels, drop products, the agent starts selling.",
+  },
+];
+
 const channels = [
   {
     label: "Facebook",
-    value: "2 pages",
     icon: Facebook,
+    color: "text-[#1877F2] bg-[#1877F2]/10 border-[#1877F2]/20",
   },
   {
     label: "Instagram",
-    value: "1 account",
     icon: Instagram,
+    color: "text-pink-600 bg-pink-500/10 border-pink-500/20",
   },
   {
     label: "WhatsApp",
-    value: "ready",
     icon: MessageCircle,
+    color: "text-[#25D366] bg-[#25D366]/10 border-[#25D366]/20",
+  },
+  {
+    label: "Web",
+    icon: Globe,
+    color: "text-primary bg-primary/10 border-primary/20",
   },
 ];
 
-const metrics = [
-  {
-    label: "Response coverage",
-    value: "94%",
-    tone: "primary",
-  },
-  {
-    label: "Lead handoff",
-    value: "4m",
-    tone: "accent",
-  },
-  {
-    label: "Revenue signals",
-    value: "+31",
-    tone: "muted",
-  },
+const trust = [
+  { icon: ShieldCheck, label: "SOC-ready" },
+  { icon: CheckCircle2, label: "GDPR-aware" },
+  { icon: BarChart3, label: "Insight ready" },
 ];
 
-const trustSignals = [
-  {
-    label: "Verified auth",
-    icon: ShieldCheck,
-  },
-  {
-    label: "Social OAuth",
-    icon: CheckCircle2,
-  },
-  {
-    label: "Insight ready",
-    icon: BarChart3,
-  },
-];
+function BrandLogo({ size = 36 }: { size?: number }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/logo.png"
+      alt="SellPilot"
+      width={size}
+      height={size}
+      className="h-auto w-auto shrink-0 select-none"
+      style={{ height: size * 0.32 }}
+      draggable={false}
+    />
+  );
+}
+
+/* ─── Infinite marquee (horizontal: right → left) ────────────── */
+
+interface MarqueeProps {
+  children: React.ReactNode;
+  duration?: number; // seconds for one full cycle
+  pauseOnHover?: boolean;
+  className?: string;
+}
+
+function Marquee({
+  children,
+  duration = 28,
+  pauseOnHover = true,
+  className,
+}: MarqueeProps) {
+  // Duplicate the content so the animation can translateX(-50%) and
+  // seamlessly wrap back to the start.
+  return (
+    <div
+      className={cn(
+        "marquee-mask relative w-full overflow-hidden",
+        pauseOnHover && "marquee-pause-on-hover",
+        className,
+      )}
+    >
+      <div
+        className="marquee"
+        style={{ ["--marquee-duration" as string]: `${duration}s` }}
+      >
+        {children}
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* ─── (no vertical marquee) ───────────────────────────────────────── */
 
 export function AuthShell({
   eyebrow,
@@ -78,154 +138,177 @@ export function AuthShell({
   children,
 }: AuthShellProps) {
   return (
-    <main className="auth-mesh relative flex min-h-screen overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+    <main className="auth-mesh relative flex min-h-screen items-center justify-center overflow-hidden p-3 sm:p-6 lg:p-8">
       <div className="auth-grid pointer-events-none absolute inset-0" />
       <div className="auth-scan pointer-events-none absolute inset-x-0 top-0 h-px" />
 
-      <div className="relative mx-auto grid w-full max-w-7xl items-stretch gap-4 lg:grid-cols-[1.08fr_0.92fr]">
-        <section className="bg-card/60 shadow-primary/10 relative hidden min-h-[calc(100vh-3rem)] overflow-hidden rounded-lg border p-8 shadow-2xl backdrop-blur-xl lg:flex lg:flex-col lg:justify-between">
-          <div className="auth-panel-glow pointer-events-none absolute inset-0" />
-          <div className="relative flex items-center justify-between">
-            <Link
-              href="/"
-              className="group inline-flex items-center gap-3 text-sm font-semibold tracking-tight"
-            >
-              <span className="bg-background grid size-10 place-items-center rounded-md border shadow-sm transition-transform group-hover:-translate-y-0.5">
-                <Sparkles className="text-primary size-4" />
-              </span>
-              <span className="flex flex-col leading-none">
-                <span className="text-base">SellPilot</span>
-                <span className="text-muted-foreground mt-1 text-xs font-medium tracking-[0.22em] uppercase">
-                  Commerce cockpit
-                </span>
-              </span>
+      {/* Theme toggle + home link, floating outside the card on mobile */}
+      <div className="absolute top-4 right-4 z-10 flex items-center gap-2 sm:top-6 sm:right-6">
+        <ThemeToggle />
+      </div>
+
+      {/* The card: two-column grid, single rounded card */}
+      <div
+        className={cn(
+          "relative grid w-full max-w-7xl items-stretch overflow-hidden rounded-3xl border bg-card shadow-2xl shadow-primary/5",
+          "grid-cols-1 lg:grid-cols-[1fr_1.2fr] xl:grid-cols-[1fr_1.3fr]",
+        )}
+      >
+        {/* ─── Left brand panel (always visible inside the card) ─── */}
+        <section className="auth-panel-glow relative hidden flex-col gap-6 overflow-hidden bg-gradient-to-br from-primary/5 via-primary/[0.02] to-background p-7 sm:gap-7 sm:p-9 lg:flex xl:p-11">
+          {/* Decorative blobs */}
+          <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/15 blur-3xl" />
+          <div className="pointer-events-none absolute bottom-0 -left-12 h-48 w-48 rounded-full bg-primary/10 blur-2xl" />
+
+          {/* Logo + badge */}
+          <div className="relative flex items-start justify-between gap-4">
+            <Link href="/" className="inline-flex items-center" aria-label="Home">
+              <BrandLogo size={36} />
             </Link>
-            <div className="bg-background/70 text-muted-foreground rounded-full border px-3 py-1 text-xs font-medium">
-              Secure session
+            <div className="bg-background/80 text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium backdrop-blur">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500/60" />
+                <span className="relative h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              </span>
+              Live
             </div>
           </div>
 
-          <div className="relative mx-auto flex w-full max-w-2xl flex-col gap-8 py-12">
-            <div className="flex flex-col gap-4">
-              <div className="bg-background/70 text-muted-foreground inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium">
-                <RadioTower className="text-primary size-3.5" />
-                Live channel intelligence
-              </div>
-              <h2 className="max-w-xl text-5xl leading-[0.95] font-semibold tracking-[-0.05em] text-balance">
-                One premium control room for every customer conversation.
-              </h2>
-              <p className="text-muted-foreground max-w-lg text-base leading-7">
-                Connect your page, Instagram, and WhatsApp presence, then let
-                SellPilot turn social demand into qualified conversations.
-              </p>
+          {/* Hero */}
+          <div className="relative flex flex-col gap-4">
+            <div className="bg-background/70 text-foreground/80 inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium backdrop-blur">
+              <Sparkles className="text-primary size-3" />
+              AI commerce OS
             </div>
+            <h2 className="text-3xl font-semibold leading-[1.05] tracking-[-0.04em] text-balance xl:text-4xl">
+              Sell smarter on every channel — automatically.
+            </h2>
+            <p className="text-muted-foreground text-sm leading-6 xl:text-base">
+              Connect WhatsApp, Messenger, and Instagram. Your AI agent
+              handles the conversation, the order, and the payment — while
+              you focus on the product.
+            </p>
+          </div>
 
-            <div className="auth-console bg-background/80 shadow-primary/10 relative overflow-hidden rounded-lg border p-4 shadow-2xl">
-              <div className="mb-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="bg-primary size-2 rounded-full" />
-                  <span className="text-sm font-medium">Signal board</span>
-                </div>
-                <span className="text-muted-foreground text-xs">
-                  Synced just now
-                </span>
-              </div>
-
-              <div className="grid gap-3">
-                {channels.map((channel, index) => {
-                  const Icon = channel.icon;
-
-                  return (
-                    <div
-                      className="auth-reveal bg-card/70 flex items-center justify-between rounded-md border px-4 py-3"
-                      key={channel.label}
-                      style={{ animationDelay: `${index * 90}ms` }}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="bg-primary/10 text-primary grid size-9 place-items-center rounded-md">
-                          <Icon className="size-4" />
-                        </span>
-                        <span className="flex flex-col">
-                          <span className="text-sm font-medium">
-                            {channel.label}
-                          </span>
-                          <span className="text-muted-foreground text-xs">
-                            Account connection
-                          </span>
-                        </span>
-                      </div>
-                      <span className="text-sm font-semibold">
-                        {channel.value}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="mt-4 grid grid-cols-3 gap-3">
-                {metrics.map((metric) => (
+          {/* Channel pills — infinite left-to-right marquee */}
+          <div className="relative">
+            <Marquee duration={18} className="py-1">
+              {channels.map((ch) => {
+                const Icon = ch.icon;
+                return (
                   <div
+                    key={ch.label}
                     className={cn(
-                      "bg-background/70 rounded-md border p-3",
-                      metric.tone === "primary" && "border-primary/40",
+                      "mx-1.5 inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium",
+                      ch.color,
                     )}
-                    key={metric.label}
                   >
-                    <div className="text-xl font-semibold tracking-tight">
-                      {metric.value}
-                    </div>
-                    <div className="text-muted-foreground mt-1 text-[11px] leading-4">
-                      {metric.label}
-                    </div>
+                    <Icon className="size-3" />
+                    {ch.label}
                   </div>
-                ))}
-              </div>
-            </div>
+                );
+              })}
+            </Marquee>
           </div>
 
-          <div className="relative grid grid-cols-3 gap-3">
-            {trustSignals.map((signal) => {
-              const Icon = signal.icon;
+          {/* Feature cards — infinite horizontal marquee (row layout) */}
+          <div className="relative -mx-1">
+            <Marquee duration={26} className="py-1">
+              {features.map((feature) => {
+                const Icon = feature.icon;
+                return (
+                  <div
+                    key={feature.title}
+                    className="mx-1.5 flex w-56 shrink-0 flex-col gap-1.5 rounded-xl border bg-background/60 p-3 backdrop-blur"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="bg-primary/10 text-primary flex h-7 w-7 shrink-0 items-center justify-center rounded-lg">
+                        <Icon className="size-3.5" />
+                      </div>
+                      <h3 className="text-sm font-semibold text-foreground">
+                        {feature.title}
+                      </h3>
+                    </div>
+                    <p className="text-muted-foreground text-xs leading-5">
+                      {feature.body}
+                    </p>
+                  </div>
+                );
+              })}
+            </Marquee>
+          </div>
 
+          {/* Testimonial */}
+          <figure className="relative mt-auto rounded-xl border bg-background/70 p-4 backdrop-blur">
+            <Quote className="text-primary/40 size-5" />
+            <blockquote className="text-foreground mt-1 text-sm leading-6">
+              &ldquo;We replaced 3 part-time agents with SellPilot. First-month
+              AOV up 41%, response time down to 12 seconds.&rdquo;
+            </blockquote>
+            <figcaption className="text-muted-foreground mt-3 flex items-center gap-2.5 text-xs">
+              <span className="bg-primary/15 text-primary flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold">
+                FA
+              </span>
+              <span className="flex flex-col leading-tight">
+                <span className="text-foreground text-xs font-semibold">
+                  Farhan Ahmed
+                </span>
+                <span className="text-muted-foreground/80">
+                  Founder, Aurora Goods
+                </span>
+              </span>
+              <span className="ml-auto flex items-center gap-0.5 text-amber-500">
+                <Star className="size-3 fill-current" />
+                <Star className="size-3 fill-current" />
+                <Star className="size-3 fill-current" />
+                <Star className="size-3 fill-current" />
+                <Star className="size-3 fill-current" />
+              </span>
+            </figcaption>
+          </figure>
+
+          {/* Trust signals footer */}
+          <div className="relative flex flex-wrap items-center gap-1.5">
+            {trust.map((t) => {
+              const Icon = t.icon;
               return (
                 <div
-                  className="bg-background/65 text-muted-foreground flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-medium"
-                  key={signal.label}
+                  key={t.label}
+                  className="bg-background/65 text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium"
                 >
-                  <Icon className="text-primary size-3.5" />
-                  {signal.label}
+                  <Icon className="text-primary size-3" />
+                  {t.label}
                 </div>
               );
             })}
+            <span className="text-muted-foreground/60 ml-auto text-[10px]">
+              © SellPilot · v1.0
+            </span>
           </div>
         </section>
 
-        <section className="bg-card/80 shadow-primary/10 flex min-h-[calc(100vh-3rem)] items-center justify-center rounded-lg border p-4 shadow-2xl backdrop-blur-xl sm:p-6 lg:p-10">
-          <div className="absolute top-4 right-4 lg:hidden">
-            <ThemeToggle />
-          </div>
-          <div className="w-full max-w-md">
-            <div className="mb-8 flex flex-col gap-3">
-              <Link
-                href="/"
-                className="inline-flex w-fit items-center gap-2 text-sm font-semibold lg:hidden"
-              >
-                <span className="bg-background grid size-9 place-items-center rounded-md border shadow-sm">
-                  <Sparkles className="text-primary size-4" />
-                </span>
-                SellPilot
-              </Link>
-              <div className="text-primary text-xs font-semibold tracking-[0.22em] uppercase">
+        {/* ─── Right form panel (always visible) ─────────────────── */}
+        <section className="relative flex items-center justify-center p-4 sm:p-6 lg:p-8 xl:p-10">
+          {/* Mobile logo (hidden on lg+) */}
+          <Link
+            href="/"
+            className="absolute top-4 left-4 inline-flex items-center lg:hidden"
+            aria-label="Home"
+          >
+            <BrandLogo size={28} />
+          </Link>
+
+          <div className="w-full max-w-lg pt-12 sm:pt-4 lg:pt-0">
+            <div className="mb-6 flex flex-col gap-2.5 sm:mb-7">
+              <div className="text-primary text-[11px] font-semibold tracking-[0.18em] uppercase">
                 {eyebrow}
               </div>
-              <div className="flex flex-col gap-2">
-                <h1 className="text-3xl font-semibold tracking-[-0.04em] text-balance sm:text-4xl">
-                  {title}
-                </h1>
-                <p className="text-muted-foreground text-sm leading-6">
-                  {description}
-                </p>
-              </div>
+              <h1 className="text-2xl font-semibold tracking-[-0.03em] text-balance sm:text-3xl">
+                {title}
+              </h1>
+              <p className="text-muted-foreground text-sm leading-6">
+                {description}
+              </p>
             </div>
             {children}
           </div>

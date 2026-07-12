@@ -29,6 +29,88 @@
 }
 
 @layer utilities {
+  /* ──────────────────────────────────────────────────────────
+     Scrollbar styling
+     Thin, rounded, theme-aware (light + dark + auto).
+     Works in Webkit/Blink and Firefox.
+     ────────────────────────────────────────────────────────── */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(
+        in oklab,
+        var(--muted-foreground) 35%,
+        transparent
+      )
+      transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: color-mix(
+      in oklab,
+      var(--muted-foreground) 28%,
+      transparent
+    );
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    transition: background-color 200ms ease;
+  }
+
+  .scrollbar-thin:hover::-webkit-scrollbar-thumb,
+  .scrollbar-thin:focus-visible::-webkit-scrollbar-thumb {
+    background-color: color-mix(
+      in oklab,
+      var(--muted-foreground) 55%,
+      transparent
+    );
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  .dark .scrollbar-thin {
+    scrollbar-color: color-mix(
+        in oklab,
+        var(--muted-foreground) 45%,
+        transparent
+      )
+      transparent;
+  }
+
+  .dark .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: color-mix(
+      in oklab,
+      var(--muted-foreground) 40%,
+      transparent
+    );
+  }
+
+  .dark .scrollbar-thin:hover::-webkit-scrollbar-thumb,
+  .dark .scrollbar-thin:focus-visible::-webkit-scrollbar-thumb {
+    background-color: color-mix(
+      in oklab,
+      var(--muted-foreground) 70%,
+      transparent
+    );
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
   .auth-mesh {
     background:
       radial-gradient(
@@ -143,6 +225,57 @@
     transform: translateY(0);
   }
 }
+
+/* ──────────────────────────────────────────────────────────
+   Infinite marquee (right → left, then loops seamlessly)
+   Content is rendered twice side-by-side (200% wide). The
+   animation starts at translateX(0) and slides left to
+   translateX(-50%), at which point the SECOND copy is exactly
+   where the first copy started — instantly snapping back to
+   0 for a seamless loop.
+   ────────────────────────────────────────────────────────── */
+@keyframes marquee-ltr {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.marquee {
+  display: flex;
+  width: max-content;
+  animation: marquee-ltr var(--marquee-duration, 30s) linear infinite;
+  will-change: transform;
+}
+
+.marquee-pause-on-hover:hover .marquee,
+.marquee:hover {
+  animation-play-state: paused;
+}
+
+/* Soft fade on the left/right edges so items appear to scroll
+   in/out instead of popping at the card boundary. */
+.marquee-mask {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    black 24px,
+    black calc(100% - 24px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    black 24px,
+    black calc(100% - 24px),
+    transparent 100%
+  );
+}
+
+/* (vertical marquee removed — feature cards now use the horizontal
+   marquee above for a row layout) */
 
 @media (prefers-reduced-motion: reduce) {
   .auth-scan,

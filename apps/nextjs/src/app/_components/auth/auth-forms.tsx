@@ -22,7 +22,6 @@ import {
   Field,
   FieldDescription,
   FieldError,
-  FieldGroup,
   FieldLabel,
   FieldSeparator,
 } from "@acme/ui/field";
@@ -110,6 +109,18 @@ function AuthAlert({ notice }: { notice?: AuthNotice | null }) {
   );
 }
 
+interface PasswordInputProps {
+  id: string;
+  name: string;
+  autoComplete: string;
+  placeholder: string;
+  required?: boolean;
+  minLength?: number;
+  invalid?: boolean;
+  value?: string;
+  onChange?: React.ChangeEventHandler<HTMLInputElement>;
+}
+
 function PasswordInput({
   id,
   name,
@@ -118,15 +129,9 @@ function PasswordInput({
   required = true,
   minLength = 8,
   invalid = false,
-}: {
-  id: string;
-  name: string;
-  autoComplete: string;
-  placeholder: string;
-  required?: boolean;
-  minLength?: number;
-  invalid?: boolean;
-}) {
+  value,
+  onChange,
+}: PasswordInputProps) {
   const [visible, setVisible] = useState(false);
 
   return (
@@ -140,7 +145,9 @@ function PasswordInput({
         required={required}
         minLength={minLength}
         aria-invalid={invalid}
-        className="h-11 pr-11"
+        {...(value !== undefined ? { value } : {})}
+        {...(onChange ? { onChange } : {})}
+        className="h-11 rounded-xl pr-11"
       />
       <button
         aria-label={visible ? "Hide password" : "Show password"}
@@ -156,20 +163,98 @@ function PasswordInput({
 
 function SocialButtons() {
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid gap-2.5 sm:grid-cols-2">
       <form action={signInWithGoogle}>
-        <Button type="submit" variant="outline" className="h-11 w-full">
-          <GoogleIcon data-icon="inline-start" />
+        <Button
+          type="submit"
+          variant="outline"
+          className="h-11 w-full gap-2.5 border-border/80 bg-background/60 text-sm font-medium transition-all hover:border-primary/30 hover:bg-primary/5"
+        >
+          <GoogleIcon className="size-4" />
           Google
         </Button>
       </form>
 
       <form action={signInWithFacebook}>
-        <Button type="submit" variant="outline" className="h-11 w-full">
-          <Facebook data-icon="inline-start" />
+        <Button
+          type="submit"
+          variant="outline"
+          className="h-11 w-full gap-2.5 border-border/80 bg-background/60 text-sm font-medium transition-all hover:border-primary/30 hover:bg-primary/5"
+        >
+          <Facebook className="size-4 text-[#1877F2]" />
           Facebook
         </Button>
       </form>
+    </div>
+  );
+}
+
+/* ─── Password strength meter ────────────────────────────────── */
+
+type Strength = 0 | 1 | 2 | 3 | 4;
+
+const STRENGTH_LABEL: Record<Strength, string> = {
+  0: "Empty",
+  1: "Weak",
+  2: "Fair",
+  3: "Good",
+  4: "Strong",
+};
+
+function scorePassword(pwd: string): { score: Strength; label: string } {
+  if (!pwd) return { score: 0, label: STRENGTH_LABEL[0] };
+  let score = 0;
+  if (pwd.length >= 8) score += 1;
+  if (pwd.length >= 12) score += 1;
+  if (/[A-Z]/.test(pwd) && /[a-z]/.test(pwd)) score += 1;
+  if (/\d/.test(pwd) && /[^A-Za-z0-9]/.test(pwd)) score += 1;
+  const safe = (score > 4 ? 4 : score) as Strength;
+  return { score: safe, label: STRENGTH_LABEL[safe] };
+}
+
+const STRENGTH_BAR_COLOR: Record<Strength, string> = {
+  0: "bg-muted",
+  1: "bg-red-500",
+  2: "bg-amber-500",
+  3: "bg-blue-500",
+  4: "bg-emerald-500",
+};
+
+const STRENGTH_TEXT_COLOR: Record<Strength, string> = {
+  0: "text-muted-foreground",
+  1: "text-red-500",
+  2: "text-amber-500",
+  3: "text-blue-500",
+  4: "text-emerald-500",
+};
+
+function PasswordStrength({ password }: { password: string }) {
+  const { score, label } = scorePassword(password);
+
+  return (
+    <div className="mt-1.5 space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        {[1, 2, 3, 4].map((i) => (
+          <span
+            key={i}
+            className={cn(
+              "h-1 flex-1 rounded-full transition-colors",
+              i <= score ? STRENGTH_BAR_COLOR[score] : "bg-muted",
+            )}
+          />
+        ))}
+      </div>
+      {password && (
+        <p
+          className={cn(
+            "text-[11px] font-medium transition-colors",
+            STRENGTH_TEXT_COLOR[score],
+          )}
+        >
+          {label}
+          {score < 3 && " — try 12+ chars, mixed case, a number & symbol"}
+        </p>
+      )}
     </div>
   );
 }
@@ -208,72 +293,76 @@ export function SignInForm({ notice }: { notice?: AuthNotice | null }) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5 sm:gap-6">
       <SocialButtons />
-      <FieldSeparator>or continue with email</FieldSeparator>
-      <form onSubmit={onSubmit}>
-        <FieldGroup>
-          <AuthAlert notice={notice} />
-          <AuthAlert
-            notice={error ? { tone: "error", message: error } : undefined}
-          />
+      <FieldSeparator className="text-[11px] uppercase tracking-wider">
+        or continue with email
+      </FieldSeparator>
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <AuthAlert notice={notice} />
+        <AuthAlert
+          notice={error ? { tone: "error", message: error } : undefined}
+        />
 
-          <Field data-invalid={!!error}>
-            <FieldLabel htmlFor="email">Email address</FieldLabel>
-            <div className="relative">
-              <Mail className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                placeholder="you@company.com"
-                required
-                aria-invalid={!!error}
-                className="h-11 pl-10"
-              />
-            </div>
-          </Field>
-
-          <Field data-invalid={!!error}>
-            <div className="flex items-center justify-between gap-3">
-              <FieldLabel htmlFor="password">Password</FieldLabel>
-              <Link
-                className="text-primary text-sm font-medium underline-offset-4 hover:underline"
-                href="/forgot-password"
-              >
-                Forgot password?
-              </Link>
-            </div>
-            <PasswordInput
-              id="password"
-              name="password"
-              autoComplete="current-password"
-              placeholder="Enter your password"
-              invalid={!!error}
+        <Field data-invalid={!!error}>
+          <FieldLabel htmlFor="email" className="text-sm font-medium">
+            Email address
+          </FieldLabel>
+          <div className="relative">
+            <Mail className="text-muted-foreground pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2" />
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              placeholder="you@company.com"
+              required
+              aria-invalid={!!error}
+              className="h-11 rounded-xl pl-10"
             />
-          </Field>
+          </div>
+        </Field>
 
-          <Button
-            type="submit"
-            size="lg"
-            className="h-11 w-full"
-            disabled={isPending}
-          >
-            {isPending ? (
-              <LoaderCircle data-icon="inline-start" className="animate-spin" />
-            ) : (
-              <ArrowRight data-icon="inline-start" />
-            )}
-            Sign in
-          </Button>
-        </FieldGroup>
+        <Field data-invalid={!!error}>
+          <div className="flex items-center justify-between gap-3">
+            <FieldLabel htmlFor="password" className="text-sm font-medium">
+              Password
+            </FieldLabel>
+            <Link
+              className="text-primary text-xs font-medium underline-offset-4 hover:underline"
+              href="/forgot-password"
+            >
+              Forgot password?
+            </Link>
+          </div>
+          <PasswordInput
+            id="password"
+            name="password"
+            autoComplete="current-password"
+            placeholder="Enter your password"
+            invalid={!!error}
+          />
+        </Field>
+
+        <Button
+          type="submit"
+          size="lg"
+          className="h-11 w-full rounded-xl text-sm font-semibold shadow-sm transition-all hover:brightness-110"
+          disabled={isPending}
+        >
+          {isPending ? (
+            <LoaderCircle data-icon="inline-start" className="animate-spin" />
+          ) : (
+            <ArrowRight data-icon="inline-start" />
+          )}
+          Sign in
+        </Button>
       </form>
 
       <p className="text-muted-foreground text-center text-sm">
         New to SellPilot?{" "}
         <Link
-          className="text-primary font-medium underline-offset-4 hover:underline"
+          className="text-primary font-semibold underline-offset-4 hover:underline"
           href="/signup"
         >
           Create an account
@@ -287,16 +376,17 @@ export function SignUpForm() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [password, setPassword] = useState("");
 
   function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    const password = getFormString(formData, "password");
-    const confirmPassword = getFormString(formData, "confirmPassword");
+    const pwd = getFormString(formData, "password");
+    const confirmPwd = getFormString(formData, "confirmPassword");
 
     setError(null);
 
-    if (password !== confirmPassword) {
+    if (pwd !== confirmPwd) {
       setError("Passwords do not match.");
       return;
     }
@@ -307,7 +397,7 @@ export function SignUpForm() {
           await postAuth<AuthResponse>("sign-up/email", {
             name: getFormString(formData, "name"),
             email: getFormString(formData, "email"),
-            password,
+            password: pwd,
             callbackURL: "/dashboard",
             rememberMe: true,
           });
@@ -326,19 +416,24 @@ export function SignUpForm() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5 sm:gap-6">
       <SocialButtons />
-      <FieldSeparator>or create with email</FieldSeparator>
-      <form onSubmit={onSubmit}>
-        <FieldGroup>
-          <AuthAlert
-            notice={error ? { tone: "error", message: error } : undefined}
-          />
+      <FieldSeparator className="text-[11px] uppercase tracking-wider">
+        or create with email
+      </FieldSeparator>
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <AuthAlert
+          notice={error ? { tone: "error", message: error } : undefined}
+        />
 
+        {/* Name + Email in one row */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field data-invalid={!!error}>
-            <FieldLabel htmlFor="name">Full name</FieldLabel>
+            <FieldLabel htmlFor="name" className="text-sm font-medium">
+              Full name
+            </FieldLabel>
             <div className="relative">
-              <UserRound className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+              <UserRound className="text-muted-foreground pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2" />
               <Input
                 id="name"
                 name="name"
@@ -347,15 +442,17 @@ export function SignUpForm() {
                 placeholder="Sarah Lee"
                 required
                 aria-invalid={!!error}
-                className="h-11 pl-10"
+                className="h-11 rounded-xl pl-10"
               />
             </div>
           </Field>
 
           <Field data-invalid={!!error}>
-            <FieldLabel htmlFor="email">Work email</FieldLabel>
+            <FieldLabel htmlFor="email" className="text-sm font-medium">
+              Work email
+            </FieldLabel>
             <div className="relative">
-              <Mail className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+              <Mail className="text-muted-foreground pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2" />
               <Input
                 id="email"
                 name="email"
@@ -364,57 +461,65 @@ export function SignUpForm() {
                 placeholder="you@company.com"
                 required
                 aria-invalid={!!error}
-                className="h-11 pl-10"
+                className="h-11 rounded-xl pl-10"
               />
             </div>
           </Field>
+        </div>
 
-          <Field data-invalid={!!error}>
-            <FieldLabel htmlFor="password">Password</FieldLabel>
-            <PasswordInput
-              id="password"
-              name="password"
-              autoComplete="new-password"
-              placeholder="At least 8 characters"
-              invalid={!!error}
-            />
-            <FieldDescription>
-              Use 8 or more characters. A unique password keeps your commerce
-              channels safer.
-            </FieldDescription>
-          </Field>
+        {/* Password (stacked column) */}
+        <Field data-invalid={!!error}>
+          <FieldLabel htmlFor="password" className="text-sm font-medium">
+            Password
+          </FieldLabel>
+          <PasswordInput
+            id="password"
+            name="password"
+            autoComplete="new-password"
+            placeholder="At least 8 characters"
+            invalid={!!error}
+            value={password}
+            onChange={(e) => setPassword(e.currentTarget.value)}
+          />
+          <PasswordStrength password={password} />
+        </Field>
 
-          <Field data-invalid={!!error}>
-            <FieldLabel htmlFor="confirmPassword">Confirm password</FieldLabel>
-            <PasswordInput
-              id="confirmPassword"
-              name="confirmPassword"
-              autoComplete="new-password"
-              placeholder="Repeat your password"
-              invalid={!!error}
-            />
-          </Field>
-
-          <Button
-            type="submit"
-            size="lg"
-            className="h-11 w-full"
-            disabled={isPending}
+        {/* Confirm password (stacked column) */}
+        <Field data-invalid={!!error}>
+          <FieldLabel
+            htmlFor="confirmPassword"
+            className="text-sm font-medium"
           >
-            {isPending ? (
-              <LoaderCircle data-icon="inline-start" className="animate-spin" />
-            ) : (
-              <ArrowRight data-icon="inline-start" />
-            )}
-            Create account
-          </Button>
-        </FieldGroup>
+            Confirm password
+          </FieldLabel>
+          <PasswordInput
+            id="confirmPassword"
+            name="confirmPassword"
+            autoComplete="new-password"
+            placeholder="Repeat your password"
+            invalid={!!error}
+          />
+        </Field>
+
+        <Button
+          type="submit"
+          size="lg"
+          className="h-11 w-full rounded-xl text-sm font-semibold shadow-sm transition-all hover:brightness-110"
+          disabled={isPending}
+        >
+          {isPending ? (
+            <LoaderCircle data-icon="inline-start" className="animate-spin" />
+          ) : (
+            <ArrowRight data-icon="inline-start" />
+          )}
+          Create account
+        </Button>
       </form>
 
       <p className="text-muted-foreground text-center text-sm">
         Already have an account?{" "}
         <Link
-          className="text-primary font-medium underline-offset-4 hover:underline"
+          className="text-primary font-semibold underline-offset-4 hover:underline"
           href="/login"
         >
           Sign in
@@ -460,51 +565,51 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <form onSubmit={onSubmit}>
-        <FieldGroup>
-          <AuthAlert notice={notice} />
+    <div className="flex flex-col gap-5 sm:gap-6">
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <AuthAlert notice={notice} />
 
-          <Field data-invalid={notice?.tone === "error"}>
-            <FieldLabel htmlFor="email">Account email</FieldLabel>
-            <div className="relative">
-              <Mail className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                placeholder="you@company.com"
-                required
-                aria-invalid={notice?.tone === "error"}
-                className="h-11 pl-10"
-              />
-            </div>
-            <FieldDescription>
-              We will send a one-time link that expires in 60 minutes.
-            </FieldDescription>
-          </Field>
+        <Field data-invalid={notice?.tone === "error"}>
+          <FieldLabel htmlFor="email" className="text-sm font-medium">
+            Account email
+          </FieldLabel>
+          <div className="relative">
+            <Mail className="text-muted-foreground pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2" />
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              placeholder="you@company.com"
+              required
+              aria-invalid={notice?.tone === "error"}
+              className="h-11 rounded-xl pl-10"
+            />
+          </div>
+          <FieldDescription className="text-xs">
+            We will send a one-time link that expires in 60 minutes.
+          </FieldDescription>
+        </Field>
 
-          <Button
-            type="submit"
-            size="lg"
-            className="h-11 w-full"
-            disabled={isPending}
-          >
-            {isPending ? (
-              <LoaderCircle data-icon="inline-start" className="animate-spin" />
-            ) : (
-              <Mail data-icon="inline-start" />
-            )}
-            Send reset link
-          </Button>
-        </FieldGroup>
+        <Button
+          type="submit"
+          size="lg"
+          className="h-11 w-full rounded-xl text-sm font-semibold shadow-sm transition-all hover:brightness-110"
+          disabled={isPending}
+        >
+          {isPending ? (
+            <LoaderCircle data-icon="inline-start" className="animate-spin" />
+          ) : (
+            <Mail data-icon="inline-start" />
+          )}
+          Send reset link
+        </Button>
       </form>
 
       <p className="text-muted-foreground text-center text-sm">
         Remembered it?{" "}
         <Link
-          className="text-primary font-medium underline-offset-4 hover:underline"
+          className="text-primary font-semibold underline-offset-4 hover:underline"
           href="/login"
         >
           Back to sign in
@@ -570,58 +675,58 @@ export function ResetPasswordForm({
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <form onSubmit={onSubmit}>
-        <FieldGroup>
-          <AuthAlert
-            notice={error ? { tone: "error", message: error } : undefined}
+    <div className="flex flex-col gap-5 sm:gap-6">
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <AuthAlert
+          notice={error ? { tone: "error", message: error } : undefined}
+        />
+
+        <Field data-invalid={!!error}>
+          <FieldLabel htmlFor="newPassword" className="text-sm font-medium">
+            New password
+          </FieldLabel>
+          <PasswordInput
+            id="newPassword"
+            name="newPassword"
+            autoComplete="new-password"
+            placeholder="Set a new password"
+            invalid={!!error}
           />
+        </Field>
 
-          <Field data-invalid={!!error}>
-            <FieldLabel htmlFor="newPassword">New password</FieldLabel>
-            <PasswordInput
-              id="newPassword"
-              name="newPassword"
-              autoComplete="new-password"
-              placeholder="Set a new password"
-              invalid={!!error}
-            />
-          </Field>
+        <Field data-invalid={!!error}>
+          <FieldLabel htmlFor="confirmPassword" className="text-sm font-medium">
+            Confirm new password
+          </FieldLabel>
+          <PasswordInput
+            id="confirmPassword"
+            name="confirmPassword"
+            autoComplete="new-password"
+            placeholder="Repeat the new password"
+            invalid={!!error}
+          />
+          <FieldError>{error}</FieldError>
+        </Field>
 
-          <Field data-invalid={!!error}>
-            <FieldLabel htmlFor="confirmPassword">
-              Confirm new password
-            </FieldLabel>
-            <PasswordInput
-              id="confirmPassword"
-              name="confirmPassword"
-              autoComplete="new-password"
-              placeholder="Repeat the new password"
-              invalid={!!error}
-            />
-            <FieldError>{error}</FieldError>
-          </Field>
-
-          <Button
-            type="submit"
-            size="lg"
-            className="h-11 w-full"
-            disabled={isPending || !hasToken}
-          >
-            {isPending ? (
-              <LoaderCircle data-icon="inline-start" className="animate-spin" />
-            ) : (
-              <LockKeyhole data-icon="inline-start" />
-            )}
-            Update password
-          </Button>
-        </FieldGroup>
+        <Button
+          type="submit"
+          size="lg"
+          className="h-11 w-full rounded-xl text-sm font-semibold shadow-sm transition-all hover:brightness-110"
+          disabled={isPending || !hasToken}
+        >
+          {isPending ? (
+            <LoaderCircle data-icon="inline-start" className="animate-spin" />
+          ) : (
+            <LockKeyhole data-icon="inline-start" />
+          )}
+          Update password
+        </Button>
       </form>
 
       <p className="text-muted-foreground text-center text-sm">
         Need another link?{" "}
         <Link
-          className="text-primary font-medium underline-offset-4 hover:underline"
+          className="text-primary font-semibold underline-offset-4 hover:underline"
           href="/forgot-password"
         >
           Request reset

@@ -152,7 +152,7 @@ export function useTheme() {
 }
 
 export function ThemeToggle() {
-  const { setTheme } = useTheme();
+  const { themeMode, setTheme } = useTheme();
 
   return (
     <DropdownMenu>
@@ -160,7 +160,7 @@ export function ThemeToggle() {
         <Button
           variant="outline"
           size="icon"
-          className="[&>svg]:absolute [&>svg]:size-5 [&>svg]:scale-0"
+          className="relative overflow-hidden [&>svg]:absolute [&>svg]:size-4 [&>svg]:scale-0 [&>svg]:transition-transform"
         >
           <SunIcon className="light:scale-100! auto:scale-0!" />
           <MoonIcon className="auto:scale-0! dark:scale-100!" />
@@ -168,15 +168,33 @@ export function ThemeToggle() {
           <span className="sr-only">Toggle theme</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => setTheme("light")}>
-          Light
+      <DropdownMenuContent align="end" className="min-w-[8rem]">
+        <DropdownMenuItem
+          onClick={() => setTheme("light")}
+          className="flex items-center justify-between"
+        >
+          <span className="flex items-center gap-2">
+            <SunIcon className="size-4" /> Light
+          </span>
+          {themeMode === "light" ? <span className="text-primary text-xs">●</span> : null}
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme("dark")}>
-          Dark
+        <DropdownMenuItem
+          onClick={() => setTheme("dark")}
+          className="flex items-center justify-between"
+        >
+          <span className="flex items-center gap-2">
+            <MoonIcon className="size-4" /> Dark
+          </span>
+          {themeMode === "dark" ? <span className="text-primary text-xs">●</span> : null}
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme("auto")}>
-          System
+        <DropdownMenuItem
+          onClick={() => setTheme("auto")}
+          className="flex items-center justify-between"
+        >
+          <span className="flex items-center gap-2">
+            <DesktopIcon className="size-4" /> System
+          </span>
+          {themeMode === "auto" ? <span className="text-primary text-xs">●</span> : null}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

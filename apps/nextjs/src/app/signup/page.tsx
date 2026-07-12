@@ -13,9 +13,9 @@ export default async function SignUpPage() {
 
   return (
     <AuthShell
-      eyebrow="Start selling smarter"
+      eyebrow="Start free · 14-day Pro trial"
       title="Create your SellPilot workspace"
-      description="Open a secure account, then connect Facebook, Instagram, and WhatsApp from the dashboard."
+      description="Spin up your AI agent, connect your channels, and start selling — no credit card required."
     >
       <SignUpForm />
     </AuthShell>

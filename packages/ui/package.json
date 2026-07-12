@@ -6,6 +6,7 @@
     ".": "./src/index.ts",
     "./badge": "./src/badge.tsx",
     "./button": "./src/button.tsx",
+    "./collapsible": "./src/collapsible.tsx",
     "./dropdown-menu": "./src/dropdown-menu.tsx",
     "./field": "./src/field.tsx",
     "./input": "./src/input.tsx",
@@ -13,7 +14,8 @@
     "./separator": "./src/separator.tsx",
     "./sheet": "./src/sheet.tsx",
     "./theme": "./src/theme.tsx",
-    "./toast": "./src/toast.tsx"
+    "./toast": "./src/toast.tsx",
+    "./tooltip": "./src/tooltip.tsx"
   },
   "license": "MIT",
   "scripts": {
