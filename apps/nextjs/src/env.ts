@@ -17,6 +17,10 @@ export const env = createEnv({
    */
   server: {
     POSTGRES_URL: z.url(),
+    APP_URL: z.string().url().default("http://localhost:3000"),
+    SSLCOMMERZ_STORE_ID: z.string().optional(),
+    SSLCOMMERZ_STORE_PASSWORD: z.string().optional(),
+    SSLCOMMERZ_IS_SANDBOX: z.coerce.boolean().default(true),
     GOOGLE_CLIENT_ID: z.string(),
     GOOGLE_CLIENT_SECRET: z.string(),
     FACEBOOK_APP_ID: z.string(),

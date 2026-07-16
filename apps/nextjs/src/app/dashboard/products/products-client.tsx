@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import {
   AlertCircle,
   Archive,
@@ -21,7 +22,7 @@ import { Button } from "@acme/ui/button";
 import { Input } from "@acme/ui/input";
 import { Separator } from "@acme/ui/separator";
 
-import { deleteProduct, testImageSearch } from "./actions";
+import { useTRPC } from "~/trpc/react";
 import { ProductForm } from "./product-form";
 
 interface ProductsClientProps {
@@ -33,6 +34,9 @@ export function ProductsClient({
   initialProducts = [],
   initialVariants = [],
 }: ProductsClientProps) {
+  const trpc = useTRPC();
+  const deleteProductMutation = useMutation(trpc.products.delete.mutationOptions());
+  const testImageSearchMutation = useMutation(trpc.products.testImageSearch.mutationOptions());
   const [products, setProducts] = useState<any[]>(initialProducts ?? []);
   const [variants, setVariants] = useState<any[]>(initialVariants ?? []);
   const [view, setView] = useState<"list" | "create" | "edit" | "sandbox">(
@@ -80,11 +84,11 @@ export function ProductsClient({
   const handleDeleteClick = async (productId: string) => {
     if (confirm("Are you sure you want to delete this product?")) {
       try {
-        await deleteProduct(productId);
+        await deleteProductMutation.mutateAsync({ productId });
         // Refresh local state
         setProducts((prev) => prev.filter((p) => p.id !== productId));
         setVariants((prev) => prev.filter((v) => v.productId !== productId));
-      } catch (err) {
+      } catch {
         alert("Failed to delete product");
       }
     }
@@ -102,7 +106,7 @@ export function ProductsClient({
     setSandboxResults([]);
 
     try {
-      const results = await testImageSearch(sandboxImageUrl.trim());
+      const results = await testImageSearchMutation.mutateAsync({ imageUrl: sandboxImageUrl.trim() });
       setSandboxResults(results);
     } catch (err: any) {
       setSandboxError(

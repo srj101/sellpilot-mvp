@@ -160,7 +160,7 @@ export function ThemeToggle() {
         <Button
           variant="outline"
           size="icon"
-          className="relative overflow-hidden [&>svg]:absolute [&>svg]:size-4 [&>svg]:scale-0 [&>svg]:transition-transform"
+          className="relative rounded-full overflow-hidden [&>svg]:absolute [&>svg]:size-4 [&>svg]:scale-0 [&>svg]:transition-transform"
         >
           <SunIcon className="light:scale-100! auto:scale-0!" />
           <MoonIcon className="auto:scale-0! dark:scale-100!" />

@@ -1,4 +1,4 @@
-import { graphGet } from "./meta";
+import type { MetaConnectionRow, MetaWebhookEventRow } from "./meta-inbox";
 
 // Simple in-memory cache for resolved contact names to avoid calling Graph API on every page load
 const contactNameCache = new Map<string, { name: string; expiresAt: number }>();
@@ -17,9 +17,9 @@ async function safeGraphGet(psid: string, accessToken: string): Promise<string |
     if (!res.ok) {
       return null;
     }
-    const data = await res.json().catch(() => ({})) as { name?: string };
+    const data = (await res.json().catch(() => ({}))) as { name?: string };
     return data.name ?? null;
-  } catch (err) {
+  } catch {
     return null;
   }
 }
@@ -53,15 +53,15 @@ export async function getMetaContactName(
 }
 
 export async function resolveContactNames(
-  events: any[],
-  connections: any[],
+  events: MetaWebhookEventRow[],
+  connections: MetaConnectionRow[],
 ): Promise<Record<string, string>> {
   const resolvedNames: Record<string, string> = {};
-  const lookups: Array<{
+  const lookups: {
     psid: string;
     platform: "facebook_page" | "instagram";
     accessToken: string;
-  }> = [];
+  }[] = [];
   const seenKeys = new Set<string>();
 
   for (const event of events) {
@@ -69,23 +69,22 @@ export async function resolveContactNames(
       continue;
     }
 
-    const rawPayload = event.rawPayload || {};
-    const direction = rawPayload.direction;
+    // The webhook payload shape varies by event type; treated as loosely-shaped JSON.
+    const rawPayload = event.rawPayload as Record<string, any>;
+    const direction = rawPayload.direction as string | undefined;
     const isOutbound = direction === "outbound" || event.eventType === "outbound";
 
     let psid: string | undefined;
 
     if (isOutbound) {
-      psid = (rawPayload.recipientId as string) || (event.sourceId as string);
+      psid = (rawPayload.recipientId as string | undefined) ?? (event.sourceId ?? undefined);
     } else {
       const entry = Array.isArray(rawPayload.entry) ? rawPayload.entry : [];
-      const firstEntry = entry[0] || {};
-      const messaging = Array.isArray(firstEntry.messaging)
-        ? firstEntry.messaging
-        : [];
-      const firstMessaging = messaging[0] || {};
-      const sender = firstMessaging.sender || {};
-      psid = sender.id;
+      const firstEntry = entry[0] ?? {};
+      const messaging = Array.isArray(firstEntry.messaging) ? firstEntry.messaging : [];
+      const firstMessaging = messaging[0] ?? {};
+      const sender = firstMessaging.sender ?? {};
+      psid = sender.id as string | undefined;
     }
 
     if (!psid) {
@@ -99,8 +98,7 @@ export async function resolveContactNames(
     seenKeys.add(cacheKey);
 
     const connection = connections.find((c) => c.id === event.metaConnectionId);
-    const accessToken =
-      connection?.accessToken || connection?.facebookPageAccessToken;
+    const accessToken = connection?.accessToken ?? connection?.facebookPageAccessToken;
 
     if (accessToken) {
       lookups.push({ psid, platform: event.platform, accessToken });

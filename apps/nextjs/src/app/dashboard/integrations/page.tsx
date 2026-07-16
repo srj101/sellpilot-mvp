@@ -1,10 +1,8 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { eq } from "@acme/db";
-
-import { db } from "@acme/db/client";
-import { metaConnection } from "@acme/db/schema";
 
 import { getSession } from "~/auth/server";
+import { createCaller } from "~/trpc/caller";
 import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { IntegrationCard } from "./_components/integration-card";
 
@@ -15,16 +13,8 @@ export default async function IntegrationsPage() {
     redirect("/login");
   }
 
-  // Fetch real connections from DB
-  const connections = await db
-    .select({
-      id: metaConnection.id,
-      platform: metaConnection.platform,
-      platformAccountName: metaConnection.platformAccountName,
-      accessToken: metaConnection.accessToken,
-    })
-    .from(metaConnection)
-    .where(eq(metaConnection.userId, session.user.id));
+  const caller = await createCaller(await headers());
+  const connections = await caller.integrations.list();
 
   const fbConnection = connections.find(
     (c) => c.platform === "facebook_page",

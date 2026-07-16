@@ -11,7 +11,7 @@ import {
   exchangeCodeForToken,
   exchangeForLongLivedToken,
   getPagesWithInstagram,
-} from "~/lib/meta";
+} from "@acme/api/meta";
 
 /**
  * GET /api/meta/callback

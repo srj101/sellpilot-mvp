@@ -117,8 +117,7 @@ function defaultAccountLabel(connection?: MetaConnectionRow): string {
     connection.instagramUsername ??
     connection.whatsappBusinessAccountId ??
     connection.whatsappPhoneNumberId ??
-    connection.platformAccountId ??
-    "Connected account"
+    connection.platformAccountId
   );
 }
 

@@ -2,291 +2,245 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import {
-  TrendingUp,
-  ShoppingCart,
-  Users,
-  Package,
-  Percent,
-  MessageSquare,
-  ArrowUpRight,
-  Clock,
-  CheckCircle2,
-  Truck,
-} from "lucide-react";
+import { TrendingUp, ArrowUpRight, Plus, CheckCircle2, XCircle, ShoppingCart } from "lucide-react";
 
 import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
+import { Card, CardAction, CardContent, CardHeader, CardTitle, CardDescription } from "@acme/ui/card";
 import { cn } from "@acme/ui";
 
-interface SerializedOrder {
-  id: string;
-  orderNumber: string;
-  status: string;
-  total: number;
-  customerName: string;
-  customerPhone: string | null;
-  channel: string | null;
-  createdAt: string;
-  [key: string]: unknown;
-}
+import type { ActivityEvent, DashboardClientProps, SerializedOrder } from "./dashboard-types";
+import { DAY, avatarColor, formatCurrency, initials, trendPct, STATUS_BADGE } from "./dashboard-utils";
+import {
+  ActivityTimeline,
+  CompactTrend,
+  ConversionFunnel,
+  DonutWithLegend,
+  GoalBar,
+  GoalRing,
+  OverviewChart,
+  SegmentLegend,
+  Sparkline,
+  TrendLine,
+  WeekdayBarChart,
+} from "./dashboard-widgets";
 
-interface MessageStats {
-  total: number;
-  inbound: number;
-  outbound: number;
-  platformBreakdown: {
-    instagram: number;
-    whatsapp: number;
-    facebook: number;
-  };
-}
-
-interface DashboardClientProps {
-  userName: string;
-  orders: SerializedOrder[];
-  productCount: number;
-  customerCount: number;
-  activeOfferCount: number;
-  recentItems: { orderId: string; name: string; qty: number; lineTotal: number; [key: string]: unknown }[];
-  messageStats: MessageStats;
-}
-
-function formatCurrency(amount: number) {
-  return `৳${amount.toLocaleString()}`;
-}
-
-function relativeTime(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
-}
-
-const STATUS_ICONS: Record<string, typeof Clock> = {
-  pending: Clock,
-  confirmed: CheckCircle2,
-  paid: CheckCircle2,
-  shipped: Truck,
-  delivered: CheckCircle2,
-};
-
-/* ─── Bar chart component ─────────────────────────────────────────── */
-function MiniBarChart({
-  data,
-  colors: _colors,
-}: {
-  data: { label: string; value: number; color: string }[];
-  colors?: string[];
-}) {
-  const max = Math.max(...data.map((d) => d.value), 1);
-
-  return (
-    <div className="flex items-end gap-2 h-28">
-      {data.map((d, i) => (
-        <div key={d.label} className="flex flex-1 flex-col items-center gap-1">
-          <span className="text-[10px] font-bold tabular-nums text-foreground">
-            {d.value}
-          </span>
-          <div
-            className={cn(
-              "w-full rounded-t-lg transition-all duration-700 ease-out",
-              d.color,
-            )}
-            style={{
-              height: `${Math.max((d.value / max) * 100, 8)}%`,
-              animationDelay: `${i * 100}ms`,
-            }}
-          />
-          <span className="text-[10px] font-medium text-muted-foreground truncate max-w-full">
-            {d.label}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ─── Order status stacked-bar widget ─────────────────────────────── */
-function OrderStatusBreakdown({
-  data,
-  total,
-}: {
-  data: { label: string; value: number; color: string }[];
-  total: number;
-}) {
-  if (data.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-10 text-center">
-        <p className="text-sm text-muted-foreground">No orders yet</p>
-        <p className="text-xs text-muted-foreground/70">
-          Order status will appear here as customers place them.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Stacked progress bar */}
-      <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
-        {data.map((seg) => {
-          const pct = (seg.value / total) * 100;
-          if (pct === 0) return null;
-          return (
-            <div
-              key={seg.label}
-              className={cn("h-full transition-all duration-700", seg.color)}
-              style={{ width: `${pct}%` }}
-              aria-label={`${seg.label}: ${seg.value} (${pct.toFixed(0)}%)`}
-            />
-          );
-        })}
-      </div>
-
-      {/* Legend grid */}
-      <ul className="grid grid-cols-2 gap-x-4 gap-y-2.5">
-        {data.map((seg) => {
-          const pct = total === 0 ? 0 : (seg.value / total) * 100;
-          return (
-            <li
-              key={seg.label}
-              className="flex items-center justify-between gap-3"
-            >
-              <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span
-                  className={cn(
-                    "h-2.5 w-2.5 shrink-0 rounded-full",
-                    seg.color,
-                  )}
-                />
-                {seg.label}
-              </span>
-              <span className="flex items-baseline gap-1.5">
-                <span className="text-sm font-bold tabular-nums text-foreground">
-                  {seg.value}
-                </span>
-                <span className="text-[10px] font-medium text-muted-foreground tabular-nums">
-                  {pct.toFixed(0)}%
-                </span>
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-/* ─── Donut chart component ───────────────────────────────────────── */
-function MiniDonut({
-  segments,
-}: {
-  segments: { label: string; value: number; color: string }[];
-}) {
-  const total = segments.reduce((s, seg) => s + seg.value, 0) || 1;
-  let accumulated = 0;
-  const size = 120;
-  const strokeWidth = 18;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-
-  return (
-    <div className="flex items-center gap-4">
-      <svg width={size} height={size} className="shrink-0 -rotate-90">
-        {segments.map((seg) => {
-          const pct = seg.value / total;
-          const dashArray = pct * circumference;
-          const dashOffset = -accumulated * circumference;
-          accumulated += pct;
-
-          return (
-            <circle
-              key={seg.label}
-              cx={size / 2}
-              cy={size / 2}
-              r={radius}
-              fill="none"
-              strokeWidth={strokeWidth}
-              className={seg.color}
-              strokeDasharray={`${dashArray} ${circumference - dashArray}`}
-              strokeDashoffset={dashOffset}
-              strokeLinecap="round"
-            />
-          );
-        })}
-      </svg>
-      <div className="space-y-1.5">
-        {segments.map((seg) => (
-          <div key={seg.label} className="flex items-center gap-2 text-xs">
-            <span className={cn("h-2.5 w-2.5 rounded-full", seg.color.replace("stroke-", "bg-"))} />
-            <span className="text-muted-foreground">{seg.label}</span>
-            <span className="font-bold text-foreground tabular-nums">{seg.value}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export function DashboardClient({
-  userName,
-  orders,
-  productCount,
-  customerCount,
-  activeOfferCount,
-  recentItems,
-  messageStats,
-}: DashboardClientProps) {
+export function DashboardClient({ userName, now, orders, customerCount, recentItems, messageStats }: DashboardClientProps) {
   const stats = useMemo(() => {
-    const validOrders = orders.filter(
-      (o) => o.status !== "cancelled" && o.status !== "returned",
-    );
+    const validOrders = orders.filter((o) => o.status !== "cancelled" && o.status !== "returned");
     const totalRevenue = validOrders.reduce((sum, o) => sum + o.total, 0);
-    const avgOrderValue =
-      validOrders.length > 0
-        ? Math.round(totalRevenue / validOrders.length)
-        : 0;
-    const pendingOrders = orders.filter((o) => o.status === "pending").length;
-    return { totalRevenue, avgOrderValue, pendingOrders, totalOrders: orders.length };
-  }, [orders]);
 
-  const statusBreakdown = useMemo(() => {
-    const counts: Record<string, number> = {};
+    const inWindow = (o: SerializedOrder, start: number, end: number) => {
+      const t = new Date(o.createdAt).getTime();
+      return t >= start && t < end;
+    };
+    const currentPeriod = validOrders.filter((o) => inWindow(o, now - 30 * DAY, now));
+    const prevPeriod = validOrders.filter((o) => inWindow(o, now - 60 * DAY, now - 30 * DAY));
+    const currentRevenue = currentPeriod.reduce((s, o) => s + o.total, 0);
+    const prevRevenue = prevPeriod.reduce((s, o) => s + o.total, 0);
+    const currentCustomers = new Set(currentPeriod.map((o) => o.customerPhone ?? o.customerName)).size;
+    const prevCustomers = new Set(prevPeriod.map((o) => o.customerPhone ?? o.customerName)).size;
+
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const todaysOrders = orders.filter((o) => new Date(o.createdAt).getTime() >= todayStart.getTime());
+    const todaysRevenue = todaysOrders
+      .filter((o) => o.status !== "cancelled" && o.status !== "returned")
+      .reduce((s, o) => s + o.total, 0);
+
+    return {
+      totalRevenue,
+      totalOrders: orders.length,
+      currentRevenue,
+      prevRevenue,
+      currentCustomers,
+      prevCustomers,
+      todaysOrderCount: todaysOrders.length,
+      todaysRevenue,
+      trends: {
+        revenue: trendPct(currentRevenue, prevRevenue),
+        orders: trendPct(currentPeriod.length, prevPeriod.length),
+        customers: trendPct(currentCustomers, prevCustomers),
+      },
+    };
+  }, [orders, now]);
+
+  // Last 14 days, for the Total Revenue card sparkline.
+  const revenueSparkline = useMemo(() => {
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const values: number[] = [];
+    for (let i = 13; i >= 0; i--) {
+      const dayStart = todayStart.getTime() - i * DAY;
+      const dayEnd = dayStart + DAY;
+      const dayRevenue = orders
+        .filter((o) => {
+          const t = new Date(o.createdAt).getTime();
+          return t >= dayStart && t < dayEnd && o.status !== "cancelled" && o.status !== "returned";
+        })
+        .reduce((s, o) => s + o.total, 0);
+      values.push(dayRevenue);
+    }
+    return values;
+  }, [orders, now]);
+
+  // Last 7 days order counts, for the Orders card mini bar chart.
+  const weekdayOrders = useMemo(() => {
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const days: { label: string; value: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const dayStart = todayStart.getTime() - i * DAY;
+      const dayEnd = dayStart + DAY;
+      const count = orders.filter((o) => {
+        const t = new Date(o.createdAt).getTime();
+        return t >= dayStart && t < dayEnd;
+      }).length;
+      days.push({ label: new Date(dayStart).toLocaleDateString("en-US", { weekday: "short" }), value: count });
+    }
+    return days;
+  }, [orders, now]);
+
+  const statusLegend = useMemo(() => {
+    const buckets = { Completed: 0, Processing: 0, Pending: 0, Cancelled: 0 };
     for (const o of orders) {
-      counts[o.status] = (counts[o.status] ?? 0) + 1;
+      if (o.status === "delivered") buckets.Completed++;
+      else if (["confirmed", "paid", "shipped"].includes(o.status)) buckets.Processing++;
+      else if (o.status === "pending") buckets.Pending++;
+      else if (["cancelled", "returned"].includes(o.status)) buckets.Cancelled++;
     }
     return [
-      { label: "Pending", value: counts.pending ?? 0, color: "bg-amber-500" },
-      { label: "Confirmed", value: counts.confirmed ?? 0, color: "bg-blue-500" },
-      { label: "Paid", value: counts.paid ?? 0, color: "bg-violet-500" },
-      { label: "Shipped", value: counts.shipped ?? 0, color: "bg-cyan-500" },
-      { label: "Delivered", value: counts.delivered ?? 0, color: "bg-emerald-500" },
-      { label: "Cancelled", value: counts.cancelled ?? 0, color: "bg-rose-500" },
-    ].filter((d) => d.value > 0);
+      { label: "Completed", color: "bg-emerald-500" },
+      { label: "Processing", color: "bg-blue-500" },
+      { label: "Pending", color: "bg-amber-500" },
+      { label: "Cancelled", color: "bg-rose-500" },
+    ].filter((s) => buckets[s.label as keyof typeof buckets] > 0);
   }, [orders]);
 
-  const channelBreakdown = useMemo(() => {
-    const counts: Record<string, number> = {};
+  // Customer segments (New / Returning / Inactive) + weekly new-customer sparkline.
+  const { customerSegmentLegend, weeklyCustomerSeries } = useMemo(() => {
+    const map = new Map<string, { count: number; last: number }>();
     for (const o of orders) {
-      const ch = o.channel ?? "unknown";
-      counts[ch] = (counts[ch] ?? 0) + 1;
+      const key = o.customerPhone ?? o.customerName;
+      const t = new Date(o.createdAt).getTime();
+      const existing = map.get(key);
+      if (existing) {
+        existing.count++;
+        existing.last = Math.max(existing.last, t);
+      } else {
+        map.set(key, { count: 1, last: t });
+      }
     }
+    let newCount = 0;
+    let returning = 0;
+    let inactive = 0;
+    for (const v of map.values()) {
+      if (now - v.last > 60 * DAY) inactive++;
+      else if (v.count === 1) newCount++;
+      else returning++;
+    }
+    const legend = [
+      { label: "Returning", color: "bg-emerald-500", count: returning },
+      { label: "New", color: "bg-blue-500", count: newCount },
+      { label: "Inactive", color: "bg-amber-500", count: inactive },
+    ].filter((s) => s.count > 0);
+
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const weekly: number[] = [];
+    for (let i = 7; i >= 0; i--) {
+      const weekStart = todayStart.getTime() - i * 7 * DAY;
+      const weekEnd = weekStart + 7 * DAY;
+      const set = new Set(
+        orders
+          .filter((o) => {
+            const t = new Date(o.createdAt).getTime();
+            return t >= weekStart && t < weekEnd;
+          })
+          .map((o) => o.customerPhone ?? o.customerName),
+      );
+      weekly.push(set.size);
+    }
+    return { customerSegmentLegend: legend, weeklyCustomerSeries: weekly };
+  }, [orders, now]);
+
+  const funnelStages = useMemo(() => {
+    const ordersPaid = orders.filter((o) => ["paid", "shipped", "delivered"].includes(o.status)).length;
+    const delivered = orders.filter((o) => o.status === "delivered").length;
     return [
-      { label: "Instagram", value: counts.instagram ?? 0, color: "bg-pink-500" },
-      { label: "WhatsApp", value: counts.whatsapp ?? 0, color: "bg-green-500" },
-      { label: "Messenger", value: counts.messenger ?? 0, color: "bg-blue-500" },
-      { label: "Web", value: counts.web ?? 0, color: "bg-gray-500" },
-    ].filter((d) => d.value > 0);
+      { label: "Messages", value: messageStats.inbound },
+      { label: "Orders", value: orders.length },
+      { label: "Paid", value: ordersPaid },
+      { label: "Delivered", value: delivered },
+    ];
+  }, [orders, messageStats]);
+
+  // Jan–Dec of the current year, for the Overview tabbed chart.
+  const monthlySeries = useMemo(() => {
+    const year = new Date(now).getFullYear();
+    return Array.from({ length: 12 }, (_, i) => {
+      const start = new Date(year, i, 1).getTime();
+      const end = new Date(year, i + 1, 1).getTime();
+      const monthOrders = orders.filter((o) => {
+        const t = new Date(o.createdAt).getTime();
+        return t >= start && t < end && o.status !== "cancelled" && o.status !== "returned";
+      });
+      return {
+        label: new Date(year, i, 1).toLocaleDateString("en-US", { month: "short" }),
+        revenue: monthOrders.reduce((s, o) => s + o.total, 0),
+        orders: monthOrders.length,
+        profit: monthOrders.reduce((s, o) => s + (o.subtotal - o.discountAmount), 0),
+      };
+    });
+  }, [orders, now]);
+
+  const activity = useMemo(() => {
+    const events: ActivityEvent[] = [];
+    for (const o of orders) {
+      const createdMs = new Date(o.createdAt).getTime();
+      events.push({
+        id: `${o.id}-placed`,
+        title: `${o.customerName} placed order #${o.orderNumber}`,
+        time: createdMs,
+        icon: ShoppingCart,
+        color: "border-emerald-500 text-emerald-600 dark:text-emerald-400",
+      });
+      const updatedMs = new Date(o.updatedAt).getTime();
+      if (updatedMs > createdMs) {
+        if (o.status === "delivered") {
+          events.push({
+            id: `${o.id}-delivered`,
+            title: `Order #${o.orderNumber} delivered to ${o.customerName}`,
+            time: updatedMs,
+            icon: CheckCircle2,
+            color: "border-blue-500 text-blue-600 dark:text-blue-400",
+          });
+        } else if (o.status === "cancelled") {
+          events.push({
+            id: `${o.id}-cancelled`,
+            title: `Order #${o.orderNumber} was cancelled`,
+            time: updatedMs,
+            icon: XCircle,
+            color: "border-rose-500 text-rose-600 dark:text-rose-400",
+          });
+        }
+      }
+    }
+    return events.sort((a, b) => b.time - a.time).slice(0, 7);
   }, [orders]);
 
-  const recentOrders = orders.slice(0, 8);
+  const orderProductMap = useMemo(() => {
+    const map = new Map<string, { name: string; extra: number }>();
+    for (const item of recentItems) {
+      const existing = map.get(item.orderId);
+      if (!existing) map.set(item.orderId, { name: item.name, extra: 0 });
+      else existing.extra++;
+    }
+    return map;
+  }, [recentItems]);
 
-  // Top-selling products from order items
+  const recentOrders = orders.slice(0, 6);
+
   const topProducts = useMemo(() => {
     const prodMap = new Map<string, { name: string; qty: number; revenue: number }>();
     for (const item of recentItems) {
@@ -295,280 +249,303 @@ export function DashboardClient({
       existing.revenue += item.lineTotal;
       prodMap.set(item.name, existing);
     }
-    return [...prodMap.values()]
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 5);
+    return [...prodMap.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 5);
   }, [recentItems]);
 
   return (
-    <div className="space-y-8">
-      {/* Welcome */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">
-          Welcome back, {userName} 👋
-        </h1>
-        <p className="text-muted-foreground mt-1 text-base">
-          Here&apos;s what&apos;s happening with your store today.
-        </p>
-      </div>
-
-      {/* ─── Stat Cards ─────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {[
-          {
-            label: "Total Revenue",
-            value: formatCurrency(stats.totalRevenue),
-            icon: TrendingUp,
-            gradient: "from-emerald-500/15 to-emerald-600/5 dark:from-emerald-500/25 dark:to-emerald-600/10",
-            iconBg: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-            textColor: "text-emerald-700 dark:text-emerald-400",
-          },
-          {
-            label: "Total Orders",
-            value: stats.totalOrders,
-            icon: ShoppingCart,
-            gradient: "from-blue-500/15 to-blue-600/5 dark:from-blue-500/25 dark:to-blue-600/10",
-            iconBg: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-            textColor: "text-blue-700 dark:text-blue-400",
-          },
-          {
-            label: "Customers",
-            value: customerCount,
-            icon: Users,
-            gradient: "from-violet-500/15 to-violet-600/5 dark:from-violet-500/25 dark:to-violet-600/10",
-            iconBg: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
-            textColor: "text-violet-700 dark:text-violet-400",
-          },
-          {
-            label: "Avg. Order Value",
-            value: formatCurrency(stats.avgOrderValue),
-            icon: TrendingUp,
-            gradient: "from-amber-500/15 to-amber-600/5 dark:from-amber-500/25 dark:to-amber-600/10",
-            iconBg: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-            textColor: "text-amber-700 dark:text-amber-400",
-          },
-        ].map((card) => {
-          const Icon = card.icon;
-          return (
-            <div
-              key={card.label}
-              className={cn(
-                "group relative overflow-hidden rounded-2xl border bg-gradient-to-br p-5 transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5",
-                card.gradient,
-              )}
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  {card.label}
-                </p>
-                <div className={cn("rounded-xl p-2", card.iconBg)}>
-                  <Icon className="h-4 w-4" />
-                </div>
-              </div>
-              <p className={cn("mt-3 text-3xl font-bold tabular-nums", card.textColor)}>
-                {card.value}
-              </p>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ─── Secondary Stats Row ────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-4">
-        {[
-          { label: "Products", value: productCount, icon: Package, href: "/dashboard/products" },
-          { label: "Active Offers", value: activeOfferCount, icon: Percent, href: "/dashboard/offers" },
-          { label: "Messages", value: messageStats.total, icon: MessageSquare, href: "/dashboard/inbox" },
-        ].map((s) => {
-          const Icon = s.icon;
-          return (
-            <Link
-              key={s.label}
-              href={s.href}
-              className="group flex items-center gap-3 rounded-2xl border bg-card p-4 transition-all hover:shadow-md hover:-translate-y-0.5"
-            >
-              <div className="rounded-xl bg-primary/10 p-2.5">
-                <Icon className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold tabular-nums text-foreground">
-                  {s.value}
-                </p>
-                <p className="text-xs text-muted-foreground">{s.label}</p>
-              </div>
-              <ArrowUpRight className="ml-auto h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-            </Link>
-          );
-        })}
-      </div>
-
-      {/* ─── Charts Row ─────────────────────────────────────────── */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Order Status Chart */}
-        <div className="rounded-2xl border bg-card p-6">
-          <div className="mb-5 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-foreground">
-              Order Status Breakdown
-            </h3>
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {stats.totalOrders} total
-            </span>
+    <div className="space-y-6">
+      {/* ─── Welcome banner ────────────────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary to-emerald-900 px-6 py-8 text-primary-foreground dark:to-emerald-950 sm:px-8">
+        <div className="relative flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold sm:text-3xl">Welcome back, {userName} 👋</h1>
+            <p className="mt-1.5 text-sm text-primary-foreground/80 sm:text-base">
+              You have <span className="font-semibold text-primary-foreground">{stats.todaysOrderCount} new orders</span> and{" "}
+              <span className="font-semibold text-primary-foreground">{formatCurrency(stats.todaysRevenue)} revenue</span> today
+            </p>
           </div>
-          <OrderStatusBreakdown
-            data={statusBreakdown}
-            total={stats.totalOrders}
-          />
-        </div>
-
-        {/* Channel Distribution */}
-        <div className="rounded-2xl border bg-card p-6">
-          <h3 className="mb-4 text-sm font-semibold text-foreground">
-            Messages by Platform
-          </h3>
-          <MiniDonut
-            segments={[
-              { label: "Instagram", value: messageStats.platformBreakdown.instagram, color: "stroke-pink-500" },
-              { label: "WhatsApp", value: messageStats.platformBreakdown.whatsapp, color: "stroke-green-500" },
-              { label: "Facebook", value: messageStats.platformBreakdown.facebook, color: "stroke-blue-500" },
-            ].filter((s) => s.value > 0)}
-          />
-        </div>
-      </div>
-
-      {/* ─── Bottom Row ─────────────────────────────────────────── */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Recent Orders */}
-        <div className="rounded-2xl border bg-card">
-          <div className="flex items-center justify-between border-b px-6 py-4">
-            <h3 className="text-sm font-semibold text-foreground">
-              Recent Orders
-            </h3>
+          <div className="flex items-center gap-2">
             <Link href="/dashboard/orders">
-              <Button variant="ghost" size="sm" className="text-xs">
-                View all <ArrowUpRight className="ml-1 h-3 w-3" />
+              <Button size="sm" className="bg-white text-emerald-900 hover:bg-white/90">
+                <Plus className="h-4 w-4" />
+                New Order
+              </Button>
+            </Link>
+            <Link href="/dashboard/analytics">
+              <Button size="sm" variant="outline" className="border-white/30 bg-white/10 text-primary-foreground hover:bg-white/20">
+                View Analytics
+                <ArrowUpRight className="h-4 w-4" />
               </Button>
             </Link>
           </div>
-          <div className="divide-y">
-            {recentOrders.length > 0 ? (
-              recentOrders.map((o) => {
-                const StatusIcon = STATUS_ICONS[o.status] ?? Clock;
-                return (
-                  <div
-                    key={o.id}
-                    className="flex items-center gap-3 px-6 py-3 transition-colors hover:bg-muted/30"
-                  >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                      <StatusIcon className="h-4 w-4 text-primary" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">
-                        #{o.orderNumber} · {o.customerName}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {relativeTime(o.createdAt)}
-                        {o.channel && ` · ${o.channel}`}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold tabular-nums">
-                        {formatCurrency(o.total)}
-                      </p>
-                      <Badge
-                        variant={o.status === "delivered" ? "success" : o.status === "cancelled" ? "destructive" : "secondary"}
-                        className="text-[10px]"
-                      >
-                        {o.status}
-                      </Badge>
-                    </div>
-                  </div>
-                );
-              })
+        </div>
+      </div>
+
+      {/* ─── Total Revenue + Monthly Goal ──────────────────────────── */}
+      <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+        <Card className="gap-0 py-6">
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">Total Revenue</p>
+              <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-600 dark:text-emerald-400">
+                <TrendingUp className="h-4 w-4" />
+              </div>
+            </div>
+            <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{formatCurrency(stats.totalRevenue)}</p>
+            <TrendLine pct={stats.trends.revenue} />
+          </CardContent>
+          <div className="mt-2">
+            <Sparkline id="spark-revenue" data={revenueSparkline} color="var(--chart-1)" height={90} />
+          </div>
+        </Card>
+
+        <Card className="flex items-center justify-center py-6">
+          <CardContent>
+            {stats.prevRevenue > 0 ? (
+              <GoalRing current={stats.currentRevenue} target={stats.prevRevenue} />
             ) : (
-              <p className="px-6 py-8 text-center text-sm text-muted-foreground">
-                No orders yet
+              <p className="max-w-40 text-center text-xs text-muted-foreground">
+                Goal tracks last month&apos;s revenue — not enough history yet.
               </p>
             )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
+      </div>
 
-        {/* Sales by Channel */}
-        <div className="rounded-2xl border bg-card">
-          <div className="flex items-center justify-between border-b px-6 py-4">
-            <h3 className="text-sm font-semibold text-foreground">
-              Sales by Channel
-            </h3>
-          </div>
-          <div className="p-6">
-            {channelBreakdown.length > 0 ? (
-              <div className="space-y-4">
-                {channelBreakdown.map((ch) => {
-                  const pct = Math.round((ch.value / (stats.totalOrders || 1)) * 100);
+      {/* ─── Orders / Customers / Conversion Funnel ────────────────── */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="gap-0 py-5">
+          <CardContent>
+            <div className="flex items-start justify-between">
+              <p className="text-sm text-muted-foreground">Orders</p>
+              <CompactTrend pct={stats.trends.orders} />
+            </div>
+            <p className="text-2xl font-bold tabular-nums text-foreground">{stats.totalOrders}</p>
+            <p className="text-xs text-muted-foreground">Total orders this month</p>
+            {statusLegend.length > 0 && (
+              <div className="mt-3">
+                <SegmentLegend segments={statusLegend} />
+              </div>
+            )}
+            <div className="mt-2 -mb-2">
+              <WeekdayBarChart data={weekdayOrders} color="var(--chart-1)" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="gap-0 py-5">
+          <CardContent>
+            <div className="flex items-start justify-between">
+              <p className="text-sm text-muted-foreground">Customers</p>
+              <CompactTrend pct={stats.trends.customers} />
+            </div>
+            <p className="text-2xl font-bold tabular-nums text-foreground">{customerCount}</p>
+            <p className="text-xs text-muted-foreground">Total customers</p>
+            {customerSegmentLegend.length > 0 && (
+              <div className="mt-3">
+                <SegmentLegend segments={customerSegmentLegend} />
+              </div>
+            )}
+            <div className="mt-2 -mb-2">
+              <Sparkline id="spark-customers" data={weeklyCustomerSeries} color="var(--chart-2)" height={100} />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="gap-0 py-5">
+          <CardHeader className="px-6">
+            <CardTitle>Conversion Funnel</CardTitle>
+            <CardAction>
+              <span className="text-xs text-muted-foreground">This month</span>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="mt-4">
+            <ConversionFunnel stages={funnelStages} />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ─── Overview chart + Traffic Sources / Monthly Goals ──────── */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardContent>
+            <OverviewChart data={monthlySeries} />
+          </CardContent>
+        </Card>
+
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Traffic Sources</CardTitle>
+              <CardDescription>Where your chats come from</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DonutWithLegend
+                centerLabel="Chats"
+                segments={[
+                  { label: "Instagram", value: messageStats.platformBreakdown.instagram, stroke: "stroke-pink-500", dot: "bg-pink-500" },
+                  { label: "WhatsApp", value: messageStats.platformBreakdown.whatsapp, stroke: "stroke-green-500", dot: "bg-green-500" },
+                  { label: "Facebook", value: messageStats.platformBreakdown.facebook, stroke: "stroke-blue-500", dot: "bg-blue-500" },
+                ]}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Monthly Goals</CardTitle>
+              <CardDescription>Track progress toward targets</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {stats.prevRevenue > 0 ? (
+                <GoalBar label="Monthly Revenue" current={stats.currentRevenue} target={stats.prevRevenue} color="bg-primary" />
+              ) : (
+                <p className="text-xs text-muted-foreground">Not enough revenue history yet.</p>
+              )}
+              {stats.prevCustomers > 0 ? (
+                <GoalBar
+                  label="New Customers"
+                  current={stats.currentCustomers}
+                  target={stats.prevCustomers}
+                  color="bg-violet-500"
+                  format={(n) => String(n)}
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground">Not enough customer history yet.</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* ─── Top Products + Recent Activity ────────────────────────── */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="gap-0 py-0">
+          <CardHeader className="border-b py-4">
+            <CardTitle>Top Products</CardTitle>
+            <CardAction>
+              <Link href="/dashboard/products">
+                <Button variant="ghost" size="sm" className="text-xs">
+                  View all <ArrowUpRight className="ml-1 h-3 w-3" />
+                </Button>
+              </Link>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="py-6">
+            {topProducts.length > 0 ? (
+              <div className="space-y-5">
+                {topProducts.map((p, i) => {
+                  const max = Math.max(topProducts[0]?.revenue ?? 1, 1);
+                  const pct = Math.max((p.revenue / max) * 100, 6);
                   return (
-                    <div key={ch.label}>
-                      <div className="mb-1.5 flex items-center justify-between text-sm">
-                        <span className="font-medium text-foreground">
-                          {ch.label}
-                        </span>
-                        <span className="text-muted-foreground tabular-nums">
-                          {ch.value} orders ({pct}%)
-                        </span>
-                      </div>
-                      <div className="h-2.5 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className={cn("h-full rounded-full transition-all duration-700", ch.color)}
-                          style={{ width: `${pct}%` }}
-                        />
+                    <div key={p.name} className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                        #{i + 1}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
+                          <p className="shrink-0 text-sm font-bold tabular-nums text-foreground">{formatCurrency(p.revenue)}</p>
+                        </div>
+                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+                          <div className="h-full rounded-full bg-primary transition-all duration-700" style={{ width: `${pct}%` }} />
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">{p.qty} sold</p>
                       </div>
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                No channel data yet
-              </p>
+              <p className="py-8 text-center text-sm text-muted-foreground">No sales yet</p>
             )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
+
+        <Card className="gap-0 py-0">
+          <CardHeader className="border-b py-4">
+            <CardTitle>Recent Activity</CardTitle>
+            <CardAction>
+              <Link href="/dashboard/orders">
+                <Button variant="ghost" size="sm" className="text-xs">
+                  View all <ArrowUpRight className="ml-1 h-3 w-3" />
+                </Button>
+              </Link>
+            </CardAction>
+          </CardHeader>
+          <CardContent className="py-6">
+            <ActivityTimeline events={activity} now={now} />
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Top Products */}
-      {topProducts.length > 0 && (
-        <div className="rounded-2xl border bg-card">
-          <div className="flex items-center justify-between border-b px-6 py-4">
-            <h3 className="text-sm font-semibold text-foreground">
-              Top Selling Products
-            </h3>
-            <Link href="/dashboard/products">
+      {/* ─── Recent Orders table ────────────────────────────────────── */}
+      <Card className="gap-0 py-0">
+        <CardHeader className="border-b py-4">
+          <CardTitle>Recent Orders</CardTitle>
+          <CardDescription>Latest transactions from your store</CardDescription>
+          <CardAction>
+            <Link href="/dashboard/orders">
               <Button variant="ghost" size="sm" className="text-xs">
                 View all <ArrowUpRight className="ml-1 h-3 w-3" />
               </Button>
             </Link>
-          </div>
-          <div className="divide-y">
-            {topProducts.map((p, i) => (
-              <div
-                key={p.name}
-                className="flex items-center gap-3 px-6 py-3 transition-colors hover:bg-muted/30"
-              >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-bold text-muted-foreground">
-                  #{i + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate">{p.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {p.qty} units sold
-                  </p>
-                </div>
-                <p className="text-sm font-bold tabular-nums text-foreground">
-                  {formatCurrency(p.revenue)}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+          </CardAction>
+        </CardHeader>
+        <CardContent className="py-2">
+          {recentOrders.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-muted-foreground">
+                    <th className="py-3 font-medium">Customer</th>
+                    <th className="py-3 font-medium">Order ID</th>
+                    <th className="py-3 font-medium">Product</th>
+                    <th className="py-3 font-medium">Status</th>
+                    <th className="py-3 text-right font-medium">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {recentOrders.map((o) => {
+                    const product = orderProductMap.get(o.id);
+                    const productLabel = product ? (product.extra > 0 ? `${product.name} +${product.extra} more` : product.name) : "—";
+                    return (
+                      <tr key={o.id}>
+                        <td className="py-3">
+                          <div className="flex items-center gap-2.5">
+                            <span
+                              className={cn(
+                                "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white",
+                                avatarColor(o.customerName),
+                              )}
+                            >
+                              {initials(o.customerName)}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-foreground">{o.customerName}</p>
+                              {o.customerPhone && <p className="truncate text-xs text-muted-foreground">{o.customerPhone}</p>}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 text-muted-foreground">#{o.orderNumber}</td>
+                        <td className="max-w-48 truncate py-3 text-muted-foreground">{productLabel}</td>
+                        <td className="py-3">
+                          <Badge variant={STATUS_BADGE[o.status] ?? "secondary"} className="text-[10px] capitalize">
+                            {o.status}
+                          </Badge>
+                        </td>
+                        <td className="py-3 text-right font-bold tabular-nums text-foreground">{formatCurrency(o.total)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-muted-foreground">No orders yet</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

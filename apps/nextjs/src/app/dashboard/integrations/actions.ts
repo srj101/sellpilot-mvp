@@ -11,14 +11,11 @@ import { metaConnection } from "@acme/db/schema";
 import { getSession } from "~/auth/server";
 import { env } from "~/env";
 import {
-  exchangeCodeForToken,
   exchangeForLongLivedToken,
-  getWhatsAppAccounts,
-  getWhatsAppPhoneNumbers,
   subscribeInstagramWebhooks,
   subscribeMetaPageWebhooks,
   subscribeWhatsAppWebhooks,
-} from "~/lib/meta";
+} from "@acme/api/meta";
 
 const FB_VERSION = env.FACEBOOK_GRAPH_VERSION;
 
@@ -39,6 +36,13 @@ function getDefaultHostAndProto() {
 
 // ---------------------------------------------------------------------------
 // Connect a Meta channel (Facebook Page, Instagram, or WhatsApp WABA)
+//
+// This — and saveSelectedPage below — must stay as a Server Action rather
+// than a tRPC procedure: both need to set/read short-lived httpOnly cookies
+// (CSRF state, OAuth intent, temp user token) tied directly to the redirect
+// response, the same reason the Meta OAuth callback route stays a plain
+// Route Handler. Everything else in this domain (disconnect, WhatsApp
+// signup/session management) has moved to packages/api's integrations router.
 // ---------------------------------------------------------------------------
 
 type Channel = "facebook" | "instagram" | "whatsapp";
@@ -193,88 +197,6 @@ async function replaceMetaSelection(input: {
   });
 }
 
-async function persistWhatsAppSignup(input: {
-  userId: string;
-  code: string;
-  redirectUri: string;
-  wabaId?: string;
-  phoneNumberId?: string;
-}) {
-  const tokenData = await exchangeCodeForToken(input.code, input.redirectUri);
-
-  if (!tokenData.access_token) {
-    return { ok: false, error: "No access token returned" };
-  }
-
-  const longToken = await exchangeForLongLivedToken(tokenData.access_token);
-
-  let wabaId = input.wabaId;
-  let phoneNumberId = input.phoneNumberId;
-
-  if (!wabaId) {
-    try {
-      const accounts = await getWhatsAppAccounts(longToken.access_token);
-      if (accounts?.[0]) {
-        wabaId = accounts[0].id;
-        console.log("[persistWhatsAppSignup] Resolved missing wabaId:", wabaId);
-      }
-    } catch (err) {
-      console.error("Failed to fetch direct WhatsApp business accounts:", err);
-    }
-  }
-
-  if (wabaId && !phoneNumberId) {
-    try {
-      const phoneNumbers = await getWhatsAppPhoneNumbers(wabaId, longToken.access_token);
-      if (phoneNumbers.data?.[0]) {
-        phoneNumberId = phoneNumbers.data[0].id;
-        console.log("[persistWhatsAppSignup] Resolved missing phoneNumberId:", phoneNumberId);
-      }
-    } catch (err) {
-      console.error("Failed to fetch phone numbers for resolved WABA:", err);
-    }
-  }
-
-  let displayPhoneName = "WhatsApp Business";
-  let verifiedName = "";
-  let displayPhoneNumber = "";
-
-  if (wabaId) {
-    try {
-      const phoneNumbers = await getWhatsAppPhoneNumbers(
-        wabaId,
-        longToken.access_token,
-      );
-      const mainNumber =
-        phoneNumbers.data.find((entry) => entry.id === phoneNumberId) ??
-        phoneNumbers.data[0];
-
-      if (mainNumber) {
-        verifiedName = mainNumber.verified_name;
-        displayPhoneNumber = mainNumber.display_phone_number;
-        displayPhoneName = `${mainNumber.verified_name} (${mainNumber.display_phone_number})`;
-      }
-    } catch (err) {
-      console.error("Failed to fetch WhatsApp phone details:", err);
-    }
-  }
-
-  if (wabaId) {
-    await replaceWhatsAppConnection({
-      userId: input.userId,
-      wabaId,
-      phoneNumberId,
-      displayPhoneName,
-      verifiedName,
-      displayPhoneNumber,
-      accessToken: longToken.access_token,
-      expiresIn: longToken.expires_in,
-    });
-  }
-
-  return { ok: true };
-}
-
 /**
  * Server action: Routes the user to the right Meta OAuth flow for the
  * selected channel. Sets a short-lived `meta_channel_intent` cookie so the
@@ -352,66 +274,8 @@ export async function connectChannel(formData: FormData) {
 }
 
 // ---------------------------------------------------------------------------
-// Disconnect a channel
+// Save the user-selected account(s) for the channel
 // ---------------------------------------------------------------------------
-
-/**
- * Server action: Removes a meta_connection row by ID, only if it belongs
- * to the current user.
- */
-export async function disconnectChannel(connectionId: string) {
-  const session = await getSession();
-  if (!session?.user) {
-    redirect("/login");
-  }
-
-  await db
-    .delete(metaConnection)
-    .where(
-      and(
-        eq(metaConnection.id, connectionId),
-        eq(metaConnection.userId, session.user.id),
-      ),
-    );
-
-  redirect("/dashboard/integrations");
-}
-
-// ---------------------------------------------------------------------------
-// Complete WhatsApp Embedded Signup
-// ---------------------------------------------------------------------------
-
-/**
- * Server action: Called from the WhatsApp Embedded Signup client component.
- * Exchanges the code for an access token and saves the WABA connection.
- */
-export async function completeWhatsAppSignup(input: {
-  code: string;
-  redirectUri: string;
-  wabaId?: string;
-  phoneNumberId?: string;
-}) {
-  const session = await getSession();
-  if (!session?.user) {
-    return { ok: false, error: "Not authenticated" };
-  }
-
-  try {
-    return await persistWhatsAppSignup({
-      userId: session.user.id,
-      code: input.code,
-      redirectUri: input.redirectUri,
-      wabaId: input.wabaId,
-      phoneNumberId: input.phoneNumberId,
-    });
-  } catch (err) {
-    console.error("WhatsApp signup error:", err);
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : "Unknown error",
-    };
-  }
-}
 
 /**
  * Server action: Saves the user-selected account(s) for the channel in

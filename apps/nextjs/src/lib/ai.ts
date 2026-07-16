@@ -21,7 +21,7 @@ import {
 
 import { env } from "~/env";
 import { aiHelpers } from "../../../../packages/db/src/helpers/aiHelpers";
-import { buildInboxData } from "./meta-inbox";
+import { buildInboxData } from "@acme/api/meta-inbox";
 
 const apiKey = env.OPENAI_API_KEY;
 const baseURL = env.OPENAI_BASE_URL;
@@ -543,7 +543,7 @@ export const availableTools: ToolHandlerMap = {
     }
 
     try {
-      const { sendMetaInboxReply } = await import("~/lib/meta");
+      const { sendMetaInboxReply } = await import("@acme/api/meta");
       const sent = await sendMetaInboxReply({
         platform: connectionContext.platform,
         accessToken: connectionContext.accessToken,

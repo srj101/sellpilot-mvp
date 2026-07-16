@@ -19,7 +19,7 @@ import {
 
 import { auth } from "~/auth/server";
 import { env } from "~/env";
-import { searchProductsByImage } from "~/lib/chromadb";
+import { searchProductsByImage } from "@acme/api/chromadb";
 
 const calculateCouponDiscount = (couponRow: any, subtotal: number) => {
   if (!couponRow) {

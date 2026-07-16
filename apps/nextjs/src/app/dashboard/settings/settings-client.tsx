@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useMutation } from "@tanstack/react-query";
 import {
   Building2,
   Truck,
@@ -20,7 +21,8 @@ import { Button } from "@acme/ui/button";
 import { Input } from "@acme/ui/input";
 import { Label } from "@acme/ui/label";
 import { Badge } from "@acme/ui/badge";
-import { cn } from "@acme/ui";
+
+import { useTRPC } from "~/trpc/react";
 
 type BusinessProfile = {
   id: string;
@@ -33,28 +35,28 @@ type BusinessProfile = {
   supportPhone: string | null;
 } | null;
 
-type ShippingRate = {
+interface ShippingRate {
   id: string;
   district: string;
   cost: number;
   estimatedDays: number | null;
   active: boolean;
-};
+}
 
-type FAQ = {
+interface FAQ {
   id: string;
   question: string;
   answer: string;
   tags: string[];
-};
+}
 
-type Policy = {
+interface Policy {
   id: string;
   type: string;
   title: string;
   body: string;
   active: boolean;
-};
+}
 
 interface SettingsClientProps {
   profile: BusinessProfile;
@@ -111,8 +113,10 @@ export function SettingsClient({
   policies,
 }: SettingsClientProps) {
   const router = useRouter();
+  const trpc = useTRPC();
   const [saving, setSaving] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const upsertProfile = useMutation(trpc.agent.upsertBusinessProfile.mutationOptions());
 
   // Business Profile state
   const [bpName, setBpName] = useState(profile?.name ?? "");
@@ -130,24 +134,16 @@ export function SettingsClient({
   const handleSaveProfile = async () => {
     setSaving("profile");
     try {
-      const res = await fetch("/api/settings/profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: bpName,
-          description: bpDescription,
-          currency: bpCurrency,
-          defaultShippingCost: Number(bpShippingCost),
-          supportEmail: bpEmail,
-          supportPhone: bpPhone,
-        }),
+      await upsertProfile.mutateAsync({
+        name: bpName,
+        description: bpDescription,
+        currency: bpCurrency,
+        defaultShippingCost: Number(bpShippingCost),
+        supportEmail: bpEmail,
+        supportPhone: bpPhone,
       });
-      if (res.ok) {
-        showToast("Business profile saved!");
-        router.refresh();
-      } else {
-        showToast("Failed to save profile");
-      }
+      showToast("Business profile saved!");
+      router.refresh();
     } catch {
       showToast("Failed to save profile");
     }

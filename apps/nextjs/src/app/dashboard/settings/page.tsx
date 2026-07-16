@@ -1,15 +1,8 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { eq } from "@acme/db";
-import { db } from "@acme/db/client";
-import {
-  businessProfile,
-  shippingRate,
-  faq,
-  policy,
-} from "@acme/db/schema";
-
 import { getSession } from "~/auth/server";
+import { createCaller } from "~/trpc/caller";
 import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { SettingsClient } from "./settings-client";
 
@@ -20,22 +13,19 @@ export default async function SettingsPage() {
     redirect("/login");
   }
 
-  const userId = session.user.id;
-
-  const [profiles, rates, faqs, policies] = await Promise.all([
-    db.select().from(businessProfile).where(eq(businessProfile.userId, userId)),
-    db.select().from(shippingRate).where(eq(shippingRate.userId, userId)),
-    db.select().from(faq).where(eq(faq.userId, userId)),
-    db.select().from(policy).where(eq(policy.userId, userId)),
+  const caller = await createCaller(await headers());
+  const [profile, shippingRates, policies, faqs] = await Promise.all([
+    caller.agent.getBusinessProfile(),
+    caller.agent.listShippingRates(),
+    caller.settings.listAllPolicies(),
+    caller.agent.listFaqs({}),
   ]);
-
-  const profile = profiles[0] ?? null;
 
   return (
     <DashboardShell>
       <SettingsClient
-        profile={profile}
-        shippingRates={rates}
+        profile={profile ?? null}
+        shippingRates={shippingRates}
         faqs={faqs}
         policies={policies}
       />

@@ -8,7 +8,7 @@ import { metaConnection, metaWebhookEvent } from "@acme/db/schema";
 
 import { env } from "~/env";
 import { triggerInboxBroadcast } from "~/lib/inbox-broadcast";
-import { sendMetaInboxReply } from "~/lib/meta";
+import { sendMetaInboxReply } from "@acme/api/meta";
 
 export const runtime = "nodejs";
 
@@ -295,7 +295,7 @@ export async function POST(req: NextRequest) {
           let imageSearchResultsText = "";
           if (isImage && imageUrl) {
             try {
-              const { searchProductsByImage } = await import("~/lib/chromadb");
+              const { searchProductsByImage } = await import("@acme/api/chromadb");
               const matches = await searchProductsByImage({
                 userId,
                 imageUrl,

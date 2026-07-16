@@ -6,7 +6,7 @@ import { metaConnection, metaWebhookEvent } from "@acme/db/schema";
 
 import { env } from "~/env";
 import { triggerInboxBroadcast } from "~/lib/inbox-broadcast";
-import { sendMetaInboxReply } from "~/lib/meta";
+import { sendMetaInboxReply } from "@acme/api/meta";
 import {
   normalizeMetaWebhookPayload,
   verifyMetaWebhookSignature,
@@ -269,7 +269,7 @@ async function handleAutoReply(event: any, connection: any) {
     let imageSearchResultsText = "";
     if (imageSearchQueryUrl) {
       try {
-        const { searchProductsByImage } = await import("~/lib/chromadb");
+        const { searchProductsByImage } = await import("@acme/api/chromadb");
         const matches = await searchProductsByImage({
           userId: connection.userId,
           imageUrl: imageSearchQueryUrl,

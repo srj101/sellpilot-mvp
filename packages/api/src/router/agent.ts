@@ -24,6 +24,7 @@ const CustomerInput = z.object({
   email: z.string().optional(),
   address: z.string().optional(),
   district: z.string().optional(),
+  country: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -53,6 +54,7 @@ const getCustomerForUser = async (ctx: any, userId: string, customerData: z.infe
     email: customerData.email ?? null,
     address: customerData.address ?? null,
     district: customerData.district ?? null,
+    country: customerData.country ?? null,
     notes: customerData.notes ?? null,
   };
 
@@ -145,6 +147,13 @@ const calculateDiscount = (coupon: any, subtotal: number) => {
 };
 
 const generateOrderNumber = () => `SP-${Date.now()}`;
+
+/** Builds the public checkout link sent to the customer, e.g. https://app.sellpilot.ai/pay/{token} */
+function buildPaymentLink() {
+  const token = crypto.randomUUID();
+  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+  return { paymentToken: token, paymentUrl: `${appUrl}/pay/${token}` };
+}
 
 export const agentRouter = {
   getBusinessProfile: protectedProcedure.query(async ({ ctx }) => {
@@ -348,6 +357,7 @@ export const agentRouter = {
 
       const discountAmount = calculateDiscount(coupon, subtotal);
       const total = Math.max(0, subtotal + shippingCost - discountAmount);
+      const { paymentToken, paymentUrl } = buildPaymentLink();
 
       const [createdOrder] = await ctx.db
         .insert(order)
@@ -369,6 +379,8 @@ export const agentRouter = {
           channel: input.channel,
           threadId: input.threadId ?? null,
           notes: input.notes ?? null,
+          paymentToken,
+          paymentUrl,
         })
         .returning();
 

@@ -23,7 +23,6 @@ import {
   Settings,
   ShoppingBag,
   Sparkles,
-  Store,
   Tags,
   Users,
 } from "lucide-react";
@@ -42,7 +41,6 @@ import {
   DropdownMenuTrigger,
 } from "@acme/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@acme/ui/sheet";
-import { ThemeToggle } from "@acme/ui/theme";
 import {
   Tooltip,
   TooltipContent,
@@ -90,12 +88,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard/inbox", icon: Inbox, label: "Inbox" },
       { href: "/dashboard/files", icon: Files, label: "Files" },
-    ],
-  },
-  {
-    title: "eCommerce",
-    items: [
-      { href: "/dashboard/ecommerce", icon: Store, label: "Storefront" },
     ],
   },
   {
@@ -495,30 +487,6 @@ function NavRow({
   );
 }
 
-/* ─── Header logo ──────────────────────────────────────────────────── */
-
-function HeaderLogo({ isCollapsed }: { isCollapsed: boolean }) {
-  if (isCollapsed) {
-    return (
-      <div className="flex shrink-0 items-center justify-center border-b border-border/40 py-2.5">
-        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/15">
-          <span className="h-2.5 w-2.5 rounded-full bg-primary" />
-        </span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex shrink-0 items-center gap-2.5 border-b border-border/40 px-3 py-2.5">
-      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/15">
-        <span className="h-2.5 w-2.5 rounded-full bg-primary" />
-      </span>
-      <span className="select-none text-sm font-bold tracking-tight text-foreground">
-        SellPilot AI
-      </span>
-    </div>
-  );
-}
 
 /* ─── Footer (sign out + theme + live status) ───────────────────────── */
 
@@ -544,26 +512,18 @@ function SidebarFooter({ isCollapsed }: { isCollapsed: boolean }) {
             Log out
           </TooltipContent>
         </Tooltip>
-        <ThemeToggle />
       </div>
     );
   }
 
   return (
     <div className="w-full shrink-0 space-y-2 px-2 pb-3 pt-2">
-      <div className="flex items-center gap-2">
-        <form action={signOut} className="flex-1">
-          <Button
-            variant="ghost"
-            type="submit"
-            className="w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium text-muted-foreground hover:text-foreground"
-          >
-            <LogOut className="h-[18px] w-[18px]" />
-            Log out
-          </Button>
-        </form>
-        <ThemeToggle />
-      </div>
+      <form action={signOut}>
+        <Button variant="destructive" type="submit" className="w-full">
+          <LogOut className="h-[18px] w-[18px]" />
+          Log out
+        </Button>
+      </form>
     </div>
   );
 }
@@ -598,7 +558,6 @@ function SidebarBody({ isCollapsed }: { isCollapsed: boolean }) {
         isCollapsed ? "px-2" : "px-3",
       )}
     >
-      <HeaderLogo isCollapsed={isCollapsed} />
 
       {/* Nav */}
       <nav
@@ -644,7 +603,6 @@ function MobileSidebarSheet() {
 
   return (
     <div className="flex h-full flex-col px-3 py-5">
-      <HeaderLogo isCollapsed={false} />
 
       <nav className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-1">
         {NAV_GROUPS.map((group) => (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import {
   AlertCircle,
   Check,
@@ -16,7 +17,7 @@ import { Button } from "@acme/ui/button";
 import { Input } from "@acme/ui/input";
 import { Separator } from "@acme/ui/separator";
 
-import { createProduct, updateProduct } from "./actions";
+import { useTRPC } from "~/trpc/react";
 
 interface ProductFormProps {
   initialProduct?: any; // If editing
@@ -30,11 +31,15 @@ export function ProductForm({
   onCancel,
 }: ProductFormProps) {
   const isEditing = !!initialProduct;
+  const trpc = useTRPC();
+  const createProductMutation = useMutation(trpc.products.create.mutationOptions());
+  const updateProductMutation = useMutation(trpc.products.update.mutationOptions());
 
   const [title, setTitle] = useState(initialProduct?.title ?? "");
   const [description, setDescription] = useState(
     initialProduct?.description ?? "",
   );
+  const [category, setCategory] = useState(initialProduct?.category ?? "");
   const [status, setStatus] = useState(initialProduct?.status ?? "active");
   const [images, setImages] = useState<string[]>(initialProduct?.images ?? []);
   const [newImageUrl, setNewImageUrl] = useState("");
@@ -230,6 +235,7 @@ export function ProductForm({
         id: initialProduct?.id,
         title,
         description,
+        category,
         status,
         images,
         options: hasVariants ? options : [],
@@ -237,9 +243,9 @@ export function ProductForm({
       };
 
       if (isEditing) {
-        await updateProduct(input);
+        await updateProductMutation.mutateAsync(input);
       } else {
-        await createProduct(input);
+        await createProductMutation.mutateAsync(input);
       }
       onSave();
     } catch (err: any) {
@@ -294,6 +300,17 @@ export function ProductForm({
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g. Premium Black Panjabi"
+                  className="rounded-xl border bg-background/50 focus:bg-background"
+                />
+              </div>
+              <div>
+                <label className="text-muted-foreground mb-1.5 block text-xs font-semibold uppercase tracking-wider">
+                  Category
+                </label>
+                <Input
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="e.g. Shirts, Panjabi, Sandals"
                   className="rounded-xl border bg-background/50 focus:bg-background"
                 />
               </div>

@@ -1,10 +1,8 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { desc, eq } from "@acme/db";
-import { db } from "@acme/db/client";
-import { offer } from "@acme/db/schema";
-
 import { getSession } from "~/auth/server";
+import { createCaller } from "~/trpc/caller";
 import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { OffersClient } from "./offers-client";
 
@@ -15,11 +13,8 @@ export default async function OffersPage() {
     redirect("/login");
   }
 
-  const offers = await db
-    .select()
-    .from(offer)
-    .where(eq(offer.userId, session.user.id))
-    .orderBy(desc(offer.createdAt));
+  const caller = await createCaller(await headers());
+  const offers = await caller.offers.list();
 
   return (
     <DashboardShell>

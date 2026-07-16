@@ -2,21 +2,22 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useMutation } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2, Loader2, QrCode, RefreshCw, Smartphone, XCircle } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
 
-import {
-  startOpenWASession,
-  fetchOpenWAQr,
-  checkOpenWAStatus,
-  saveOpenWAConnection,
-} from "../openwa-actions";
+import { useTRPC } from "~/trpc/react";
 
 type FlowStep = "starting" | "qr" | "authenticating" | "ready" | "error";
 
 export default function WhatsAppConnectPage() {
   const router = useRouter();
+  const trpc = useTRPC();
+  const startOpenWASession = useMutation(trpc.integrations.startOpenWASession.mutationOptions());
+  const fetchOpenWAQr = useMutation(trpc.integrations.fetchOpenWAQr.mutationOptions());
+  const checkOpenWAStatus = useMutation(trpc.integrations.checkOpenWAStatus.mutationOptions());
+  const saveOpenWAConnection = useMutation(trpc.integrations.saveOpenWAConnection.mutationOptions());
   const [step, setStep] = useState<FlowStep>("starting");
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [phone, setPhone] = useState<string | null>(null);
@@ -39,7 +40,7 @@ export default function WhatsAppConnectPage() {
     setStep("starting");
     setError(null);
 
-    const result = await startOpenWASession();
+    const result = await startOpenWASession.mutateAsync();
     if (!isMounted.current) return;
     if (!result.ok) {
       setError(result.error);
@@ -51,7 +52,7 @@ export default function WhatsAppConnectPage() {
     setStep("qr");
 
     // First, try to fetch the QR immediately
-    const qr = await fetchOpenWAQr();
+    const qr = await fetchOpenWAQr.mutateAsync();
     if (!isMounted.current) return;
     if (qr.ok) setQrCode(qr.qrCode);
 
@@ -59,53 +60,56 @@ export default function WhatsAppConnectPage() {
     stopPolling();
 
     // Then poll status + QR every 3 seconds
-    pollRef.current = setInterval(async () => {
-      if (!isMounted.current) {
-        stopPolling();
-        return;
-      }
-
-      const status = await checkOpenWAStatus();
-      if (!isMounted.current) return;
-      if (!status.ok) return;
-
-      if (status.status === "ready") {
-        stopPolling();
-        setPhone(status.phone);
-        setPushName(status.pushName);
-        setStep("ready");
-
-        // Auto-save the connection
-        setSaving(true);
-        const save = await saveOpenWAConnection();
-        if (!isMounted.current) return;
-        setSaving(false);
-        if (!save.ok) {
-          setError(save.error);
-          setStep("error");
+    pollRef.current = setInterval(() => {
+      void (async () => {
+        if (!isMounted.current) {
+          stopPolling();
+          return;
         }
-        return;
-      }
 
-      if (status.status === "authenticating") {
-        setStep("authenticating");
-        return;
-      }
-
-      if (status.status === "failed") {
-        stopPolling();
-        setError("Session authentication failed. Please try again.");
-        setStep("error");
-        return;
-      }
-
-      // Still in qr_ready — refresh QR
-      if (status.status === "qr_ready") {
-        const qr = await fetchOpenWAQr();
+        const status = await checkOpenWAStatus.mutateAsync();
         if (!isMounted.current) return;
-        if (qr.ok) setQrCode(qr.qrCode);
-      }
+        if (!status.ok) return;
+
+        if (status.status === "ready") {
+          stopPolling();
+          setPhone(status.phone);
+          setPushName(status.pushName);
+          setStep("ready");
+
+          // Auto-save the connection
+          setSaving(true);
+          const save = await saveOpenWAConnection.mutateAsync();
+          if (!isMounted.current) return;
+          setSaving(false);
+          if (!save.ok) {
+            setError(save.error);
+            setStep("error");
+          }
+          return;
+        }
+
+        if (status.status === "authenticating") {
+          setStep("authenticating");
+          return;
+        }
+
+        if (status.status === "failed") {
+          stopPolling();
+          setError("Session authentication failed. Please try again.");
+          setStep("error");
+          return;
+        }
+
+        // Still in qr_ready — refresh QR
+        if (status.status === "qr_ready") {
+          const refreshedQr = await fetchOpenWAQr.mutateAsync();
+          if (!isMounted.current) return;
+          if (refreshedQr.ok) setQrCode(refreshedQr.qrCode);
+        }
+      })();
     }, 3000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mutateAsync references are stable per hook instance
   }, [stopPolling]);
 
   useEffect(() => {
@@ -191,7 +195,7 @@ export default function WhatsAppConnectPage() {
               variant="outline"
               size="sm"
               onClick={async () => {
-                const qr = await fetchOpenWAQr();
+                const qr = await fetchOpenWAQr.mutateAsync();
                 if (qr.ok) setQrCode(qr.qrCode);
               }}
               className="gap-2"

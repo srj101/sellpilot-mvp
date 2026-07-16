@@ -6,6 +6,30 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./src/index.ts"
+    },
+    "./meta": {
+      "types": "./dist/lib/meta.d.ts",
+      "default": "./src/lib/meta.ts"
+    },
+    "./meta-inbox": {
+      "types": "./dist/lib/meta-inbox.d.ts",
+      "default": "./src/lib/meta-inbox.ts"
+    },
+    "./resolve-contact-names": {
+      "types": "./dist/lib/resolve-contact-names.d.ts",
+      "default": "./src/lib/resolve-contact-names.ts"
+    },
+    "./openwa": {
+      "types": "./dist/lib/openwa.d.ts",
+      "default": "./src/lib/openwa.ts"
+    },
+    "./chromadb": {
+      "types": "./dist/lib/chromadb.d.ts",
+      "default": "./src/lib/chromadb.ts"
+    },
+    "./queue": {
+      "types": "./dist/lib/queue.d.ts",
+      "default": "./src/lib/queue.ts"
     }
   },
   "license": "MIT",
@@ -22,6 +46,8 @@
     "@acme/db": "workspace:*",
     "@acme/validators": "workspace:*",
     "@trpc/server": "catalog:",
+    "bullmq": "^5.79.3",
+    "chromadb": "^3.5.0",
     "superjson": "2.2.3",
     "zod": "catalog:"
   },

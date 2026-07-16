@@ -27,3 +27,4 @@ export * from "./meta-connection-schema";
 export * from "./meta-webhook-event-schema";
 export * from "./product-schema";
 export * from "./agent-schema";
+export * from "./analytics-schema";

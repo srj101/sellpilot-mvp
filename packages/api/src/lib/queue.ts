@@ -1,6 +1,6 @@
 import { Queue, Worker } from "bullmq";
+
 import { addProductImageToVectorDb } from "./chromadb";
-import { env } from "~/env";
 
 export interface ProductImageJobData {
   userId: string;
@@ -16,7 +16,7 @@ const globalForQueue = globalThis as unknown as {
 };
 
 const CONNECTION_OPTS = {
-  url: env.REDIS_URL,
+  url: process.env.REDIS_URL ?? "redis://localhost:6379",
 };
 
 export const productImageQueue =
@@ -42,17 +42,19 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 export function queueProductImageIndexing(data: ProductImageJobData) {
-  // Defer execution to a new event loop tick to escape Next.js Server Action promise tracking
-  setTimeout(async () => {
-    try {
-      await productImageQueue.add("index-image", data);
-      console.log(`[Queue] Successfully queued image indexing for: ${data.productTitle}`);
-    } catch (error) {
-      console.error("[Queue] Failed to queue image indexing:", error);
-      // Fallback to synchronous/async call directly if Redis is not available
-      // to avoid breaking the application entirely.
-      void addProductImageToVectorDb(data);
-    }
+  // Defer to a new event loop tick so this runs fire-and-forget, without the caller awaiting it.
+  setTimeout(() => {
+    void (async () => {
+      try {
+        await productImageQueue.add("index-image", data);
+        console.log(`[Queue] Successfully queued image indexing for: ${data.productTitle}`);
+      } catch (error) {
+        console.error("[Queue] Failed to queue image indexing:", error);
+        // Fallback to synchronous/async call directly if Redis is not available
+        // to avoid breaking the application entirely.
+        void addProductImageToVectorDb(data);
+      }
+    })();
   }, 0);
 }
 

@@ -1,21 +1,16 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { desc, eq } from "@acme/db";
-import { db } from "@acme/db/client";
-import { customer } from "@acme/db/schema";
-
 import { getSession } from "~/auth/server";
+import { createCaller } from "~/trpc/caller";
 import { DashboardShell } from "../(home)/_components/dashboard-shell";
 
 export default async function CustomersPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const customers = await db
-    .select()
-    .from(customer)
-    .where(eq(customer.userId, session.user.id))
-    .orderBy(desc(customer.createdAt));
+  const caller = await createCaller(await headers());
+  const customers = await caller.customers.list();
 
   return (
     <DashboardShell>

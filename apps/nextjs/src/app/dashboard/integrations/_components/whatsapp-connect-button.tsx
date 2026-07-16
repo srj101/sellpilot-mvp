@@ -2,13 +2,13 @@
 
 import { useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useMutation } from "@tanstack/react-query";
 import { Link2, Loader2 } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
 
 import { env } from "~/env";
-
-import { completeWhatsAppSignup } from "../actions";
+import { useTRPC } from "~/trpc/react";
 
 interface FacebookSDK {
   init(options: {
@@ -62,6 +62,8 @@ function isWhatsAppSignupMessage(value: unknown): value is WhatsAppSignupMessage
 export function WhatsAppConnectButton() {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  const trpc = useTRPC();
+  const completeWhatsAppSignup = useMutation(trpc.integrations.completeWhatsAppSignup.mutationOptions());
   const signupIds = useRef<{ wabaId?: string; phoneNumberId?: string }>({});
   const sdkLoaded = useRef(false);
 
@@ -147,7 +149,7 @@ export function WhatsAppConnectButton() {
         if (!code) return;
 
         startTransition(async () => {
-          const result = await completeWhatsAppSignup({
+          const result = await completeWhatsAppSignup.mutateAsync({
             code,
             redirectUri,
             ...signupIds.current,

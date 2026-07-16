@@ -1,15 +1,20 @@
+"use client";
+
+import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useMutation } from "@tanstack/react-query";
+import { Link2, Loader2, Unlink } from "lucide-react";
 
 import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
-import { Link2, Settings2, Unlink } from "lucide-react";
 
+import { useTRPC } from "~/trpc/react";
+import { connectChannel } from "../actions";
 import {
   FacebookIcon,
   InstagramIcon,
   WhatsAppIcon,
 } from "./integration-icons";
-import { connectChannel } from "../actions";
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   facebook: FacebookIcon,
@@ -40,8 +45,23 @@ export function IntegrationCard({
   account,
   connectionId,
 }: IntegrationCardProps) {
+  const router = useRouter();
+  const trpc = useTRPC();
   const Icon = ICONS[id] ?? FacebookIcon;
   const colorClass = COLORS[id] ?? "text-primary bg-primary/10";
+
+  const disconnectChannel = useMutation(trpc.integrations.disconnectChannel.mutationOptions());
+  const disconnectOpenWA = useMutation(trpc.integrations.disconnectOpenWA.mutationOptions());
+  const isDisconnecting = disconnectChannel.isPending || disconnectOpenWA.isPending;
+
+  async function handleDisconnect() {
+    if (id === "whatsapp") {
+      await disconnectOpenWA.mutateAsync();
+    } else if (connectionId) {
+      await disconnectChannel.mutateAsync({ connectionId });
+    }
+    router.refresh();
+  }
 
   return (
     <div className="bg-card group flex flex-col rounded-xl border p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
@@ -67,27 +87,20 @@ export function IntegrationCard({
 
       <div className="mt-auto pt-2">
         {connected ? (
-          <form
-            action={async () => {
-              "use server";
-              if (connectionId) {
-                if (id === "whatsapp") {
-                  const { disconnectOpenWA } = await import("../openwa-actions");
-                  await disconnectOpenWA();
-                  const { redirect } = await import("next/navigation");
-                  redirect("/dashboard/integrations");
-                } else {
-                  const { disconnectChannel: dc } = await import("../actions");
-                  await dc(connectionId);
-                }
-              }
-            }}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            disabled={isDisconnecting}
+            onClick={() => void handleDisconnect()}
           >
-            <Button variant="outline" size="sm" className="w-full" type="submit">
+            {isDisconnecting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
               <Unlink className="mr-2 h-4 w-4" />
-              Disconnect
-            </Button>
-          </form>
+            )}
+            Disconnect
+          </Button>
         ) : id === "whatsapp" ? (
           <Link href="/dashboard/integrations/whatsapp">
             <Button size="sm" className="w-full">

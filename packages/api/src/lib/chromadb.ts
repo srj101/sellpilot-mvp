@@ -1,9 +1,9 @@
 import { ChromaClient } from "chromadb";
+
 import { getImageEmbedding } from "./embeddings";
-import { env } from "~/env";
 
 const getChromaConfig = () => {
-  const raw = env.CHROMA_URL ?? "";
+  const raw = process.env.CHROMA_URL ?? "http://localhost:8000";
   const urlString =
     raw.startsWith("http://") || raw.startsWith("https://")
       ? raw
@@ -25,10 +25,10 @@ function getClient(): ChromaClient {
     host,
     port,
     ssl,
-    auth: env.CHROMA_AUTH_TOKEN
+    auth: process.env.CHROMA_AUTH_TOKEN
       ? {
           provider: "token",
-          credentials: env.CHROMA_AUTH_TOKEN,
+          credentials: process.env.CHROMA_AUTH_TOKEN,
         }
       : undefined,
   });
@@ -39,9 +39,9 @@ const COLLECTION_NAME = "product_images";
 
 // Define a dummy embedding function to satisfy ChromaDB JS client v3.x without loading heavy models locally
 const dummyEmbeddingFunction = {
-  generate: async (texts: string[]): Promise<number[][]> => {
+  generate: (texts: string[]): Promise<number[][]> => {
     // Return empty/zero vectors since we manually generate and pass embeddings in our calls
-    return texts.map(() => new Array(512).fill(0));
+    return Promise.resolve(texts.map(() => new Array<number>(512).fill(0)));
   },
 };
 
@@ -137,28 +137,30 @@ export function deleteProductImageFromVectorDb(params: {
   variantId?: string;
   productId?: string;
 }) {
-  // Defer execution to a new event loop tick to escape Next.js Server Action promise tracking
-  setTimeout(async () => {
-    try {
-      const collection = await getOrCreateCollection();
-      if (!collection) return;
+  // Defer to a new event loop tick so this runs fire-and-forget, without the caller awaiting it.
+  setTimeout(() => {
+    void (async () => {
+      try {
+        const collection = await getOrCreateCollection();
+        if (!collection) return;
 
-      if (params.variantId) {
-        await withTimeout(
-          collection.delete({ ids: [`variant:${params.variantId}`] }),
-          2000,
-        );
-      } else if (params.productId) {
-        await withTimeout(
-          collection.delete({
-            where: { productId: params.productId },
-          }),
-          2000,
-        );
+        if (params.variantId) {
+          await withTimeout(
+            collection.delete({ ids: [`variant:${params.variantId}`] }),
+            2000,
+          );
+        } else if (params.productId) {
+          await withTimeout(
+            collection.delete({
+              where: { productId: params.productId },
+            }),
+            2000,
+          );
+        }
+      } catch (error) {
+        console.error("[ChromaDB] Error deleting image from vector DB:", error);
       }
-    } catch (error) {
-      console.error("[ChromaDB] Error deleting image from vector DB:", error);
-    }
+    })();
   }, 0);
 }
 
@@ -195,20 +197,21 @@ export async function searchProductsByImage(params: {
     );
 
     const results: ChromaSearchResult[] = [];
-    if (queryResult.ids && queryResult.ids[0]) {
+    if (queryResult.ids[0]) {
       for (let i = 0; i < queryResult.ids[0].length; i++) {
         const id = queryResult.ids[0][i];
-        const metadata = queryResult.metadatas[0]?.[i];
+        const metadata = queryResult.metadatas[0]?.[i] as Record<string, string> | null | undefined;
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- noUncheckedIndexedAccess makes both `?.` genuinely required; tsc errors without them
         const distance = queryResult.distances?.[0]?.[i] ?? 0;
         const document = queryResult.documents[0]?.[i] ?? "";
 
         if (id && metadata) {
           results.push({
             id,
-            productId: String(metadata.productId),
-            variantId: String(metadata.variantId),
-            imageUrl: String(metadata.imageUrl),
-            productTitle: String(metadata.productTitle),
+            productId: metadata.productId ?? "",
+            variantId: metadata.variantId ?? "",
+            imageUrl: metadata.imageUrl ?? "",
+            productTitle: metadata.productTitle ?? "",
             document,
             distance,
           });

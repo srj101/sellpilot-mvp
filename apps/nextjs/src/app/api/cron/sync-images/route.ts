@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@acme/db/client";
 import { product, productVariant } from "@acme/db/schema";
-import { getOrCreateCollection } from "~/lib/chromadb";
-import { queueProductImageIndexing } from "~/lib/queue";
+import { getOrCreateCollection } from "@acme/api/chromadb";
+import { queueProductImageIndexing } from "@acme/api/queue";
 
 export const dynamic = "force-dynamic";
 

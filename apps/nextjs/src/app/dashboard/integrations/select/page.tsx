@@ -10,7 +10,7 @@ import {
   getWhatsAppAccounts,
   FacebookPage,
   WhatsAppBusinessAccount,
-} from "~/lib/meta";
+} from "@acme/api/meta";
 import { saveSelectedPage } from "../actions";
 import { DashboardShell } from "../../(home)/_components/dashboard-shell";
 

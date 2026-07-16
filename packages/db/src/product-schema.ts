@@ -12,6 +12,7 @@ export const product = pgTable("product", {
     .references(() => user.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description"),
+  category: text("category"),
   images: jsonb("images").$type<string[]>().default([]).notNull(),
   options: jsonb("options")
     .$type<{ name: string; values: string[] }[]>()
@@ -38,6 +39,9 @@ export const productVariant = pgTable("product_variant", {
   option3: text("option3"),
   price: integer("price").notNull().default(0), // stored in cents/integers
   compareAtPrice: integer("compare_at_price"),
+  /** Minimum quantity to unlock wholesalePrice, e.g. 12 */
+  wholesaleMinQty: integer("wholesale_min_qty"),
+  wholesalePrice: integer("wholesale_price"),
   sku: text("sku"),
   inventoryQuantity: integer("inventory_quantity").default(0).notNull(),
   imageUrl: text("image_url"), // variant image

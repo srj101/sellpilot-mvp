@@ -33,6 +33,7 @@
     "openai": "^6.45.0",
     "react": "catalog:react19",
     "react-dom": "catalog:react19",
+    "recharts": "^3.2.1",
     "superjson": "2.2.3",
     "zod": "catalog:"
   },

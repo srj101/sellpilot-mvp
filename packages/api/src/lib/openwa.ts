@@ -1,7 +1,7 @@
-import { env } from "~/env";
-
-const OPENWA_URL = env.OPENWA_URL;
-const API_KEY = env.OPENWA_API_KEY;
+const OPENWA_URL = process.env.OPENWA_URL ?? "http://localhost:2785";
+const API_KEY =
+  process.env.OPENWA_API_KEY ??
+  "owa_k1_302b9cd435a44a92c4c119023b123a586d1f29e9c94572e2ce20e5048e975ec063";
 
 async function apiCall<T>(endpoint: string, options?: RequestInit): Promise<T> {
   // Ensure the base URL does not have a trailing slash, and endpoint starts with a slash
@@ -37,13 +37,13 @@ export interface OpenWASession {
   id: string;
   name: string;
   status:
-    | "created"
-    | "initializing"
-    | "qr_ready"
-    | "authenticating"
-    | "ready"
-    | "disconnected"
-    | "failed";
+  | "created"
+  | "initializing"
+  | "qr_ready"
+  | "authenticating"
+  | "ready"
+  | "disconnected"
+  | "failed";
   phone: string | null;
   pushName: string | null;
   lastError: string | null;
@@ -161,7 +161,9 @@ export async function getQrCode(
         ) {
           return { qrCode: null, status: "disconnected" };
         }
-      } catch {}
+      } catch {
+        // errorText wasn't valid JSON — fall through to the generic error below.
+      }
     }
 
     console.error(`[OpenWA API Error] ${res.status}: ${errorText}`);
@@ -180,18 +182,15 @@ export async function getSessionStatus(
   try {
     const uuid = await resolveSessionId(sessionId);
     return await apiCall<OpenWASession>(`/sessions/${uuid}`);
-  } catch (err: any) {
-    console.warn(
-      `[OpenWA] Failed to get session status for ${sessionId}:`,
-      err.message,
-    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[OpenWA] Failed to get session status for ${sessionId}:`, message);
 
-    const msg = String(err.message || "");
     if (
-      msg.includes("not active") ||
-      msg.includes("Start the session") ||
-      msg.includes("400") ||
-      msg.includes("API error 400")
+      message.includes("not active") ||
+      message.includes("Start the session") ||
+      message.includes("400") ||
+      message.includes("API error 400")
     ) {
       return {
         id: sessionId,
@@ -199,7 +198,7 @@ export async function getSessionStatus(
         status: "disconnected",
         phone: null,
         pushName: null,
-        lastError: err.message || "Disconnected",
+        lastError: message || "Disconnected",
       };
     }
 
@@ -216,12 +215,12 @@ export async function deleteSession(sessionId: string): Promise<void> {
     await apiCall<void>(`/sessions/${uuid}`, {
       method: "DELETE",
     });
-  } catch (err: any) {
-    const msg = String(err?.message || "").toLowerCase();
+  } catch (err) {
+    const message = (err instanceof Error ? err.message : String(err)).toLowerCase();
     if (
-      msg.includes("session not found") ||
-      msg.includes("404") ||
-      msg.includes("not found")
+      message.includes("session not found") ||
+      message.includes("404") ||
+      message.includes("not found")
     ) {
       return;
     }
@@ -317,7 +316,7 @@ export async function sendOpenWAImage(
         chatId,
         file: imageUrl,
         filename: "image.jpg",
-        caption: caption || "",
+        caption: caption ?? "",
       }),
     },
   );

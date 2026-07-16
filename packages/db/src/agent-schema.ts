@@ -93,6 +93,7 @@ export const customer = pgTable(
     email: text("email"),
     address: text("address"),
     district: text("district"),
+    country: text("country"),
     notes: text("notes"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -144,6 +145,15 @@ export const order = pgTable(
     /** External thread id (Meta thread key) for syncing back to the channel */
     threadId: text("thread_id"),
     notes: text("notes"),
+    /** Opaque token used in the public checkout link (/pay/[token]) — not the row id, to avoid enumeration */
+    paymentToken: text("payment_token"),
+    /** Full checkout URL sent to the customer, e.g. https://app.sellpilot.ai/pay/{paymentToken} */
+    paymentUrl: text("payment_url"),
+    /** "bkash" | "nagad" | "card" | "cod" | "sslcommerz" */
+    paymentMethod: text("payment_method"),
+    /** Customer-submitted screenshot for manual bKash/Nagad confirmation via chat */
+    paymentScreenshotUrl: text("payment_screenshot_url"),
+    paymentConfirmedAt: timestamp("payment_confirmed_at"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
@@ -156,6 +166,7 @@ export const order = pgTable(
     index("order_customer_id_idx").on(table.customerId),
     index("order_thread_id_idx").on(table.threadId),
     unique("order_user_order_number_unique").on(table.userId, table.orderNumber),
+    unique("order_payment_token_unique").on(table.paymentToken),
   ],
 );
 
@@ -191,6 +202,144 @@ export const orderItem = pgTable(
   (table) => [
     index("order_item_order_id_idx").on(table.orderId),
     index("order_item_variant_id_idx").on(table.variantId),
+  ],
+);
+
+/**
+ * Live/abandoned carts, one row per in-progress conversation cart. Distinct from
+ * agentSession.state.cart (the LLM's working memory) — this is the queryable,
+ * relational record used to detect abandonment and drive recovery follow-ups.
+ * status lifecycle: active -> abandoned -> recovered | converted
+ */
+export const cart = pgTable(
+  "cart",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    customerId: text("customer_id").references(() => customer.id, {
+      onDelete: "set null",
+    }),
+    channel: text("channel").notNull(),
+    threadId: text("thread_id").notNull(),
+    items: jsonb("items")
+      .$type<{ productId: string; variantId?: string; name: string; variantTitle?: string; qty: number; unitPrice: number; imageUrl?: string }[]>()
+      .default([])
+      .notNull(),
+    subtotal: integer("subtotal").default(0).notNull(),
+    status: text("status").default("active").notNull(),
+    lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
+    reminderSentAt: timestamp("reminder_sent_at"),
+    convertedOrderId: text("converted_order_id").references(() => order.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("cart_user_id_idx").on(table.userId),
+    index("cart_status_idx").on(table.status),
+    unique("cart_user_thread_unique").on(table.userId, table.threadId),
+  ],
+);
+
+/**
+ * Post-delivery reviews, requested by the AI agent and (optionally) collected via chat.
+ */
+export const review = pgTable(
+  "review",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    orderId: text("order_id")
+      .notNull()
+      .references(() => order.id, { onDelete: "cascade" }),
+    customerId: text("customer_id").references(() => customer.id, {
+      onDelete: "set null",
+    }),
+    productId: text("product_id").references(() => product.id, {
+      onDelete: "set null",
+    }),
+    rating: integer("rating").notNull(),
+    comment: text("comment"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("review_user_id_idx").on(table.userId),
+    index("review_order_id_idx").on(table.orderId),
+    index("review_product_id_idx").on(table.productId),
+  ],
+);
+
+/**
+ * In-app notifications for the merchant (dashboard bell icon).
+ */
+export const notification = pgTable(
+  "notification",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** e.g. "order_placed", "low_stock", "review_received", "cart_abandoned" */
+    type: text("type").notNull(),
+    title: text("title").notNull(),
+    body: text("body"),
+    /** In-app path to navigate to on click, e.g. /dashboard/orders */
+    link: text("link"),
+    read: boolean("read").default(false).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("notification_user_id_idx").on(table.userId),
+    index("notification_read_idx").on(table.read),
+  ],
+);
+
+/**
+ * SellPilot's own SaaS subscription for this merchant (billing SellPilot, not the
+ * merchant's own store). Provider-agnostic until a payment gateway is wired up for it.
+ */
+export const subscription = pgTable(
+  "subscription",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** "starter" | "pro" | "enterprise" */
+    plan: text("plan").notNull(),
+    /** "trialing" | "active" | "past_due" | "cancelled" */
+    status: text("status").default("trialing").notNull(),
+    /** Payment provider once wired up, e.g. "sslcommerz" */
+    provider: text("provider"),
+    providerSubscriptionId: text("provider_subscription_id"),
+    currentPeriodStart: timestamp("current_period_start").defaultNow().notNull(),
+    currentPeriodEnd: timestamp("current_period_end"),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("subscription_user_id_idx").on(table.userId),
+    index("subscription_status_idx").on(table.status),
   ],
 );
 
@@ -409,4 +558,25 @@ export const shippingRateRelations = relations(shippingRate, ({ one }) => ({
 
 export const agentSessionRelations = relations(agentSession, ({ one }) => ({
   user: one(user, { fields: [agentSession.userId], references: [user.id] }),
+}));
+
+export const cartRelations = relations(cart, ({ one }) => ({
+  user: one(user, { fields: [cart.userId], references: [user.id] }),
+  customer: one(customer, { fields: [cart.customerId], references: [customer.id] }),
+  convertedOrder: one(order, { fields: [cart.convertedOrderId], references: [order.id] }),
+}));
+
+export const reviewRelations = relations(review, ({ one }) => ({
+  user: one(user, { fields: [review.userId], references: [user.id] }),
+  order: one(order, { fields: [review.orderId], references: [order.id] }),
+  customer: one(customer, { fields: [review.customerId], references: [customer.id] }),
+  product: one(product, { fields: [review.productId], references: [product.id] }),
+}));
+
+export const notificationRelations = relations(notification, ({ one }) => ({
+  user: one(user, { fields: [notification.userId], references: [user.id] }),
+}));
+
+export const subscriptionRelations = relations(subscription, ({ one }) => ({
+  user: one(user, { fields: [subscription.userId], references: [user.id] }),
 }));
