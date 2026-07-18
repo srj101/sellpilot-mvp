@@ -1,4 +1,5 @@
 import type { TRPCRouterRecord } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
 import { and, eq, inArray } from "@acme/db";
@@ -196,7 +197,10 @@ export const integrationsRouter = {
       .select({
         id: metaConnection.id,
         platform: metaConnection.platform,
+        platformAccountId: metaConnection.platformAccountId,
         platformAccountName: metaConnection.platformAccountName,
+        webhookSubscriptionStatus: metaConnection.webhookSubscriptionStatus,
+        connectedAt: metaConnection.connectedAt,
         accessToken: metaConnection.accessToken,
       })
       .from(metaConnection)
@@ -206,14 +210,23 @@ export const integrationsRouter = {
   disconnectChannel: protectedProcedure
     .input(z.object({ connectionId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      await ctx.db
+      const deleted = await ctx.db
         .delete(metaConnection)
         .where(
           and(
             eq(metaConnection.id, input.connectionId),
             eq(metaConnection.userId, ctx.session.user.id),
           ),
-        );
+        )
+        .returning({ id: metaConnection.id });
+
+      if (deleted.length === 0) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Connection not found or already removed.",
+        });
+      }
+
       return { ok: true };
     }),
 

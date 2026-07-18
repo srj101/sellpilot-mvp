@@ -97,8 +97,16 @@ export async function exchangeForLongLivedToken(
       client_secret: APP_SECRET,
       fb_exchange_token: shortLivedToken,
     });
-  } catch {
-    // If long-lived exchange fails, return original token info
+  } catch (err) {
+    // Falling back to the short-lived token keeps the connect flow from
+    // hard-failing, but a failure here almost always means something is
+    // actually wrong (bad app secret, revoked permission) and the saved
+    // token will die in ~1-2 hours instead of ~60 days — so this must be
+    // logged loudly rather than swallowed silently.
+    console.error(
+      "[Meta] Long-lived token exchange failed — falling back to short-lived token:",
+      err,
+    );
     return {
       access_token: shortLivedToken,
       token_type: "bearer",
@@ -157,7 +165,25 @@ export async function getPagesWithInstagram(
       "picture",
       "instagram_business_account{id,username,profile_picture_url}",
     ].join(","),
+    limit: "100",
   });
+
+  // /me/accounts paginates (default page size 25, ours capped at 100) —
+  // follow paging.next so admins of more Pages than that still see all of
+  // them in the picker instead of silently only the first page.
+  const allPages = [...response.data];
+  let nextUrl = response.paging?.next;
+  let guard = 0;
+  while (nextUrl && guard < 20) {
+    const res = await fetch(nextUrl, { cache: "no-store" });
+    const data = (await res.json().catch(() => ({}))) as PagesResponse;
+    if (!res.ok) break;
+    allPages.push(...(data.data ?? []));
+    nextUrl = data.paging?.next;
+    guard++;
+  }
+
+  response.data = allPages;
 
   if (channel === "facebook") {
     response.data = response.data.filter((page) =>
@@ -316,11 +342,16 @@ const FACEBOOK_WEBHOOK_FIELDS = [
   "feed",
 ];
 
+// Instagram uses its own webhook field names — it does not support
+// "message_reads"/"message_deliveries" (those are Page/Messenger-only);
+// the Instagram equivalent for read receipts is "messaging_seen", and it
+// has no delivery-receipt field at all.
+// @see https://developers.facebook.com/docs/instagram-platform/webhooks
 const INSTAGRAM_WEBHOOK_FIELDS = [
   "messages",
   "messaging_postbacks",
-  "message_reads",
-  "message_deliveries",
+  "messaging_seen",
+  "comments",
 ];
 
 async function graphPost<T = Record<string, unknown>>(
@@ -739,6 +770,35 @@ export async function sendMetaInboxReply({
           : undefined,
     raw: response,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Comment replies (Page + Instagram)
+// ---------------------------------------------------------------------------
+
+/**
+ * Reply to a Facebook Page post comment or an Instagram media comment.
+ *
+ * Facebook: POST /{comment-id}/comments
+ * Instagram: POST /{ig-comment-id}/replies
+ *
+ * @see https://developers.facebook.com/docs/graph-api/reference/v25.0/object/comments
+ * @see https://developers.facebook.com/docs/instagram-api/reference/ig-comment/replies
+ */
+export async function replyToComment(
+  platform: "facebook_page" | "instagram",
+  commentId: string,
+  accessToken: string,
+  message: string,
+): Promise<{ id?: string; raw: unknown }> {
+  const path =
+    platform === "instagram" ? `/${commentId}/replies` : `/${commentId}/comments`;
+
+  const response = await graphPostJson<{ id?: string }>(path, accessToken, {
+    message,
+  });
+
+  return { id: response.id, raw: response };
 }
 
 export async function getWhatsAppMediaUrl(

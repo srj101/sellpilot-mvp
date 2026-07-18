@@ -48,6 +48,9 @@ export const metaWebhookEvent = pgTable(
     /** Sender, message, comment, or status identifier. */
     sourceId: text("source_id"),
 
+    /** Conversation thread id, e.g. "facebook_page:<senderId>" — used to correlate inbound/outbound messages for history. */
+    threadId: text("thread_id"),
+
     /** The raw payload received from Meta. */
     rawPayload: jsonb("raw_payload").$type<Record<string, unknown>>().notNull(),
 
@@ -69,6 +72,7 @@ export const metaWebhookEvent = pgTable(
     ),
     index("meta_webhook_event_user_id_idx").on(table.userId),
     index("meta_webhook_event_connection_id_idx").on(table.metaConnectionId),
+    index("meta_webhook_event_thread_idx").on(table.userId, table.threadId),
   ],
 );
 

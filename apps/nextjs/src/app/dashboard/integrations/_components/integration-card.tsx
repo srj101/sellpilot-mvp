@@ -1,15 +1,6 @@
-"use client";
-
-import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useMutation } from "@tanstack/react-query";
-import { Link2, Loader2, Unlink } from "lucide-react";
+import { ArrowUpRight, BadgeCheck } from "lucide-react";
 
-import { Badge } from "@acme/ui/badge";
-import { Button } from "@acme/ui/button";
-
-import { useTRPC } from "~/trpc/react";
-import { connectChannel } from "../actions";
 import {
   FacebookIcon,
   InstagramIcon,
@@ -22,10 +13,16 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   whatsapp: WhatsAppIcon,
 };
 
-const COLORS: Record<string, string> = {
-  facebook: "text-[#1877F2] bg-[#1877F2]/10",
-  instagram: "text-pink-600 bg-pink-600/10",
-  whatsapp: "text-[#25D366] bg-[#25D366]/10",
+const GRADIENTS: Record<string, string> = {
+  facebook: "from-[#0668E1] via-[#1877F2] to-[#0a2f6b]",
+  instagram: "from-[#4F5BD5] via-[#D62976] to-[#962fbf]",
+  whatsapp: "from-[#25D366] via-[#128C7E] to-[#064c40]",
+};
+
+const ROUTES: Record<string, string> = {
+  facebook: "/dashboard/integrations/facebook",
+  instagram: "/dashboard/integrations/instagram",
+  whatsapp: "/dashboard/integrations/whatsapp",
 };
 
 export interface IntegrationCardProps {
@@ -34,7 +31,6 @@ export interface IntegrationCardProps {
   description: string;
   connected: boolean;
   account?: string | null;
-  connectionId?: string;
 }
 
 export function IntegrationCard({
@@ -43,81 +39,58 @@ export function IntegrationCard({
   description,
   connected,
   account,
-  connectionId,
 }: IntegrationCardProps) {
-  const router = useRouter();
-  const trpc = useTRPC();
   const Icon = ICONS[id] ?? FacebookIcon;
-  const colorClass = COLORS[id] ?? "text-primary bg-primary/10";
-
-  const disconnectChannel = useMutation(trpc.integrations.disconnectChannel.mutationOptions());
-  const disconnectOpenWA = useMutation(trpc.integrations.disconnectOpenWA.mutationOptions());
-  const isDisconnecting = disconnectChannel.isPending || disconnectOpenWA.isPending;
-
-  async function handleDisconnect() {
-    if (id === "whatsapp") {
-      await disconnectOpenWA.mutateAsync();
-    } else if (connectionId) {
-      await disconnectChannel.mutateAsync({ connectionId });
-    }
-    router.refresh();
-  }
+  const gradient = GRADIENTS[id] ?? "from-primary to-primary/60";
+  const href = ROUTES[id] ?? "/dashboard/integrations";
 
   return (
-    <div className="bg-card group flex flex-col rounded-xl border p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-      <div className="mb-4 flex items-start justify-between">
-        <div
-          className={`flex h-12 w-12 items-center justify-center rounded-xl ${colorClass}`}
-        >
-          <Icon className="h-6 w-6" />
+    <Link
+      href={href}
+      className="group relative flex h-64 w-full flex-col justify-end overflow-hidden rounded-2xl shadow-md ring-1 ring-black/5 transition-transform duration-300 hover:-translate-y-0.5 hover:shadow-xl"
+    >
+      {/* Brand gradient background */}
+      <div className={`absolute inset-0 bg-gradient-to-br ${gradient}`} />
+
+      {/* Watermark icon */}
+      <Icon className="absolute -top-4 -right-4 h-24 w-24 rotate-12 text-white/10" />
+
+      {/* Centered brand icon */}
+      <div className="absolute inset-0 flex items-center justify-center pb-14">
+        <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-white/15 shadow-lg ring-1 ring-white/20 backdrop-blur-sm">
+          <Icon className="h-10 w-10 text-white" />
         </div>
-        <Badge variant={connected ? "success" : "secondary"}>
-          {connected ? "Connected" : "Not connected"}
-        </Badge>
       </div>
 
-      <div className="mb-1 text-lg font-semibold">{name}</div>
-      <p className="text-muted-foreground mb-4 text-sm leading-relaxed">
-        {description}
-      </p>
+      {/* Bottom scrim for text legibility */}
+      <div className="absolute inset-x-0 bottom-0 h-3/4 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
 
-      {connected && account ? (
-        <p className="text-muted-foreground mb-4 text-xs">{account}</p>
-      ) : null}
+      {/* Content */}
+      <div className="relative z-10 flex flex-col gap-1.5 p-3.5 text-white">
+        <div className="flex items-center gap-2">
+          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-white/15 backdrop-blur-sm">
+            <Icon className="h-3.5 w-3.5" />
+          </div>
+          <span className="text-sm font-semibold tracking-tight">{name}</span>
+          {connected ? (
+            <BadgeCheck className="h-3.5 w-3.5 fill-white/20 text-white" />
+          ) : null}
+        </div>
 
-      <div className="mt-auto pt-2">
-        {connected ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full"
-            disabled={isDisconnecting}
-            onClick={() => void handleDisconnect()}
-          >
-            {isDisconnecting ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Unlink className="mr-2 h-4 w-4" />
-            )}
-            Disconnect
-          </Button>
-        ) : id === "whatsapp" ? (
-          <Link href="/dashboard/integrations/whatsapp">
-            <Button size="sm" className="w-full">
-              <Link2 className="mr-2 h-4 w-4" />
-              Connect
-            </Button>
-          </Link>
-        ) : (
-          <form action={connectChannel}>
-            <input type="hidden" name="channel" value={id} />
-            <Button size="sm" className="w-full" type="submit">
-              <Link2 className="mr-2 h-4 w-4" />
-              Connect
-            </Button>
-          </form>
-        )}
+        <p className="line-clamp-1 text-xs leading-snug text-white/75">
+          {description}
+        </p>
+
+        <div className="mt-0.5 flex items-center justify-between gap-2">
+          <span className="truncate text-[11px] font-medium text-white/65">
+            {connected ? (account ?? "Connected") : "Not connected"}
+          </span>
+          <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-black shadow transition-transform duration-200 group-hover:scale-105">
+            Go
+            <ArrowUpRight className="h-3 w-3" />
+          </span>
+        </div>
       </div>
-    </div>
+    </Link>
   );
 }

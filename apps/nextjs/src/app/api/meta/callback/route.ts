@@ -85,8 +85,9 @@ export async function GET(req: Request) {
       path: "/",
     });
 
-    // Forward the user's channel intent so the select page can render the
-    // right list. Default to "facebook" for backwards compatibility.
+    // Forward the user's channel intent so we land back on the right
+    // per-channel page, which renders the account picker itself while the
+    // temp token cookie is present.
     const intent = cookieStore.get("meta_channel_intent")?.value;
     const channelParam =
       intent === "instagram"
@@ -96,7 +97,7 @@ export async function GET(req: Request) {
           : "facebook";
 
     return NextResponse.redirect(
-      `${protocol}://${host}/dashboard/integrations/select?channel=${channelParam}`,
+      `${protocol}://${host}/dashboard/integrations/${channelParam}`,
     );
   } catch (err) {
     console.error("Meta OAuth callback error:", err);

@@ -1,3 +1,9 @@
+/**
+ * OpenWA Webhook Handler
+ * Handles incoming webhooks from OpenWA (unofficial WhatsApp API)
+ * Now uses the new queue-based architecture
+ */
+
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
@@ -8,14 +14,16 @@ import { metaConnection, metaWebhookEvent } from "@acme/db/schema";
 
 import { env } from "~/env";
 import { triggerInboxBroadcast } from "~/lib/inbox-broadcast";
-import { sendMetaInboxReply } from "@acme/api/meta";
+import { createQueue, type MetaDMReplyJob } from "@acme/queue";
 
 export const runtime = "nodejs";
+
+const queue = createQueue();
 
 function verifyOpenWASignature(
   rawBody: string,
   signatureHeader: string | null,
-  secret: string,
+  secret: string
 ): boolean {
   if (!signatureHeader?.startsWith("sha256=") || !secret) {
     return false;
@@ -47,7 +55,7 @@ export async function POST(req: NextRequest) {
     }
   } else {
     console.warn(
-      "[OpenWA Webhook] No webhook secret configured; skipping signature verification.",
+      "[OpenWA Webhook] No webhook secret configured; skipping signature verification."
     );
   }
 
@@ -60,18 +68,11 @@ export async function POST(req: NextRequest) {
 
   const { event, sessionId, data } = body;
 
-  // Log every incoming webhook event so we can debug event names
   console.log(
     "[OpenWA Webhook] Incoming event:",
     event,
     "sessionId:",
-    sessionId,
-    "keys:",
-    Object.keys(body),
-  );
-  console.log(
-    "[OpenWA Webhook] Full body:",
-    JSON.stringify(body).slice(0, 1000),
+    sessionId
   );
 
   // Accept various event name formats from different OpenWA engines
@@ -93,28 +94,25 @@ export async function POST(req: NextRequest) {
   if (!sessionId || !data) {
     return NextResponse.json(
       { error: "Missing sessionId or data" },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
-  // Derive userId from sessionId.
-  // OpenWA may send either the friendly name ("user-<userId>") or the internal UUID.
+  // Derive userId from sessionId
   let userId: string | null = null;
   let connection: any = null;
 
   if (sessionId.startsWith("user-")) {
-    // Friendly name format: user-<userId>
     userId = sessionId.slice("user-".length);
     if (userId) {
       connection = await db.query.metaConnection.findFirst({
         where: and(
           eq(metaConnection.userId, userId),
-          eq(metaConnection.platform, "whatsapp"),
+          eq(metaConnection.platform, "whatsapp")
         ),
       });
     }
   } else {
-    // UUID format — look up all WhatsApp connections and match by metadata.sessionId
     const allWa = await db.query.metaConnection.findMany({
       where: eq(metaConnection.platform, "whatsapp"),
     });
@@ -129,11 +127,9 @@ export async function POST(req: NextRequest) {
   }
 
   if (!userId || !connection) {
-    // Connection not saved yet (QR just scanned, save still in progress) — accept silently
     console.log(
-      "[OpenWA Webhook] Connection not found yet for session:",
-      sessionId,
-      "— accepting silently",
+      "[OpenWA Webhook] Connection not found for session:",
+      sessionId
     );
     return new NextResponse(null, { status: 200 });
   }
@@ -143,7 +139,7 @@ export async function POST(req: NextRequest) {
   if (!contactPhone || !contactJid) {
     return NextResponse.json(
       { error: "Invalid contact phone" },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
@@ -159,6 +155,7 @@ export async function POST(req: NextRequest) {
     data.self === "true" ||
     event === "message.sent" ||
     event === "outbound";
+
   const timestamp = data.timestamp
     ? new Date(data.timestamp * 1000)
     : new Date();
@@ -166,7 +163,6 @@ export async function POST(req: NextRequest) {
   let rawPayload: Record<string, any> = {};
 
   if (isOutbound) {
-    // Standard outbound structure used by Meta connection replies
     rawPayload = {
       direction: "outbound",
       threadKey: `whatsapp:${contactPhone}`,
@@ -176,7 +172,6 @@ export async function POST(req: NextRequest) {
       text: data.body || "",
     };
   } else {
-    // Simulated Meta WhatsApp Cloud API incoming payload
     const senderName =
       data.pushname || data.senderName || data.authorName || contactPhone;
 
@@ -202,9 +197,7 @@ export async function POST(req: NextRequest) {
                 },
                 contacts: [
                   {
-                    profile: {
-                      name: senderName,
-                    },
+                    profile: { name: senderName },
                     wa_id: contactPhone,
                   },
                 ],
@@ -213,9 +206,7 @@ export async function POST(req: NextRequest) {
                     ? {
                         from: contactPhone,
                         id: data.id,
-                        timestamp: String(
-                          Math.floor(timestamp.getTime() / 1000),
-                        ),
+                        timestamp: String(Math.floor(timestamp.getTime() / 1000)),
                         type: "image",
                         image: {
                           mime_type: data.mimetype || "image/jpeg",
@@ -228,12 +219,8 @@ export async function POST(req: NextRequest) {
                     : {
                         from: contactPhone,
                         id: data.id,
-                        timestamp: String(
-                          Math.floor(timestamp.getTime() / 1000),
-                        ),
-                        text: {
-                          body: data.body || "",
-                        },
+                        timestamp: String(Math.floor(timestamp.getTime() / 1000)),
+                        text: { body: data.body || "" },
                         type: "text",
                       },
                 ],
@@ -245,11 +232,12 @@ export async function POST(req: NextRequest) {
     };
   }
 
-  // Insert normalized event into DB
+  // Insert event into DB
+  const dedupeKey = `openwa:${sessionId}:${data.id}`;
   const inserted = await db
     .insert(metaWebhookEvent)
     .values({
-      dedupeKey: `openwa:${sessionId}:${data.id}`,
+      dedupeKey,
       platform: "whatsapp",
       object: "whatsapp_business_account",
       eventType: isOutbound ? "outbound" : "message",
@@ -270,10 +258,10 @@ export async function POST(req: NextRequest) {
     return new NextResponse(null, { status: 200 });
   }
 
-  // Trigger inbox updates over SSE for this user
+  // Trigger inbox updates
   void triggerInboxBroadcast(userId);
 
-  // Trigger AI-driven reply for incoming messages
+  // Enqueue AI reply job for incoming messages
   if (!isOutbound) {
     const accessToken =
       connection.accessToken ??
@@ -281,159 +269,38 @@ export async function POST(req: NextRequest) {
       connection.whatsappAccessToken;
 
     if (accessToken) {
-      // Run asynchronously so we don't block the webhook response
-      void (async () => {
-        try {
-          const { runChat } = await import("~/lib/ai");
+      const isImage =
+        data.type === "image" || data.mimetype?.startsWith("image/");
+      const imageUrl = data.body?.startsWith("data:image")
+        ? data.body
+        : data.clientUrl || data.deprecatedMms3Url || undefined;
 
-          const isImage =
-            data.type === "image" || data.mimetype?.startsWith("image/");
-          const imageUrl = data.body?.startsWith("data:image")
-            ? data.body
-            : data.clientUrl || data.deprecatedMms3Url || null;
+      const job: MetaDMReplyJob = {
+        eventId: dedupeKey,
+        platform: "whatsapp",
+        connectionId: connection.id,
+        userId,
+        recipientId: contactJid,
+        threadId: `whatsapp:${contactPhone}`,
+        incomingMessage: {
+          text: isImage ? data.caption || "" : data.body || "",
+          imageUrls: isImage && imageUrl ? [imageUrl] : undefined,
+          timestamp: timestamp.getTime(),
+        },
+        accessToken,
+        accountId:
+          connection.whatsappPhoneNumberId ?? connection.platformAccountId,
+      };
 
-          let imageSearchResultsText = "";
-          if (isImage && imageUrl) {
-            try {
-              const { searchProductsByImage } = await import("@acme/api/chromadb");
-              const matches = await searchProductsByImage({
-                userId,
-                imageUrl,
-                limit: 3,
-              });
-
-              if (matches.length > 0) {
-                imageSearchResultsText =
-                  `[Customer sent an image. Image search matches found:\n` +
-                  matches
-                    .map(
-                      (m) =>
-                        `- Product: ${m.productTitle} (ID: ${m.productId}). Similarity distance: ${m.distance.toFixed(4)}`,
-                    )
-                    .join("\n") +
-                  `\nUse this context to answer. If a match is close, mention the product name, price, stock, and offer to show images or details. If no good match, politely ask if they want to search for something else.]`;
-              } else {
-                imageSearchResultsText = `[Customer sent an image. No product matches were found in the database. Politely inform them and offer to search manually.]`;
-              }
-            } catch (err) {
-              console.error(
-                "[OpenWA Webhook AIReply] Image search failed:",
-                err,
-              );
-            }
-          }
-
-          const userMessage = isImage ? data.caption || "" : data.body || "";
-          const finalMessage = imageSearchResultsText
-            ? `${imageSearchResultsText}\n\n${userMessage}`.trim()
-            : userMessage;
-
-          let aiReply = "";
-          try {
-            const threadId = `whatsapp:${contactPhone}`;
-
-            // Send a friendly patience message if AI takes more than 8 seconds
-            let patienceSent = false;
-            const patienceTimer = setTimeout(async () => {
-              patienceSent = true;
-              const patienceMessages = [
-                "Just a moment, I'm looking into this for you...",
-                "Give me a second, I'm checking that for you...",
-                "One moment please, I'm finding the best answer...",
-                "Hold on, I'm pulling up the details for you...",
-              ];
-              const msg =
-                patienceMessages[
-                  Math.floor(Math.random() * patienceMessages.length)
-                ]!;
-              try {
-                await sendMetaInboxReply({
-                  platform: "whatsapp",
-                  accessToken,
-                  accountId:
-                    connection.whatsappPhoneNumberId ??
-                    connection.platformAccountId,
-                  recipientId: contactJid,
-                  text: msg,
-                });
-                console.log("[OpenWA Webhook AIReply] Patience message sent");
-              } catch (err) {
-                console.error(
-                  "[OpenWA Webhook AIReply] Failed to send patience message:",
-                  err,
-                );
-              }
-            }, 8000);
-
-            aiReply = await runChat(finalMessage, userId, threadId, {
-              platform: "whatsapp",
-              accessToken,
-              accountId:
-                connection.whatsappPhoneNumberId ??
-                connection.platformAccountId,
-              recipientId: contactPhone,
-              connectionId: connection.id,
-            });
-
-            clearTimeout(patienceTimer);
-          } catch (e) {
-            console.error(
-              "[OpenWA Webhook AIReply] runChat failed, using neutral fallback:",
-              e,
-            );
-            aiReply =
-              "Sorry — I'm having trouble processing your message right now. We'll get back to you shortly.";
-          }
-
-          let sent: any = {};
-          try {
-            sent = await sendMetaInboxReply({
-              platform: "whatsapp",
-              accessToken,
-              accountId:
-                connection.whatsappPhoneNumberId ??
-                connection.platformAccountId,
-              recipientId: contactJid,
-              text: aiReply,
-            });
-          } catch (sendErr) {
-            console.error(
-              "[OpenWA Webhook AIReply] sendMetaInboxReply failed:",
-              sendErr,
-            );
-          }
-
-          await db.insert(metaWebhookEvent).values({
-            dedupeKey: `outbound:aireply:${contactPhone}:${Date.now()}:${crypto.randomUUID()}`,
-            platform: "whatsapp",
-            object: "whatsapp_business_account",
-            eventType: "outbound",
-            metaConnectionId: connection.id,
-            userId,
-            platformAccountId: connection.platformAccountId,
-            sourceId: sent.messageId ?? null,
-            rawPayload: {
-              direction: "outbound",
-              threadKey: `whatsapp:${contactPhone}`,
-              recipientId: contactPhone,
-              accountId: connection.platformAccountId,
-              platform: "whatsapp",
-              text: aiReply,
-              response: sent.raw,
-            },
-            status: "sent",
-            processedAt: new Date(),
-          });
-
-          // Trigger inbox updates so the reply shows up in the UI
-          void triggerInboxBroadcast(userId);
-        } catch (error) {
-          console.error(
-            "[OpenWA Webhook AIReply] Error handling AI reply:",
-            error,
-          );
-        }
-      })();
+      try {
+        await queue.enqueue("meta-dm-reply", job, {
+          attempts: 3,
+          backoff: { type: "exponential", delay: 2000 },
+        });
+        console.log("[OpenWA Webhook] Enqueued DM reply job:", dedupeKey);
+      } catch (err) {
+        console.error("[OpenWA Webhook] Failed to enqueue job:", err);
+      }
     }
   }
 

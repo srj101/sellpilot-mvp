@@ -73,7 +73,13 @@ export const inboxRouter = {
       const [connection] = await ctx.db
         .select()
         .from(metaConnection)
-        .where(and(eq(metaConnection.userId, userId), eq(metaConnection.platform, input.platform)))
+        .where(
+          and(
+            eq(metaConnection.userId, userId),
+            eq(metaConnection.platform, input.platform),
+            eq(metaConnection.platformAccountId, input.accountId),
+          ),
+        )
         .limit(1);
 
       if (!connection) {

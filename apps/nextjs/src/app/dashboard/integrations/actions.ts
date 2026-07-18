@@ -135,48 +135,59 @@ async function replaceMetaSelection(input: {
   instagramUsername?: string;
   instagramProfilePictureUrl?: string;
 }) {
-  const webhookSubscription = await (input.intent === "facebook"
-    ? subscribeMetaPageWebhooks(input.pageId, input.pageToken)
-    : subscribeInstagramWebhooks(input.pageId, input.pageToken));
+  // Webhook subscription is best-effort — a Graph API error here (e.g. a
+  // permission not yet approved) must not block saving the Page/account
+  // connection itself. Surface the failure via webhookSubscriptionError
+  // instead of throwing.
+  let webhookSubscribed = false;
+  let webhookError: string | null = null;
+  try {
+    const result = await (input.intent === "facebook"
+      ? subscribeMetaPageWebhooks(input.pageId, input.pageToken)
+      : subscribeInstagramWebhooks(input.pageId, input.pageToken));
+    webhookSubscribed = result.success;
+  } catch (err) {
+    console.error("Failed to subscribe Meta webhooks:", err);
+    webhookError = err instanceof Error ? err.message : "Webhook subscription failed";
+  }
 
-  await db
-    .delete(metaConnection)
-    .where(
-      and(
-        eq(metaConnection.userId, input.userId),
-        eq(
-          metaConnection.platform,
-          input.intent === "facebook" ? "facebook_page" : "instagram",
-        ),
-      ),
-    );
-
+  // Upsert (not delete-then-insert) so a user can connect multiple distinct
+  // Pages/accounts at once — re-selecting the same one just refreshes its token.
   if (input.intent === "facebook") {
-    await db.insert(metaConnection).values({
+    const values = {
       userId: input.userId,
-      platform: "facebook_page",
+      platform: "facebook_page" as const,
       platformAccountId: input.pageId,
       platformAccountName: input.pageName,
       facebookPageId: input.pageId,
       facebookPageName: input.pageName,
       facebookPageAccessToken: input.pageToken,
       accessToken: input.pageToken,
-      webhookSubscriptionStatus: webhookSubscription.success
-        ? "subscribed"
-        : "failed",
-      webhookSubscribedAt: webhookSubscription.success ? new Date() : null,
-      webhookSubscriptionError: null,
-    });
+      webhookSubscriptionStatus: webhookSubscribed ? "subscribed" : "failed",
+      webhookSubscribedAt: webhookSubscribed ? new Date() : null,
+      webhookSubscriptionError: webhookError,
+    };
+    await db
+      .insert(metaConnection)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [
+          metaConnection.userId,
+          metaConnection.platform,
+          metaConnection.platformAccountId,
+        ],
+        set: { ...values, updatedAt: new Date() },
+      });
     return;
   }
 
   if (!input.instagramId) {
-    redirect("/dashboard/integrations?error=no_instagram_account");
+    redirect("/dashboard/integrations/instagram?error=no_instagram_account");
   }
 
-  await db.insert(metaConnection).values({
+  const values = {
     userId: input.userId,
-    platform: "instagram",
+    platform: "instagram" as const,
     platformAccountId: input.instagramId,
     platformAccountName: input.instagramUsername,
     facebookPageId: input.pageId,
@@ -189,12 +200,21 @@ async function replaceMetaSelection(input: {
       profile_picture_url: input.instagramProfilePictureUrl || null,
       facebook_page_id: input.pageId,
     },
-    webhookSubscriptionStatus: webhookSubscription.success
-      ? "subscribed"
-      : "failed",
-    webhookSubscribedAt: webhookSubscription.success ? new Date() : null,
-    webhookSubscriptionError: null,
-  });
+    webhookSubscriptionStatus: webhookSubscribed ? "subscribed" : "failed",
+    webhookSubscribedAt: webhookSubscribed ? new Date() : null,
+    webhookSubscriptionError: webhookError,
+  };
+  await db
+    .insert(metaConnection)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [
+        metaConnection.userId,
+        metaConnection.platform,
+        metaConnection.platformAccountId,
+      ],
+      set: { ...values, updatedAt: new Date() },
+    });
 }
 
 /**
@@ -213,6 +233,7 @@ export async function connectChannel(formData: FormData) {
   }
 
   const channel = asChannel(formData.get("channel"));
+  const reauth = formData.get("reauth") === "1";
 
   const state = crypto.randomBytes(24).toString("hex");
   const cookieStore = await cookies();
@@ -251,23 +272,31 @@ export async function connectChannel(formData: FormData) {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("state", state);
 
+  if (reauth) {
+    // Forces Facebook to show the login dialog again instead of silently
+    // reusing the current browser session — lets the user switch accounts.
+    url.searchParams.set("auth_type", "reauthenticate");
+  }
+
   if (channel === "whatsapp") {
     const configId = env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID;
     if (configId) {
       url.searchParams.set("config_id", configId);
     }
   } else {
-    url.searchParams.set(
-      "scope",
-      [
-        "pages_show_list",
-        "pages_read_engagement",
-        "pages_manage_metadata",
-        "pages_messaging",
-        "instagram_basic",
-        "instagram_manage_messages",
-      ].join(","),
-    );
+    // This app uses "Facebook Login for Business", which resolves permissions
+    // via a Configuration rather than a raw `scope` param — a bare `scope`
+    // list is rejected with "Invalid Scopes" for any permission not already
+    // implicitly granted. The Configuration (created in the Meta dashboard
+    // under Facebook Login for Business > Configurations) must include:
+    // pages_show_list, pages_read_engagement, pages_manage_metadata,
+    // pages_messaging, instagram_basic, instagram_manage_messages,
+    // pages_manage_posts, pages_manage_engagement, instagram_manage_comments,
+    // instagram_content_publish.
+    const configId = env.NEXT_PUBLIC_FACEBOOK_CONFIG_ID;
+    if (configId) {
+      url.searchParams.set("config_id", configId);
+    }
   }
 
   redirect(url.toString());
@@ -298,7 +327,7 @@ export async function saveSelectedPage(formData: FormData) {
   const intent = asChannel(cookieStore.get("meta_channel_intent")?.value);
 
   if (!tempToken) {
-    redirect("/dashboard/integrations?error=session_expired");
+    redirect(`/dashboard/integrations/${intent}?error=session_expired`);
   }
 
   if (intent === "whatsapp") {
@@ -346,8 +375,10 @@ export async function saveSelectedPage(formData: FormData) {
     "instagramProfilePictureUrl",
   ) as string;
 
+  const targetPage = intent === "facebook" ? "facebook" : "instagram";
+
   if (!pageId || !pageAccessToken) {
-    redirect("/dashboard/integrations?error=invalid_selection");
+    redirect(`/dashboard/integrations/${targetPage}?error=invalid_selection`);
   }
 
   try {
@@ -364,16 +395,33 @@ export async function saveSelectedPage(formData: FormData) {
       instagramProfilePictureUrl,
     });
 
-    // Clean up cookies
-    cookieStore.delete("meta_temp_user_token");
-    cookieStore.delete("meta_channel_intent");
-    cookieStore.delete("meta_channel_state");
+    // Deliberately keep the temp token + intent cookies alive here (instead
+    // of clearing them) so the picker stays open — the user can keep
+    // clicking "Use this Page" on more Pages without re-authenticating each
+    // time. They're cleared when the user explicitly cancels/finishes via
+    // cancelMetaSelection, or expire on their own after 10 minutes.
   } catch (err) {
     console.error("Failed to save selected Meta connections:", err);
-    redirect("/dashboard/integrations?error=save_failed");
+    redirect(`/dashboard/integrations/${targetPage}?error=save_failed`);
   }
 
   redirect(
-    `/dashboard/integrations?connected=${intent === "facebook" ? "facebook" : "instagram"}`,
+    `/dashboard/integrations/${intent === "facebook" ? "facebook" : "instagram"}?connected=1`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Cancel an in-progress account picker (drops the temp token so the
+// connect page falls back to its normal connect + connected-list view)
+// ---------------------------------------------------------------------------
+
+export async function cancelMetaSelection(formData: FormData) {
+  const channel = asChannel(formData.get("channel"));
+  const cookieStore = await cookies();
+
+  cookieStore.delete("meta_temp_user_token");
+  cookieStore.delete("meta_channel_intent");
+  cookieStore.delete("meta_channel_state");
+
+  redirect(`/dashboard/integrations/${channel}`);
 }

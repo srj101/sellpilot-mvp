@@ -31,17 +31,13 @@ export default async function IntegrationsPage() {
       account: fbConnection
         ? `Connected as ${fbConnection.platformAccountName}`
         : null,
-      connectionId: fbConnection?.id,
     },
     {
       id: "instagram",
       name: "Instagram",
       description: "Enable auto-reply for Instagram DMs and story replies.",
       connected: !!igConnection,
-      account: igConnection
-        ? `@${igConnection.platformAccountName}`
-        : null,
-      connectionId: igConnection?.id,
+      account: igConnection ? `@${igConnection.platformAccountName}` : null,
     },
     {
       id: "whatsapp",
@@ -51,7 +47,6 @@ export default async function IntegrationsPage() {
       account: waConnection
         ? `Connected: ${waConnection.platformAccountName}`
         : null,
-      connectionId: waConnection?.id,
     },
   ];
 
@@ -60,12 +55,11 @@ export default async function IntegrationsPage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Integrations</h1>
         <p className="text-muted-foreground mt-1 text-base">
-          Connect your social accounts to enable auto-replies across your
-          channels.
+          Tap a channel to connect it and manage auto-replies.
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-6">
         {APPS.map((app) => (
           <IntegrationCard key={app.id} {...app} />
         ))}

@@ -24,8 +24,10 @@ export const env = createEnv({
     GOOGLE_CLIENT_ID: z.string(),
     GOOGLE_CLIENT_SECRET: z.string(),
     FACEBOOK_APP_ID: z.string(),
+    // Also used to verify the X-Hub-Signature-256 header on incoming Meta
+    // webhooks — Meta always signs webhooks with the same App Secret used
+    // for OAuth/Graph API calls, so this must never be a different value.
     FACEBOOK_APP_SECRET: z.string(),
-    META_APP_SECRET: z.string(),
     META_WEBHOOK_VERIFY_TOKEN: z.string(),
     META_CHANNEL_REDIRECT_URI: z.string().optional(),
     WHATSAPP_REDIRECT_URI: z.string().optional(),
@@ -56,6 +58,7 @@ export const env = createEnv({
    */
   client: {
     NEXT_PUBLIC_FACEBOOK_APP_ID: z.string().optional(),
+    NEXT_PUBLIC_FACEBOOK_CONFIG_ID: z.string().optional(),
     NEXT_PUBLIC_WHATSAPP_CONFIG_ID: z.string().optional(),
     NEXT_PUBLIC_WHATSAPP_REDIRECT_URI: z.string().optional(),
   },
@@ -65,6 +68,7 @@ export const env = createEnv({
   experimental__runtimeEnv: {
     NODE_ENV: process.env.NODE_ENV,
     NEXT_PUBLIC_FACEBOOK_APP_ID: process.env.NEXT_PUBLIC_FACEBOOK_APP_ID,
+    NEXT_PUBLIC_FACEBOOK_CONFIG_ID: process.env.NEXT_PUBLIC_FACEBOOK_CONFIG_ID,
     NEXT_PUBLIC_WHATSAPP_CONFIG_ID: process.env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID,
     NEXT_PUBLIC_WHATSAPP_REDIRECT_URI:
       process.env.NEXT_PUBLIC_WHATSAPP_REDIRECT_URI,
