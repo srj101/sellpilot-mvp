@@ -36,9 +36,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         notice={
           reset === "success"
             ? {
-                tone: "success",
-                message: "Your password has been updated. Sign in to continue.",
-              }
+              tone: "success",
+              message: "Your password has been updated. Sign in to continue..",
+            }
             : undefined
         }
       />
