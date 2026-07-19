@@ -21,6 +21,7 @@ import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
 import { Input } from "@acme/ui/input";
 import { Separator } from "@acme/ui/separator";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@acme/ui/card";
 
 import { useTRPC } from "~/trpc/react";
 import { ProductForm } from "./product-form";
@@ -56,14 +57,14 @@ export function ProductsClient({
 
   const getProductPriceRange = (productId: string, defaultPrice: number = 0) => {
     const prodVariants = getProductVariants(productId);
-    if (prodVariants.length === 0) return `${defaultPrice} BDT`;
+    if (prodVariants.length === 0) return `৳${Math.round(defaultPrice).toLocaleString()}`;
 
     const prices = prodVariants.map((v) => v.price);
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices);
 
-    if (minPrice === maxPrice) return `${minPrice} BDT`;
-    return `${minPrice} - ${maxPrice} BDT`;
+    if (minPrice === maxPrice) return `৳${Math.round(minPrice).toLocaleString()}`;
+    return `৳${Math.round(minPrice).toLocaleString()} - ৳${Math.round(maxPrice).toLocaleString()}`;
   };
 
   const getProductTotalStock = (productId: string) => {
@@ -154,37 +155,26 @@ export function ProductsClient({
 
   return (
     <div className="space-y-6">
-      {/* Top Header Card */}
-      <div className="bg-card/70 relative overflow-hidden rounded-[32px] border p-6 shadow-sm">
-        <div className="bg-primary/10 absolute inset-x-0 top-0 h-px" />
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-2xl space-y-3">
-            <div className="inline-flex items-center gap-2 rounded-full border bg-background/80 px-3 py-1 text-xs font-medium backdrop-blur">
-              <Sparkles className="h-3.5 w-3.5 text-primary" />
-              Shopify-style Product Catalog
-            </div>
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                Products
-              </h1>
-              <p className="text-muted-foreground mt-2 max-w-2xl text-sm leading-6 sm:text-base">
-                Manage your product catalog, options, and variation image embeddings. Test multi-tenant ChromaDB image search sandbox instantly.
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <Button
-              variant={view === "sandbox" ? "default" : "outline"}
-              onClick={() => setView(view === "sandbox" ? "list" : "sandbox")}
-            >
-              <Eye className="mr-2 h-4 w-4" />
-              {view === "sandbox" ? "Back to Products" : "Vector Search Sandbox"}
-            </Button>
-            <Button onClick={() => setView("create")}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Product
-            </Button>
-          </div>
+      {/* Page Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" style={{ marginBottom: "var(--haze-section-gap, 24px)" }}>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Products</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Manage your product catalog and variations</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={view === "sandbox" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setView(view === "sandbox" ? "list" : "sandbox")}
+            className="h-8 gap-1.5 text-xs"
+          >
+            <Eye className="h-4 w-4" />
+            {view === "sandbox" ? "Back to Products" : "Vector Sandbox"}
+          </Button>
+          <Button size="sm" onClick={() => setView("create")} className="h-8 gap-1.5 text-xs">
+            <Plus className="h-4 w-4" />
+            Add Product
+          </Button>
         </div>
       </div>
 
@@ -337,28 +327,28 @@ export function ProductsClient({
         </div>
       ) : (
         /* PRODUCT CATALOG LISTING */
-        <div className="bg-card rounded-[28px] border shadow-sm">
+        <div className="rounded-[var(--radius-card-lg,20px)] border border-border bg-card shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-sm">
               <thead>
-                <tr className="bg-muted/40 text-muted-foreground border-b text-xs font-semibold uppercase tracking-wider">
-                  <th className="p-4 pl-6">Product</th>
-                  <th className="p-4">Status</th>
-                  <th className="p-4">Price Range</th>
-                  <th className="p-4">Total Stock</th>
-                  <th className="p-4">Variants</th>
-                  <th className="p-4 pr-6 text-right">Actions</th>
+                <tr className="border-b border-border bg-muted/40 text-left">
+                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Product</th>
+                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Status</th>
+                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Price</th>
+                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Stock</th>
+                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Variants</th>
+                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-border">
                 {products.map((p) => (
                   <tr
                     key={p.id}
-                    className="border-b hover:bg-muted/5 transition-colors"
+                    className="hover:bg-muted/30 transition-colors"
                   >
-                    <td className="p-4 pl-6">
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="bg-background h-12 w-12 shrink-0 overflow-hidden rounded-xl border shadow-sm">
+                        <div className="bg-background h-10 w-10 shrink-0 overflow-hidden rounded-xl border shadow-sm">
                           {p.images && p.images[0] ? (
                             <img
                               src={p.images[0]}
@@ -367,12 +357,12 @@ export function ProductsClient({
                             />
                           ) : (
                             <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-                              <ImageIcon className="h-5 w-5" />
+                              <ImageIcon className="h-4 w-4" />
                             </div>
                           )}
                         </div>
                         <div>
-                          <div className="text-sm font-bold text-foreground">
+                          <div className="text-sm font-semibold text-foreground">
                             {p.title}
                           </div>
                           <div className="text-muted-foreground line-clamp-1 max-w-xs text-xs">
@@ -381,41 +371,43 @@ export function ProductsClient({
                         </div>
                       </div>
                     </td>
-                    <td className="p-4">
-                      <Badge
-                        variant={p.status === "active" ? "default" : "outline"}
-                      >
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        p.status === "active"
+                          ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                          : "bg-gray-500/10 text-gray-500"
+                      }`}>
                         {p.status}
-                      </Badge>
+                      </span>
                     </td>
-                    <td className="p-4 text-sm font-semibold">
+                    <td className="px-4 py-3 text-sm font-semibold text-foreground">
                       {getProductPriceRange(p.id)}
                     </td>
-                    <td className="p-4 text-sm">
+                    <td className="px-4 py-3 text-sm text-muted-foreground">
                       {getProductTotalStock(p.id)} in stock
                     </td>
-                    <td className="p-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    <td className="px-4 py-3 text-xs font-medium text-muted-foreground">
                       {getProductVariants(p.id).length || 1} variants
                     </td>
-                    <td className="p-4 pr-6 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
                           onClick={() => handleEditClick(p)}
-                          className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
                           aria-label="Edit"
                         >
-                          <Edit className="h-4 w-4" />
+                          <Edit className="h-3.5 w-3.5" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
                           onClick={() => handleDeleteClick(p.id)}
-                          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive h-9 w-9"
+                          className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                           aria-label="Delete"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </td>
@@ -424,22 +416,22 @@ export function ProductsClient({
 
                 {products.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="p-0">
-                      <div className="flex min-h-[360px] flex-col items-center justify-center p-10 text-center">
-                        <div className="bg-background mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border shadow-sm">
-                          <Archive className="h-6 w-6 text-muted-foreground" />
+                    <td colSpan={6} className="px-4 py-16 text-center text-muted-foreground">
+                      <div className="flex flex-col items-center justify-center">
+                        <div className="bg-background mb-4 flex h-12 w-12 items-center justify-center rounded-xl border shadow-sm">
+                          <Archive className="h-5 w-5 text-muted-foreground" />
                         </div>
-                        <h3 className="text-lg font-semibold tracking-tight text-foreground">
+                        <h3 className="text-sm font-semibold text-foreground">
                           No products found
                         </h3>
-                        <p className="text-muted-foreground max-w-sm mt-2 text-xs leading-5">
+                        <p className="text-muted-foreground max-w-sm mt-1 text-xs leading-relaxed">
                           Create your first product to generate variation image vector embeddings for AI recommendations.
                         </p>
                         <Button
                           onClick={() => setView("create")}
-                          className="mt-6"
+                          className="mt-4 h-8 text-xs gap-1.5"
                         >
-                          <Plus className="mr-2 h-4 w-4" /> Create Product
+                          <Plus className="h-4 w-4" /> Create Product
                         </Button>
                       </div>
                     </td>

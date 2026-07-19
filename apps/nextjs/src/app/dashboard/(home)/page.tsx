@@ -17,6 +17,10 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
+  if (session.user.role === "admin" || session.user.role === "super_admin") {
+    redirect("/dashboard/saas");
+  }
+
   const caller = await createCaller(await headers());
   const data = await caller.dashboard.getOverview();
 

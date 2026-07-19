@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
 import { DashboardShell } from "../(home)/_components/dashboard-shell";
+import { CustomersClient } from "./customers-client";
 
 export default async function CustomersPage() {
   const session = await getSession();
@@ -12,15 +13,16 @@ export default async function CustomersPage() {
   const caller = await createCaller(await headers());
   const customers = await caller.customers.list();
 
+  // Convert dates to ISO strings for hydration
+  const serializedCustomers = customers.map((c) => ({
+    ...c,
+    createdAt: c.createdAt.toISOString(),
+    updatedAt: c.updatedAt.toISOString(),
+  }));
+
   return (
     <DashboardShell>
-      <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight">Customers</h1>
-        <p className="text-muted-foreground text-base">
-          {customers.length} customer{customers.length === 1 ? "" : "s"} in
-          your database. Full table coming up.
-        </p>
-      </div>
+      <CustomersClient initialCustomers={serializedCustomers} />
     </DashboardShell>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { TrendingUp, ArrowUpRight, Plus, CheckCircle2, XCircle, ShoppingCart } from "lucide-react";
+import { TrendingUp, ArrowUpRight, Plus, CheckCircle2, XCircle, ShoppingCart, DollarSign, Users, ShoppingBag, MessageCircle } from "lucide-react";
 
 import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
@@ -13,16 +13,7 @@ import type { ActivityEvent, DashboardClientProps, SerializedOrder } from "./das
 import { DAY, avatarColor, formatCurrency, initials, trendPct, STATUS_BADGE } from "./dashboard-utils";
 import {
   ActivityTimeline,
-  CompactTrend,
-  ConversionFunnel,
-  DonutWithLegend,
-  GoalBar,
-  GoalRing,
   OverviewChart,
-  SegmentLegend,
-  Sparkline,
-  TrendLine,
-  WeekdayBarChart,
 } from "./dashboard-widgets";
 
 export function DashboardClient({ userName, now, orders, customerCount, recentItems, messageStats }: DashboardClientProps) {
@@ -65,115 +56,17 @@ export function DashboardClient({ userName, now, orders, customerCount, recentIt
     };
   }, [orders, now]);
 
-  // Last 14 days, for the Total Revenue card sparkline.
-  const revenueSparkline = useMemo(() => {
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    const values: number[] = [];
-    for (let i = 13; i >= 0; i--) {
-      const dayStart = todayStart.getTime() - i * DAY;
-      const dayEnd = dayStart + DAY;
-      const dayRevenue = orders
-        .filter((o) => {
-          const t = new Date(o.createdAt).getTime();
-          return t >= dayStart && t < dayEnd && o.status !== "cancelled" && o.status !== "returned";
-        })
-        .reduce((s, o) => s + o.total, 0);
-      values.push(dayRevenue);
-    }
-    return values;
-  }, [orders, now]);
-
-  // Last 7 days order counts, for the Orders card mini bar chart.
-  const weekdayOrders = useMemo(() => {
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    const days: { label: string; value: number }[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const dayStart = todayStart.getTime() - i * DAY;
-      const dayEnd = dayStart + DAY;
-      const count = orders.filter((o) => {
-        const t = new Date(o.createdAt).getTime();
-        return t >= dayStart && t < dayEnd;
-      }).length;
-      days.push({ label: new Date(dayStart).toLocaleDateString("en-US", { weekday: "short" }), value: count });
-    }
-    return days;
-  }, [orders, now]);
-
-  const statusLegend = useMemo(() => {
-    const buckets = { Completed: 0, Processing: 0, Pending: 0, Cancelled: 0 };
-    for (const o of orders) {
-      if (o.status === "delivered") buckets.Completed++;
-      else if (["confirmed", "paid", "shipped"].includes(o.status)) buckets.Processing++;
-      else if (o.status === "pending") buckets.Pending++;
-      else if (["cancelled", "returned"].includes(o.status)) buckets.Cancelled++;
-    }
-    return [
-      { label: "Completed", color: "bg-emerald-500" },
-      { label: "Processing", color: "bg-blue-500" },
-      { label: "Pending", color: "bg-amber-500" },
-      { label: "Cancelled", color: "bg-rose-500" },
-    ].filter((s) => buckets[s.label as keyof typeof buckets] > 0);
-  }, [orders]);
-
-  // Customer segments (New / Returning / Inactive) + weekly new-customer sparkline.
-  const { customerSegmentLegend, weeklyCustomerSeries } = useMemo(() => {
-    const map = new Map<string, { count: number; last: number }>();
-    for (const o of orders) {
-      const key = o.customerPhone ?? o.customerName;
-      const t = new Date(o.createdAt).getTime();
-      const existing = map.get(key);
-      if (existing) {
-        existing.count++;
-        existing.last = Math.max(existing.last, t);
-      } else {
-        map.set(key, { count: 1, last: t });
-      }
-    }
-    let newCount = 0;
-    let returning = 0;
-    let inactive = 0;
-    for (const v of map.values()) {
-      if (now - v.last > 60 * DAY) inactive++;
-      else if (v.count === 1) newCount++;
-      else returning++;
-    }
-    const legend = [
-      { label: "Returning", color: "bg-emerald-500", count: returning },
-      { label: "New", color: "bg-blue-500", count: newCount },
-      { label: "Inactive", color: "bg-amber-500", count: inactive },
-    ].filter((s) => s.count > 0);
-
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    const weekly: number[] = [];
-    for (let i = 7; i >= 0; i--) {
-      const weekStart = todayStart.getTime() - i * 7 * DAY;
-      const weekEnd = weekStart + 7 * DAY;
-      const set = new Set(
-        orders
-          .filter((o) => {
-            const t = new Date(o.createdAt).getTime();
-            return t >= weekStart && t < weekEnd;
-          })
-          .map((o) => o.customerPhone ?? o.customerName),
-      );
-      weekly.push(set.size);
-    }
-    return { customerSegmentLegend: legend, weeklyCustomerSeries: weekly };
-  }, [orders, now]);
-
-  const funnelStages = useMemo(() => {
-    const ordersPaid = orders.filter((o) => ["paid", "shipped", "delivered"].includes(o.status)).length;
-    const delivered = orders.filter((o) => o.status === "delivered").length;
-    return [
-      { label: "Messages", value: messageStats.inbound },
-      { label: "Orders", value: orders.length },
-      { label: "Paid", value: ordersPaid },
-      { label: "Delivered", value: delivered },
-    ];
-  }, [orders, messageStats]);
+  // Channel breakdown percentages
+  const { waPct, fbPct, igPct } = useMemo(() => {
+    const totalPlat = (messageStats.platformBreakdown.facebook || 0) + 
+                      (messageStats.platformBreakdown.whatsapp || 0) + 
+                      (messageStats.platformBreakdown.instagram || 0) || 1;
+    return {
+      waPct: Math.round(((messageStats.platformBreakdown.whatsapp || 0) / totalPlat) * 100),
+      fbPct: Math.round(((messageStats.platformBreakdown.facebook || 0) / totalPlat) * 100),
+      igPct: Math.round(((messageStats.platformBreakdown.instagram || 0) / totalPlat) * 100),
+    };
+  }, [messageStats]);
 
   // Jan–Dec of the current year, for the Overview tabbed chart.
   const monthlySeries = useMemo(() => {
@@ -226,7 +119,7 @@ export function DashboardClient({ userName, now, orders, customerCount, recentIt
         }
       }
     }
-    return events.sort((a, b) => b.time - a.time).slice(0, 7);
+    return events.sort((a, b) => b.time - a.time).slice(0, 5);
   }, [orders]);
 
   const orderProductMap = useMemo(() => {
@@ -249,303 +142,281 @@ export function DashboardClient({ userName, now, orders, customerCount, recentIt
       existing.revenue += item.lineTotal;
       prodMap.set(item.name, existing);
     }
-    return [...prodMap.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+    return [...prodMap.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 4);
   }, [recentItems]);
 
   return (
     <div className="space-y-6">
       {/* ─── Welcome banner ────────────────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary to-emerald-900 px-6 py-8 text-primary-foreground dark:to-emerald-950 sm:px-8">
-        <div className="relative flex flex-wrap items-center justify-between gap-4">
+      <div
+        className="relative overflow-hidden rounded-2xl p-6 sm:p-8"
+        style={{ background: "linear-gradient(135deg, var(--haze-primary-darker), oklch(0.15 0.05 230))" }}
+      >
+        <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold sm:text-3xl">Welcome back, {userName} 👋</h1>
-            <p className="mt-1.5 text-sm text-primary-foreground/80 sm:text-base">
-              You have <span className="font-semibold text-primary-foreground">{stats.todaysOrderCount} new orders</span> and{" "}
-              <span className="font-semibold text-primary-foreground">{formatCurrency(stats.todaysRevenue)} revenue</span> today
+            <h1 className="text-2xl font-bold text-white sm:text-3xl">Welcome back, {userName} 👋</h1>
+            <p className="mt-2 text-white/80">
+              You have <span className="font-semibold text-white">{stats.todaysOrderCount} new orders</span> and{" "}
+              <span className="font-semibold text-white">{formatCurrency(stats.todaysRevenue)} revenue</span> today
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Link href="/dashboard/orders">
-              <Button size="sm" className="bg-white text-emerald-900 hover:bg-white/90">
+              <Button size="sm" className="bg-white text-indigo-950 hover:bg-white/90 rounded-lg shadow-sm">
                 <Plus className="h-4 w-4" />
                 New Order
               </Button>
             </Link>
             <Link href="/dashboard/analytics">
-              <Button size="sm" variant="outline" className="border-white/30 bg-white/10 text-primary-foreground hover:bg-white/20">
+              <Button size="sm" className="bg-white/15 px-4 py-2 text-sm font-medium text-white backdrop-blur-sm transition hover:bg-white/25 rounded-lg border border-white/10">
                 View Analytics
                 <ArrowUpRight className="h-4 w-4" />
               </Button>
             </Link>
           </div>
         </div>
+        <svg className="absolute inset-0 h-full w-full opacity-10 pointer-events-none" preserveAspectRatio="none" viewBox="0 0 1200 200">
+          <path d="M0,80 C300,150 600,20 900,100 C1050,140 1150,60 1200,80 L1200,200 L0,200 Z" fill="white"></path>
+          <path d="M0,120 C200,60 500,160 800,90 C1000,50 1100,120 1200,100 L1200,200 L0,200 Z" fill="white" opacity="0.5"></path>
+        </svg>
       </div>
 
-      {/* ─── Total Revenue + Monthly Goal ──────────────────────────── */}
-      <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
-        <Card className="gap-0 py-6">
-          <CardContent>
+      {/* ─── Stat Cards Section (4 columns) ────────────────────────── */}
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Total Revenue */}
+        <Card className="card-hover p-5">
+          <CardContent className="p-0">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">Total Revenue</p>
-              <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-600 dark:text-emerald-400">
-                <TrendingUp className="h-4 w-4" />
+              <p className="text-sm font-medium text-muted-foreground">Total Revenue</p>
+              <div className="rounded-xl bg-primary/10 p-2 text-primary">
+                <DollarSign className="h-4 w-4" />
               </div>
             </div>
-            <p className="mt-2 text-3xl font-bold tabular-nums text-foreground">{formatCurrency(stats.totalRevenue)}</p>
-            <TrendLine pct={stats.trends.revenue} />
+            <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{formatCurrency(stats.totalRevenue)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Cumulative platform earnings</p>
           </CardContent>
-          <div className="mt-2">
-            <Sparkline id="spark-revenue" data={revenueSparkline} color="var(--chart-1)" height={90} />
-          </div>
         </Card>
 
-        <Card className="flex items-center justify-center py-6">
-          <CardContent>
-            {stats.prevRevenue > 0 ? (
-              <GoalRing current={stats.currentRevenue} target={stats.prevRevenue} />
-            ) : (
-              <p className="max-w-40 text-center text-xs text-muted-foreground">
-                Goal tracks last month&apos;s revenue — not enough history yet.
-              </p>
-            )}
+        {/* Active Users */}
+        <Card className="card-hover p-5">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">Active Users</p>
+              <div className="rounded-xl bg-blue-500/10 p-2 text-blue-500">
+                <Users className="h-4 w-4" />
+              </div>
+            </div>
+            <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{customerCount.toLocaleString()}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Unique active contacts</p>
+          </CardContent>
+        </Card>
+
+        {/* Total Orders */}
+        <Card className="card-hover p-5">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">Total Orders</p>
+              <div className="rounded-xl bg-amber-500/10 p-2 text-amber-500">
+                <ShoppingBag className="h-4 w-4" />
+              </div>
+            </div>
+            <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{stats.totalOrders.toLocaleString()}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Orders placed on channels</p>
+          </CardContent>
+        </Card>
+
+        {/* Total Chat Sessions */}
+        <Card className="card-hover p-5">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">Total Chat Sessions</p>
+              <div className="rounded-xl bg-pink-500/10 p-2 text-pink-500">
+                <MessageCircle className="h-4 w-4" />
+              </div>
+            </div>
+            <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{messageStats.total.toLocaleString()}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Messages received & sent</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* ─── Orders / Customers / Conversion Funnel ────────────────── */}
+      {/* ─── Overview Line Chart & Channel Breakdown (Funnel) ──────── */}
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="gap-0 py-5">
-          <CardContent>
-            <div className="flex items-start justify-between">
-              <p className="text-sm text-muted-foreground">Orders</p>
-              <CompactTrend pct={stats.trends.orders} />
-            </div>
-            <p className="text-2xl font-bold tabular-nums text-foreground">{stats.totalOrders}</p>
-            <p className="text-xs text-muted-foreground">Total orders this month</p>
-            {statusLegend.length > 0 && (
-              <div className="mt-3">
-                <SegmentLegend segments={statusLegend} />
-              </div>
-            )}
-            <div className="mt-2 -mb-2">
-              <WeekdayBarChart data={weekdayOrders} color="var(--chart-1)" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="gap-0 py-5">
-          <CardContent>
-            <div className="flex items-start justify-between">
-              <p className="text-sm text-muted-foreground">Customers</p>
-              <CompactTrend pct={stats.trends.customers} />
-            </div>
-            <p className="text-2xl font-bold tabular-nums text-foreground">{customerCount}</p>
-            <p className="text-xs text-muted-foreground">Total customers</p>
-            {customerSegmentLegend.length > 0 && (
-              <div className="mt-3">
-                <SegmentLegend segments={customerSegmentLegend} />
-              </div>
-            )}
-            <div className="mt-2 -mb-2">
-              <Sparkline id="spark-customers" data={weeklyCustomerSeries} color="var(--chart-2)" height={100} />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="gap-0 py-5">
-          <CardHeader className="px-6">
-            <CardTitle>Conversion Funnel</CardTitle>
-            <CardAction>
-              <span className="text-xs text-muted-foreground">This month</span>
-            </CardAction>
-          </CardHeader>
-          <CardContent className="mt-4">
-            <ConversionFunnel stages={funnelStages} />
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ─── Overview chart + Traffic Sources / Monthly Goals ──────── */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardContent>
+        <Card className="card-hover lg:col-span-2">
+          <CardContent className="pt-6">
             <OverviewChart data={monthlySeries} />
           </CardContent>
         </Card>
 
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Traffic Sources</CardTitle>
-              <CardDescription>Where your chats come from</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <DonutWithLegend
-                centerLabel="Chats"
-                segments={[
-                  { label: "Instagram", value: messageStats.platformBreakdown.instagram, stroke: "stroke-pink-500", dot: "bg-pink-500" },
-                  { label: "WhatsApp", value: messageStats.platformBreakdown.whatsapp, stroke: "stroke-green-500", dot: "bg-green-500" },
-                  { label: "Facebook", value: messageStats.platformBreakdown.facebook, stroke: "stroke-blue-500", dot: "bg-blue-500" },
-                ]}
-              />
-            </CardContent>
-          </Card>
+        {/* Conversion Funnel / Channel Breakdown */}
+        <Card className="card-hover">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold">Channel Breakdown</CardTitle>
+            <CardDescription>Percentage breakdown of inbound messages</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* WhatsApp */}
+            <div>
+              <div className="flex justify-between text-sm font-medium mb-1.5">
+                <span>WhatsApp</span>
+                <span className="text-muted-foreground tabular-nums">{waPct}%</span>
+              </div>
+              <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${waPct}%` }} />
+              </div>
+            </div>
+            {/* Messenger */}
+            <div>
+              <div className="flex justify-between text-sm font-medium mb-1.5">
+                <span>Messenger</span>
+                <span className="text-muted-foreground tabular-nums">{fbPct}%</span>
+              </div>
+              <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                <div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{ width: `${fbPct}%` }} />
+              </div>
+            </div>
+            {/* Instagram */}
+            <div>
+              <div className="flex justify-between text-sm font-medium mb-1.5">
+                <span>Instagram</span>
+                <span className="text-muted-foreground tabular-nums">{igPct}%</span>
+              </div>
+              <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                <div className="h-full bg-pink-500 rounded-full transition-all duration-500" style={{ width: `${igPct}%` }} />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Monthly Goals</CardTitle>
-              <CardDescription>Track progress toward targets</CardDescription>
+      {/* ─── Recent Orders & Top Products / Activity ───────────────── */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Recent Orders */}
+        <div className="lg:col-span-2 space-y-6">
+          <Card className="card-hover gap-0 py-0">
+            <CardHeader className="border-b py-4">
+              <CardTitle>Recent Orders</CardTitle>
+              <CardDescription>Latest transactions from your store</CardDescription>
+              <CardAction>
+                <Link href="/dashboard/orders">
+                  <Button variant="ghost" size="sm" className="text-xs">
+                    View all <ArrowUpRight className="ml-1 h-3 w-3" />
+                  </Button>
+                </Link>
+              </CardAction>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {stats.prevRevenue > 0 ? (
-                <GoalBar label="Monthly Revenue" current={stats.currentRevenue} target={stats.prevRevenue} color="bg-primary" />
+            <CardContent className="py-2">
+              {recentOrders.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-muted-foreground">
+                        <th className="py-3 font-medium">Customer</th>
+                        <th className="py-3 font-medium">Order ID</th>
+                        <th className="py-3 font-medium">Product</th>
+                        <th className="py-3 font-medium">Status</th>
+                        <th className="py-3 text-right font-medium">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {recentOrders.map((o) => {
+                        const product = orderProductMap.get(o.id);
+                        const productLabel = product ? (product.extra > 0 ? `${product.name} +${product.extra} more` : product.name) : "—";
+                        return (
+                          <tr key={o.id}>
+                            <td className="py-3">
+                              <div className="flex items-center gap-2.5">
+                                <span
+                                  className={cn(
+                                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white",
+                                    avatarColor(o.customerName),
+                                  )}
+                                >
+                                  {initials(o.customerName)}
+                                </span>
+                                <div className="min-w-0">
+                                  <p className="truncate font-medium text-foreground">{o.customerName}</p>
+                                  {o.customerPhone && <p className="truncate text-xs text-muted-foreground">{o.customerPhone}</p>}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="py-3 text-muted-foreground">#{o.orderNumber}</td>
+                            <td className="max-w-48 truncate py-3 text-muted-foreground">{productLabel}</td>
+                            <td className="py-3">
+                              <Badge variant={STATUS_BADGE[o.status] ?? "secondary"} className="text-[10px] capitalize">
+                                {o.status}
+                              </Badge>
+                            </td>
+                            <td className="py-3 text-right font-bold tabular-nums text-foreground">{formatCurrency(o.total)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               ) : (
-                <p className="text-xs text-muted-foreground">Not enough revenue history yet.</p>
-              )}
-              {stats.prevCustomers > 0 ? (
-                <GoalBar
-                  label="New Customers"
-                  current={stats.currentCustomers}
-                  target={stats.prevCustomers}
-                  color="bg-violet-500"
-                  format={(n) => String(n)}
-                />
-              ) : (
-                <p className="text-xs text-muted-foreground">Not enough customer history yet.</p>
+                <p className="py-8 text-center text-sm text-muted-foreground">No orders yet</p>
               )}
             </CardContent>
           </Card>
         </div>
-      </div>
 
-      {/* ─── Top Products + Recent Activity ────────────────────────── */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="gap-0 py-0">
-          <CardHeader className="border-b py-4">
-            <CardTitle>Top Products</CardTitle>
-            <CardAction>
-              <Link href="/dashboard/products">
-                <Button variant="ghost" size="sm" className="text-xs">
-                  View all <ArrowUpRight className="ml-1 h-3 w-3" />
-                </Button>
-              </Link>
-            </CardAction>
-          </CardHeader>
-          <CardContent className="py-6">
-            {topProducts.length > 0 ? (
-              <div className="space-y-5">
-                {topProducts.map((p, i) => {
-                  const max = Math.max(topProducts[0]?.revenue ?? 1, 1);
-                  const pct = Math.max((p.revenue / max) * 100, 6);
-                  return (
-                    <div key={p.name} className="flex items-center gap-3">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                        #{i + 1}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
-                          <p className="shrink-0 text-sm font-bold tabular-nums text-foreground">{formatCurrency(p.revenue)}</p>
-                        </div>
-                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
-                          <div className="h-full rounded-full bg-primary transition-all duration-700" style={{ width: `${pct}%` }} />
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground">{p.qty} sold</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="py-8 text-center text-sm text-muted-foreground">No sales yet</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="gap-0 py-0">
-          <CardHeader className="border-b py-4">
-            <CardTitle>Recent Activity</CardTitle>
-            <CardAction>
-              <Link href="/dashboard/orders">
-                <Button variant="ghost" size="sm" className="text-xs">
-                  View all <ArrowUpRight className="ml-1 h-3 w-3" />
-                </Button>
-              </Link>
-            </CardAction>
-          </CardHeader>
-          <CardContent className="py-6">
-            <ActivityTimeline events={activity} now={now} />
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ─── Recent Orders table ────────────────────────────────────── */}
-      <Card className="gap-0 py-0">
-        <CardHeader className="border-b py-4">
-          <CardTitle>Recent Orders</CardTitle>
-          <CardDescription>Latest transactions from your store</CardDescription>
-          <CardAction>
-            <Link href="/dashboard/orders">
-              <Button variant="ghost" size="sm" className="text-xs">
-                View all <ArrowUpRight className="ml-1 h-3 w-3" />
-              </Button>
-            </Link>
-          </CardAction>
-        </CardHeader>
-        <CardContent className="py-2">
-          {recentOrders.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs text-muted-foreground">
-                    <th className="py-3 font-medium">Customer</th>
-                    <th className="py-3 font-medium">Order ID</th>
-                    <th className="py-3 font-medium">Product</th>
-                    <th className="py-3 font-medium">Status</th>
-                    <th className="py-3 text-right font-medium">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {recentOrders.map((o) => {
-                    const product = orderProductMap.get(o.id);
-                    const productLabel = product ? (product.extra > 0 ? `${product.name} +${product.extra} more` : product.name) : "—";
+        {/* Top Products & Activity */}
+        <div className="space-y-6">
+          {/* Top Products */}
+          <Card className="card-hover gap-0 py-0">
+            <CardHeader className="border-b py-4">
+              <CardTitle>Top Products</CardTitle>
+              <CardAction>
+                <Link href="/dashboard/products">
+                  <Button variant="ghost" size="sm" className="text-xs">
+                    View all <ArrowUpRight className="ml-1 h-3 w-3" />
+                  </Button>
+                </Link>
+              </CardAction>
+            </CardHeader>
+            <CardContent className="py-5">
+              {topProducts.length > 0 ? (
+                <div className="space-y-4">
+                  {topProducts.map((p, i) => {
+                    const max = Math.max(topProducts[0]?.revenue ?? 1, 1);
+                    const pct = Math.max((p.revenue / max) * 100, 6);
                     return (
-                      <tr key={o.id}>
-                        <td className="py-3">
-                          <div className="flex items-center gap-2.5">
-                            <span
-                              className={cn(
-                                "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white",
-                                avatarColor(o.customerName),
-                              )}
-                            >
-                              {initials(o.customerName)}
-                            </span>
-                            <div className="min-w-0">
-                              <p className="truncate font-medium text-foreground">{o.customerName}</p>
-                              {o.customerPhone && <p className="truncate text-xs text-muted-foreground">{o.customerPhone}</p>}
-                            </div>
+                      <div key={p.name} className="flex items-center gap-3">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                          #{i + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="truncate text-xs font-medium text-foreground">{p.name}</p>
+                            <p className="shrink-0 text-xs font-bold tabular-nums text-foreground">{formatCurrency(p.revenue)}</p>
                           </div>
-                        </td>
-                        <td className="py-3 text-muted-foreground">#{o.orderNumber}</td>
-                        <td className="max-w-48 truncate py-3 text-muted-foreground">{productLabel}</td>
-                        <td className="py-3">
-                          <Badge variant={STATUS_BADGE[o.status] ?? "secondary"} className="text-[10px] capitalize">
-                            {o.status}
-                          </Badge>
-                        </td>
-                        <td className="py-3 text-right font-bold tabular-nums text-foreground">{formatCurrency(o.total)}</td>
-                      </tr>
+                          <div className="mt-1 h-1 overflow-hidden rounded-full bg-muted">
+                            <div className="h-full rounded-full bg-primary transition-all duration-700" style={{ width: `${pct}%` }} />
+                          </div>
+                          <p className="mt-0.5 text-[10px] text-muted-foreground">{p.qty} sold</p>
+                        </div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="py-8 text-center text-sm text-muted-foreground">No orders yet</p>
-          )}
-        </CardContent>
-      </Card>
+                </div>
+              ) : (
+                <p className="py-8 text-center text-sm text-muted-foreground">No sales yet</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Recent Activity */}
+          <Card className="card-hover gap-0 py-0">
+            <CardHeader className="border-b py-4">
+              <CardTitle>Recent Activity</CardTitle>
+            </CardHeader>
+            <CardContent className="py-5">
+              <ActivityTimeline events={activity} now={now} />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

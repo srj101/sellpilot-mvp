@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { and, desc, eq, inArray } from "@acme/db";
+import { and, desc, eq, inArray, sql } from "@acme/db";
 import { db } from "@acme/db/client";
 import { metaWebhookEvent } from "@acme/db/schema";
 
@@ -8,15 +8,14 @@ import { getSession } from "~/auth/server";
 import { subscribe } from "~/lib/inbox-broadcast";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-// Helper to query current unread details and most recent thread event
+// Optimized query - use COUNT and LIMIT 1 instead of fetching all records
 async function getUnreadDetails(userId: string) {
-  const [unreadEvents, latestEvent] = await Promise.all([
+  const [unreadResult, latestResult] = await Promise.all([
+    // Count unread messages
     db
-      .select({
-        id: metaWebhookEvent.id,
-        receivedAt: metaWebhookEvent.receivedAt,
-      })
+      .select({ count: sql<number>`count(*)` })
       .from(metaWebhookEvent)
       .where(
         and(
@@ -29,8 +28,8 @@ async function getUnreadDetails(userId: string) {
             "quick_reply",
           ]),
         ),
-      )
-      .orderBy(metaWebhookEvent.receivedAt),
+      ),
+    // Get latest event ID only
     db
       .select({ id: metaWebhookEvent.id })
       .from(metaWebhookEvent)
@@ -50,9 +49,9 @@ async function getUnreadDetails(userId: string) {
       .limit(1),
   ]);
 
-  const latestEventId = latestEvent[0]?.id ?? null;
+  const latestEventId = latestResult[0]?.id ?? null;
   return {
-    unreadCount: unreadEvents.length,
+    unreadCount: Number(unreadResult[0]?.count ?? 0),
     latestEventId,
   };
 }

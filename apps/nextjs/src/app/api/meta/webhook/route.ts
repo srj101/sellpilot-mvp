@@ -209,61 +209,60 @@ export async function POST(req: NextRequest) {
     void triggerInboxBroadcast(userId);
   }
 
-  // Enqueue jobs for new events only (not duplicates)
-  for (const { type, event, connection } of jobsToEnqueue) {
-    if (!insertedKeys.has(event.eventId)) {
-      console.log(`[Webhook] Skipping duplicate: ${event.eventId}`);
-      continue;
-    }
+  // Enqueue jobs for new events only (not duplicates) - FIRE AND FORGET
+  const enqueuePromises = jobsToEnqueue
+    .filter(({ event }) => insertedKeys.has(event.eventId))
+    .map(async ({ type, event, connection }) => {
+      try {
+        if (type === "dm" && event.message) {
+          const job: MetaDMReplyJob = {
+            eventId: event.eventId,
+            platform: event.platform as "facebook_page" | "instagram" | "whatsapp",
+            connectionId: connection.id,
+            userId: connection.userId,
+            recipientId: event.message.senderId,
+            threadId: event.message.threadId,
+            incomingMessage: {
+              text: event.message.text ?? `[${event.message.type || "voice"} message]`,
+              imageUrls: event.message.attachments
+                ?.filter((a) => a.type === "image")
+                .map((a) => a.url),
+              audioUrls: event.message.attachments
+                ?.filter((a) => a.type === "audio")
+                .map((a) => a.url),
+              timestamp: event.message.timestamp.getTime(),
+            },
+            accessToken: connection.accessToken ?? connection.facebookPageAccessToken ?? "",
+            accountId: getAccountId(event.platform, connection),
+          };
 
-    try {
-      if (type === "dm" && event.message) {
-        const job: MetaDMReplyJob = {
-          eventId: event.eventId,
-          platform: event.platform as "facebook_page" | "instagram" | "whatsapp",
-          connectionId: connection.id,
-          userId: connection.userId,
-          recipientId: event.message.senderId,
-          threadId: event.message.threadId,
-          incomingMessage: {
-            text: event.message.text,
-            imageUrls: event.message.attachments
-              ?.filter((a) => a.type === "image")
-              .map((a) => a.url),
-            timestamp: event.message.timestamp.getTime(),
-          },
-          accessToken: connection.accessToken ?? connection.facebookPageAccessToken ?? "",
-          accountId: getAccountId(event.platform, connection),
-        };
+          queue.enqueue("meta-dm-reply", job, {
+            attempts: 3,
+            backoff: { type: "exponential", delay: 2000 },
+          }).catch((err) => console.error(`[Webhook] Failed to enqueue DM job: ${event.eventId}`, err));
+        } else if (type === "comment" && event.message) {
+          const job: MetaCommentReplyJob = {
+            eventId: event.eventId,
+            platform: event.platform as "facebook_page" | "instagram",
+            connectionId: connection.id,
+            userId: connection.userId,
+            commentId: event.message.id,
+            commentText: event.message.text ?? "",
+            accessToken: connection.accessToken ?? connection.facebookPageAccessToken ?? "",
+          };
 
-        await queue.enqueue("meta-dm-reply", job, {
-          attempts: 3,
-          backoff: { type: "exponential", delay: 2000 },
-        });
-
-        console.log(`[Webhook] Enqueued DM reply job: ${event.eventId}`);
-      } else if (type === "comment" && event.message) {
-        const job: MetaCommentReplyJob = {
-          eventId: event.eventId,
-          platform: event.platform as "facebook_page" | "instagram",
-          connectionId: connection.id,
-          userId: connection.userId,
-          commentId: event.message.id,
-          commentText: event.message.text ?? "",
-          accessToken: connection.accessToken ?? connection.facebookPageAccessToken ?? "",
-        };
-
-        await queue.enqueue("meta-comment-reply", job, {
-          attempts: 3,
-          backoff: { type: "exponential", delay: 2000 },
-        });
-
-        console.log(`[Webhook] Enqueued comment reply job: ${event.eventId}`);
+          queue.enqueue("meta-comment-reply", job, {
+            attempts: 3,
+            backoff: { type: "exponential", delay: 2000 },
+          }).catch((err) => console.error(`[Webhook] Failed to enqueue comment job: ${event.eventId}`, err));
+        }
+      } catch (err) {
+        console.error(`[Webhook] Failed to enqueue job: ${event.eventId}`, err);
       }
-    } catch (err) {
-      console.error(`[Webhook] Failed to enqueue job: ${event.eventId}`, err);
-    }
-  }
+    });
+
+  // Don't await - fire and forget
+  void enqueuePromises;
 
   return new NextResponse("EVENT_RECEIVED", { status: 200 });
 }

@@ -41,6 +41,13 @@ export function ReplyForm({
     );
   }
 
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  }
+
   return (
     <div className="space-y-1.5">
       {sendReply.data && !sendReply.data.ok && (
@@ -50,8 +57,9 @@ export function ReplyForm({
         <textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
+          onKeyDown={handleKeyDown}
           rows={1}
-          placeholder="Type a message..."
+          placeholder="Type a message... (Enter to send)"
           className="min-h-[42px] flex-1 resize-none rounded-full border bg-background px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
         />
         <button

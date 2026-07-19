@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, LogOut, User as UserIcon } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Bell, ChevronDown, LogOut, User as UserIcon } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -20,55 +21,111 @@ function initials(name: string) {
   return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
 }
 
+const capitalize = (s: string) => {
+  if (!s) return "";
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+
 export function FloatingHeader({
   user,
 }: {
   user: { name: string; email: string; image: string | null } | null;
 }) {
-  return (
-    <div className="fixed right-4 top-4 z-40 hidden items-center gap-3 rounded-full border border-white/25 bg-white/10 px-4 py-2 shadow-lg backdrop-blur-xl dark:border-white/10 dark:bg-white/5 md:flex">
+  const pathname = usePathname();
+  const segments = pathname.split("/").filter(Boolean);
 
-      <Link
-        href="/dashboard/notifications"
-        aria-label="Notifications"
-        className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      >
-        <Bell className="h-[18px] w-[18px]" />
-      </Link>
-      <ThemeToggle />
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label="Account menu"
-            className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-xs font-semibold text-primary transition-transform hover:scale-105"
-          >
-            {user?.image ? (
-              // eslint-disable-next-line @next/next/no-img-element -- user-uploaded avatar URL, not a static asset
-              <img src={user.image} alt="" className="h-full w-full object-cover" />
-            ) : user ? (
-              initials(user.name)
-            ) : (
-              <UserIcon className="h-4 w-4" />
-            )}
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel className="font-normal">
-            <p className="truncate text-sm font-medium text-foreground">{user?.name ?? "Account"}</p>
-            {user?.email && <p className="truncate text-xs text-muted-foreground">{user.email}</p>}
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            <Link href="/dashboard/settings">Profile settings</Link>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onSelect={() => void signOut()}>
-            <LogOut className="h-4 w-4" />
-            Log out
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+  // Generate breadcrumbs: e.g. /dashboard/analytics -> Dashboard / Analytics
+  const breadcrumbs = segments.map((seg, idx) => {
+    const href = "/" + segments.slice(0, idx + 1).join("/");
+    const label = capitalize(seg === "dashboard" ? "Dashboard" : seg);
+    const isLast = idx === segments.length - 1;
+    return { href, label, isLast };
+  });
+
+  return (
+    <header className="glass-overlay sticky top-0 z-30 flex h-16 w-full items-center justify-between gap-4 border-b border-haze-divider/40 px-6 hidden md:flex shrink-0">
+      {/* Left side: Breadcrumbs */}
+      <nav aria-label="Breadcrumb">
+        <ol className="flex items-center gap-1.5 text-xs font-medium tracking-tight">
+          {breadcrumbs.length === 0 ? (
+            <li className="text-foreground font-semibold">Dashboard</li>
+          ) : (
+            breadcrumbs.map((crumb, idx) => (
+              <li key={crumb.href} className="flex items-center gap-1.5">
+                {idx > 0 && <span className="text-muted-foreground/40 font-normal">/</span>}
+                {crumb.isLast ? (
+                  <span className="text-foreground font-semibold select-none">{crumb.label}</span>
+                ) : (
+                  <Link
+                    href={crumb.href}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {crumb.label}
+                  </Link>
+                )}
+              </li>
+            ))
+          )}
+        </ol>
+      </nav>
+
+      {/* Right side: Action items */}
+      <div className="flex items-center gap-3">
+        <Link
+          href="/dashboard/notifications"
+          aria-label="Notifications"
+          className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-haze-sidebar-active-bg/30 hover:text-foreground transition-all duration-200"
+        >
+          <Bell className="h-4.5 w-4.5" />
+          <span className="absolute -top-0.5 -right-0.5 flex size-3 items-center justify-center rounded-full bg-rose-500 text-[8px] font-bold text-white ring-1 ring-background">
+            4
+          </span>
+        </Link>
+        
+        <ThemeToggle />
+
+        <div className="h-4 w-px bg-haze-divider/60" />
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label="Account menu"
+              className="group inline-flex shrink-0 items-center gap-2 rounded-lg border border-haze-divider/40 bg-card/45 px-2.5 py-1 text-sm font-medium hover:bg-muted/50 hover:text-foreground transition-all duration-200"
+            >
+              <div className="relative flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary ring-1 ring-haze-divider">
+                {user?.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={user.image} alt="" className="h-full w-full rounded-full object-cover" />
+                ) : user ? (
+                  initials(user.name)
+                ) : (
+                  <UserIcon className="h-3 w-3" />
+                )}
+              </div>
+              <span className="hidden text-xs font-semibold md:block text-muted-foreground group-hover:text-foreground transition-colors">
+                {user?.name.split(" ")[0] ?? "Alex"}
+              </span>
+              <ChevronDown className="hidden size-3 text-muted-foreground/60 md:block group-hover:text-foreground transition-colors" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56 rounded-lg border-haze-divider bg-card">
+            <DropdownMenuLabel className="font-normal">
+              <p className="truncate text-sm font-semibold text-foreground">{user?.name ?? "Account"}</p>
+              {user?.email && <p className="truncate text-xs text-muted-foreground/80">{user.email}</p>}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator className="bg-haze-divider/40" />
+            <DropdownMenuItem asChild className="rounded-md focus:bg-muted">
+              <Link href="/dashboard/settings">Profile settings</Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator className="bg-haze-divider/40" />
+            <DropdownMenuItem variant="destructive" onSelect={() => void signOut()} className="rounded-md">
+              <LogOut className="h-4 w-4" />
+              Log out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </header>
   );
 }

@@ -10,12 +10,10 @@ import {
   ChevronLeft,
   ChevronRight,
   CreditCard,
-  Files,
   Inbox,
   LayoutDashboard,
   LogOut,
   Menu,
-  MessageCircle,
   Package,
   Percent,
   Plug,
@@ -25,6 +23,10 @@ import {
   Sparkles,
   Tags,
   Users,
+  ShoppingCart,
+  LifeBuoy,
+  User,
+  Shield,
 } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
@@ -50,6 +52,7 @@ import { cn } from "@acme/ui";
 
 import { signOut } from "../actions";
 import { playChime } from "~/lib/sound";
+import { authClient } from "~/auth/client";
 
 /* ─── Types ──────────────────────────────────────────────────────────── */
 
@@ -79,15 +82,16 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "Overview",
     items: [
-      { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+      { href: "/dashboard", icon: LayoutDashboard, label: "Overview" },
       { href: "/dashboard/analytics", icon: BarChart3, label: "Analytics" },
+      { href: "/dashboard/ecommerce", icon: ShoppingCart, label: "eCommerce" },
     ],
   },
   {
     title: "Apps",
     items: [
       { href: "/dashboard/inbox", icon: Inbox, label: "Inbox" },
-      { href: "/dashboard/files", icon: Files, label: "Files" },
+      { href: "/dashboard/support", icon: LifeBuoy, label: "Support" },
     ],
   },
   {
@@ -106,19 +110,29 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/customers", icon: Users, label: "Customers" },
       { href: "/dashboard/invoices", icon: Receipt, label: "Invoices" },
       { href: "/dashboard/offers", icon: Percent, label: "Offers" },
+      { href: "/dashboard/users", icon: User, label: "Users" },
+      { href: "/dashboard/roles", icon: Shield, label: "Roles" },
     ],
   },
   {
     title: "AI",
     items: [
       { href: "/dashboard/integrations", icon: Plug, label: "Integrations" },
-      { href: "/dashboard/ai", icon: MessageCircle, label: "AI Agent" },
     ],
   },
   {
     title: "Account",
     items: [
-      { href: "/dashboard/settings", icon: Settings, label: "Settings" },
+      {
+        href: "/dashboard/settings",
+        icon: Settings,
+        label: "Settings",
+        submenu: [
+          { href: "/dashboard/settings/profile", label: "Profile" },
+          { href: "/dashboard/settings/password", label: "Password" },
+          { href: "/dashboard/settings/configurations", label: "Configurations" },
+        ],
+      },
       { href: "/dashboard/notifications", icon: Bell, label: "Notifications" },
     ],
   },
@@ -267,11 +281,10 @@ function UnreadBadge({ count }: { count: number }) {
 
 function GroupTitle({ title }: { title: string }) {
   return (
-    <div className="flex items-center gap-2 px-2 pt-2 pb-1.5">
-      <span className="shrink-0 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground/60">
+    <div className="px-3 pt-3 pb-1">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60">
         {title}
       </span>
-      <div className="h-px flex-1 bg-border/60" />
     </div>
   );
 }
@@ -302,20 +315,20 @@ function NavRow({
   const showInboxBadge = item.href === "/dashboard/inbox" && unreadCount > 0;
 
   const rowBase =
-    "group relative flex h-auto w-full items-center gap-3 rounded-xl px-4 py-2.5 text-[13px] font-medium transition-all duration-200 cursor-pointer";
+    "group relative flex h-auto w-full items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-all duration-200 cursor-pointer";
   const rowInactive =
-    "text-muted-foreground hover:bg-muted/60 hover:text-foreground";
-  const rowActive = "bg-primary/10 font-bold text-primary shadow-sm";
+    "text-haze-sidebar-text hover:bg-haze-sidebar-active-bg/30 hover:text-white";
+  const rowActive = "bg-haze-sidebar-active-bg font-semibold text-haze-sidebar-text-active shadow-xs";
 
   /* ── Collapsed sidebar ── */
   if (isCollapsed) {
     const iconBtn = (
       <button
         className={cn(
-          "group relative flex h-9 w-9 items-center justify-center rounded-xl transition-all duration-200",
+          "group relative flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-200",
           isActive
-            ? "bg-primary/10 shadow-sm"
-            : "hover:bg-muted/60 text-muted-foreground",
+            ? "bg-haze-sidebar-active-bg text-haze-sidebar-text-active shadow-xs"
+            : "hover:bg-haze-sidebar-active-bg/30 text-haze-sidebar-text",
         )}
         aria-label={item.label}
       >
@@ -339,7 +352,7 @@ function NavRow({
             side="right"
             align="start"
             sideOffset={14}
-            className="min-w-[192px] rounded-xl border-border/60 bg-card p-1.5 shadow-xl"
+            className="min-w-[192px] rounded-lg border-haze-divider bg-card p-1.5 shadow-xl"
           >
             <DropdownMenuItem asChild className="rounded-lg focus:bg-muted">
               <Link
@@ -413,7 +426,7 @@ function NavRow({
     >
       <div
         className={cn(
-          "group relative flex w-full items-stretch overflow-hidden rounded-xl transition-all duration-200",
+          "group relative flex w-full items-stretch overflow-hidden rounded-lg transition-all duration-200",
           isActive ? rowActive : rowInactive,
         )}
       >
@@ -422,7 +435,7 @@ function NavRow({
           className={cn(
             rowBase,
             "flex-1 rounded-none bg-transparent hover:bg-transparent",
-            isActive ? "text-primary" : "text-muted-foreground",
+            isActive ? "text-haze-sidebar-text-active" : "text-haze-sidebar-text",
           )}
         >
           <ActiveBar active={isActive} />
@@ -460,8 +473,8 @@ function NavRow({
                 className={cn(
                   "relative flex h-[30px] items-center gap-2 rounded-lg px-2 text-[12.5px] transition-all duration-150",
                   subActive
-                    ? "font-semibold text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    ? "font-semibold text-haze-sidebar-text-active bg-haze-sidebar-active-bg/20"
+                    : "text-haze-sidebar-text hover:bg-haze-sidebar-active-bg/10 hover:text-white",
                 )}
               >
                 {SubIcon ? (
@@ -470,13 +483,13 @@ function NavRow({
                   <span
                     className={cn(
                       "h-[5px] w-[5px] shrink-0 rounded-full",
-                      subActive ? "bg-primary" : "bg-border",
+                      subActive ? "bg-haze-primary" : "bg-haze-divider",
                     )}
                   />
                 )}
                 <span className="flex-1">{sub.label}</span>
                 {subActive && (
-                  <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" />
+                  <span className="ml-auto h-1.5 w-1.5 rounded-full bg-haze-primary" />
                 )}
               </Link>
             );
@@ -517,11 +530,11 @@ function SidebarFooter({ isCollapsed }: { isCollapsed: boolean }) {
   }
 
   return (
-    <div className="w-full shrink-0 space-y-2 px-2 pb-3 pt-2">
+    <div className="w-full shrink-0 space-y-2 px-1 pb-4 pt-2">
       <form action={signOut}>
-        <Button variant="destructive" type="submit" className="w-full">
-          <LogOut className="h-[18px] w-[18px]" />
-          Log out
+        <Button variant="ghost" type="submit" className="w-full justify-start gap-2.5 rounded-lg px-3 text-[13px] font-medium text-rose-500 hover:bg-rose-500/10 hover:text-rose-500 transition-colors">
+          <LogOut className="h-4 w-4" />
+          {!isCollapsed && <span>Log out</span>}
         </Button>
       </form>
     </div>
@@ -551,22 +564,54 @@ function SidebarBody({ isCollapsed }: { isCollapsed: boolean }) {
   const { pathname, active: _active, unreadCount } = useSidebarData();
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
 
+  const session = authClient.useSession();
+  const role = session.data?.user?.role ?? "client";
+
+  const filteredGroups = NAV_GROUPS.map((group) => {
+    if (group.title === "SaaS") {
+      return {
+        ...group,
+        items: group.items.filter((item) => {
+          if (item.label === "SaaS Dashboard" && role !== "admin" && role !== "super_admin") {
+            return false;
+          }
+          return true;
+        }),
+      };
+    }
+    return group;
+  }).filter((group) => group.items.length > 0);
+
   return (
     <div
       className={cn(
         "relative flex h-full w-full flex-col overflow-hidden",
-        isCollapsed ? "px-2" : "px-3",
+        isCollapsed ? "px-1" : "px-2",
       )}
     >
+      {/* Logo Header */}
+      <div className={cn(
+        "flex h-16 items-center gap-3 border-b border-haze-divider/40 mb-3 shrink-0",
+        isCollapsed ? "justify-center px-1" : "px-4"
+      )}>
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg gradient-accent text-sm font-bold text-white shadow-sm shadow-primary/20">
+          S
+        </div>
+        {!isCollapsed && (
+          <span className="truncate text-[15px] font-semibold tracking-tight text-foreground">
+            SellPilot
+          </span>
+        )}
+      </div>
 
       {/* Nav */}
       <nav
         className={cn(
-          "scrollbar-none min-h-0 flex-1 overflow-y-auto overflow-x-hidden",
+          "haze-scrollbar-dark min-h-0 flex-1 overflow-y-auto overflow-x-hidden",
           isCollapsed ? "px-0 py-2" : "px-0 py-1",
         )}
       >
-        {NAV_GROUPS.map((group) => (
+        {filteredGroups.map((group) => (
           <div key={group.title} className="mb-1">
             {!isCollapsed && <GroupTitle title={group.title} />}
             {isCollapsed && (
@@ -601,11 +646,29 @@ function MobileSidebarSheet() {
   const { pathname, unreadCount } = useSidebarData();
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
 
+  const session = authClient.useSession();
+  const role = session.data?.user?.role ?? "client";
+
+  const filteredGroups = NAV_GROUPS.map((group) => {
+    if (group.title === "SaaS") {
+      return {
+        ...group,
+        items: group.items.filter((item) => {
+          if (item.label === "SaaS Dashboard" && role !== "admin" && role !== "super_admin") {
+            return false;
+          }
+          return true;
+        }),
+      };
+    }
+    return group;
+  }).filter((group) => group.items.length > 0);
+
   return (
     <div className="flex h-full flex-col px-3 py-5">
 
       <nav className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-1">
-        {NAV_GROUPS.map((group) => (
+        {filteredGroups.map((group) => (
           <div key={group.title} className="mb-1">
             <GroupTitle title={group.title} />
             <div className="space-y-0.5">
@@ -715,16 +778,15 @@ export function Sidebar() {
     <>
       <aside
         className={cn(
-          "relative hidden h-full shrink-0 p-3 transition-[width] duration-300 md:block",
-          collapsed ? "w-[78px]" : "w-[268px]",
+          "relative hidden h-full shrink-0 transition-[width] duration-300 md:flex flex-col border-r border-haze-divider bg-haze-sidebar-bg text-haze-sidebar-text",
+          collapsed ? "w-16" : "w-64",
         )}
       >
-        <div className="flex h-full flex-col overflow-hidden rounded-[28px] border bg-card shadow-lg">
+        <div className="flex h-full flex-col overflow-hidden">
           <SidebarBody isCollapsed={collapsed} />
         </div>
 
-        {/* Collapse / expand toggle — rendered as a sibling so it isn't
-            clipped by the rounded card's overflow-hidden. */}
+        {/* Collapse / expand toggle */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -747,7 +809,7 @@ export function Sidebar() {
         </Tooltip>
       </aside>
 
-      <div className="fixed left-4 right-4 top-4 z-40 flex h-16 w-full items-center justify-between rounded-[24px] border bg-card px-4 shadow-lg md:hidden">
+      <div className="fixed left-4 right-4 top-4 z-40 flex h-14 w-full items-center justify-between rounded-xl border border-haze-divider bg-card/75 px-4 shadow-md backdrop-blur-md md:hidden">
         <div className="flex items-center gap-2.5">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/15">
             <span className="h-2.5 w-2.5 rounded-full bg-primary" />
