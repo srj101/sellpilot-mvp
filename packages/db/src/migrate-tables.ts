@@ -159,6 +159,20 @@ async function main() {
         "updated_at" timestamp NOT NULL DEFAULT now(),
         CONSTRAINT "agent_session_thread_unique" UNIQUE("user_id", "thread_id")
       )`
+    },
+    {
+      name: "custom_role",
+      ddl: `CREATE TABLE IF NOT EXISTS "custom_role" (
+        "id" text PRIMARY KEY DEFAULT gen_random_uuid(),
+        "user_id" text NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+        "name" text NOT NULL,
+        "key" text NOT NULL,
+        "description" text,
+        "permissions" jsonb NOT NULL DEFAULT '[]',
+        "created_at" timestamp NOT NULL DEFAULT now(),
+        "updated_at" timestamp NOT NULL DEFAULT now(),
+        CONSTRAINT "custom_role_user_key_unique" UNIQUE("user_id", "key")
+      )`
     }
   ];
 
@@ -186,6 +200,7 @@ async function main() {
     `CREATE INDEX IF NOT EXISTS "policy_user_id_idx" ON "policy" USING btree ("user_id")`,
     `CREATE INDEX IF NOT EXISTS "shipping_rate_user_id_idx" ON "shipping_rate" USING btree ("user_id")`,
     `CREATE INDEX IF NOT EXISTS "agent_session_user_id_idx" ON "agent_session" USING btree ("user_id")`,
+    `CREATE INDEX IF NOT EXISTS "custom_role_user_id_idx" ON "custom_role" USING btree ("user_id")`,
   ];
 
   console.log("\nCreating indexes...");

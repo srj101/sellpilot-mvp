@@ -10,6 +10,7 @@ import { offersRouter } from "./router/offers";
 import { ordersRouter } from "./router/orders";
 import { postRouter } from "./router/post";
 import { productsRouter } from "./router/products";
+import { rolesRouter } from "./router/roles";
 import { settingsRouter } from "./router/settings";
 import { createTRPCRouter } from "./trpc";
 
@@ -26,6 +27,7 @@ export const appRouter = createTRPCRouter({
   customers: customersRouter,
   orders: ordersRouter,
   offers: offersRouter,
+  roles: rolesRouter,
   settings: settingsRouter,
 });
 

@@ -7,12 +7,44 @@ export const user = pgTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").default(false).notNull(),
   image: text("image"),
+  role: text("role").default("client"),
+  banned: boolean("banned").default(false),
+  banReason: text("ban_reason"),
+  banExpires: timestamp("ban_expires"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
 });
+
+/**
+ * Roles table - defines roles with permissions for a business/tenant
+ * Scoped by userId (the business owner who created the role)
+ */
+export const role = pgTable(
+  "role",
+  {
+    id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    key: text("key").notNull(),
+    description: text("description"),
+    permissions: text("permissions").array().notNull().default([]),
+    isDefault: boolean("is_default").default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("role_userId_idx").on(table.userId),
+    { unique: { name: "role_userId_key_unique", keys: [table.userId, table.key] } },
+  ],
+);
 
 export const session = pgTable(
   "session",
@@ -76,6 +108,14 @@ export const verification = pgTable(
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
+  roles: many(role),
+}));
+
+export const roleRelations = relations(role, ({ one }) => ({
+  user: one(user, {
+    fields: [role.userId],
+    references: [user.id],
+  }),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({

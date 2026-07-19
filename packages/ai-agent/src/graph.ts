@@ -233,6 +233,63 @@ export class SalesAgentGraph {
     }
   }
 
+  /**
+   * Streaming version of run() - returns an async generator for token-by-token streaming
+   */
+  async *runStream(input: AgentInput): AsyncGenerator<AgentOutput & { delta?: string }, void, unknown> {
+    const startTime = Date.now();
+
+    // Set connection context for media tools
+    setConnectionContext(input.context.connectionContext);
+    setToolContext(input.context);
+
+    // Build initial messages
+    const messages = this.buildMessages(input);
+
+    this.log("Running agent (streaming)", {
+      userId: input.context.userId,
+      threadId: input.context.threadId,
+    });
+
+    try {
+      // For streaming, we use the LLM directly with stream mode
+      const chatMessages = messages.map((m) => {
+        if (m instanceof SystemMessage) return new SystemMessage(m.content);
+        if (m instanceof HumanMessage) return new HumanMessage(m.content);
+        if (m instanceof AIMessage) return new AIMessage(m.content);
+        return m;
+      });
+
+      const stream = await this.llm.stream(chatMessages);
+      let fullResponse = "";
+
+      for await (const chunk of stream) {
+        const delta = chunk.content instanceof String ? chunk.content : "";
+        fullResponse += delta;
+
+        yield {
+          response: fullResponse,
+          delta,
+          toolCalls: [],
+          processingTime: Date.now() - startTime,
+          llmCalls: 1,
+        };
+      }
+
+      // Final output
+      const finalResponse = stripMarkdown(fullResponse) || FALLBACK_RESPONSES.error;
+      yield {
+        response: finalResponse,
+        toolCalls: [],
+        processingTime: Date.now() - startTime,
+        llmCalls: 1,
+      };
+    } catch (error) {
+      this.logError("Streaming agent execution failed", error);
+      throw error;
+    }
+  }
+
   private buildMessages(input: AgentInput): BaseMessage[] {
     const messages: BaseMessage[] = [];
 

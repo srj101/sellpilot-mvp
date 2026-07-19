@@ -502,6 +502,31 @@ export interface AgentSessionState {
   notes?: string;
 }
 
+export const customRole = pgTable(
+  "custom_role",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    key: text("key").notNull(),
+    description: text("description"),
+    permissions: jsonb("permissions").$type<string[]>().default([]).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("custom_role_user_id_idx").on(table.userId),
+    unique("custom_role_user_key_unique").on(table.userId, table.key),
+  ],
+);
+
 // Relations ------------------------------------------------------------------
 
 export const businessProfileRelations = relations(
@@ -579,4 +604,8 @@ export const notificationRelations = relations(notification, ({ one }) => ({
 
 export const subscriptionRelations = relations(subscription, ({ one }) => ({
   user: one(user, { fields: [subscription.userId], references: [user.id] }),
+}));
+
+export const customRoleRelations = relations(customRole, ({ one }) => ({
+  user: one(user, { fields: [customRole.userId], references: [user.id] }),
 }));

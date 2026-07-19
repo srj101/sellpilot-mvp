@@ -15,17 +15,14 @@ async function safeGraphGet(psid: string, accessToken: string): Promise<string |
   try {
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) {
-      const errorBody = await res.text().catch(() => "");
-      console.warn(
-        `[resolveContactNames] Graph API ${res.status} for PSID ${psid}:`,
-        errorBody.slice(0, 200),
-      );
+      // PSID not found/blocked/deleted - this is normal, not a warning
+      // Skip logging to avoid console pollution
       return null;
     }
     const data = (await res.json().catch(() => ({}))) as { name?: string };
     return data.name ?? null;
-  } catch (err) {
-    console.warn(`[resolveContactNames] Fetch error for PSID ${psid}:`, err);
+  } catch {
+    // Network errors - silent, not a warning
     return null;
   }
 }

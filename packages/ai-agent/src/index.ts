@@ -87,6 +87,7 @@ interface AgentOptions {
  */
 export function createSalesAgent(options: AgentOptions = {}): {
   run: (input: AgentInput) => Promise<AgentOutput>;
+  runStream?: (input: AgentInput) => AsyncGenerator<AgentOutput & { delta?: string }, void, unknown>;
 } {
   const config: AgentConfig = {
     apiKey: options.apiKey ?? process.env.OPENAI_API_KEY ?? "",

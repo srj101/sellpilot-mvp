@@ -5,14 +5,13 @@ import { Shield, Plus, Trash2 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@acme/ui/card";
 import { Button } from "@acme/ui/button";
+import { toast } from "@acme/ui/toast";
 import { useTRPC } from "~/trpc/react";
-import { useSession } from "next-auth/react";
 
-interface Role {
-  name: string;
+interface Permission {
   key: string;
-  description: string;
-  permissions: string[];
+  name: string;
+  category: string;
 }
 
 export function RolesClient() {
@@ -22,11 +21,19 @@ export function RolesClient() {
   const createMutation = trpc.roles.create.useMutation({
     onSuccess: () => {
       utils.roles.list.invalidate();
+      toast.success("Role created");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message);
     },
   });
   const deleteMutation = trpc.roles.delete.useMutation({
     onSuccess: () => {
       utils.roles.list.invalidate();
+      toast.success("Role deleted");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message);
     },
   });
 
@@ -60,7 +67,7 @@ export function RolesClient() {
       toast.error("Name and key are required");
       return;
     }
-    createRole.mutate(newRole);
+    createMutation.mutate(newRole);
     setShowCreate(false);
     setNewRole({ name: "", key: "", description: "", permissions: [] });
   };
@@ -120,8 +127,8 @@ export function RolesClient() {
               ))}
             </div>
             <div className="flex gap-2">
-              <Button size="sm" onClick={handleCreate} disabled={createRole.isPending}>
-                {createRole.isPending ? "Creating..." : "Create Role"}
+              <Button size="sm" onClick={handleCreate} disabled={createMutation.isPending}>
+                {createMutation.isPending ? "Creating..." : "Create Role"}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setShowCreate(false)}>
                 Cancel
@@ -150,7 +157,7 @@ export function RolesClient() {
                     size="icon"
                     variant="ghost"
                     className="h-8 w-8 text-muted-foreground hover:text-rose-600"
-                    onClick={() => deleteRole.mutate({ key: r.key })}
+                    onClick={() => deleteMutation.mutate({ key: r.key })}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

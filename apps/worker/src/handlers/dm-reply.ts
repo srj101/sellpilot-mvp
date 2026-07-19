@@ -13,10 +13,34 @@ import {
   type AgentInput,
   type ChatMessage,
 } from "@acme/ai-agent";
+import { initLLMCache, getLLMCache, type LLMCache } from "@acme/realtime";
 
 import { loadConfig } from "../config.js";
 import { RateLimiter } from "../middleware/rate-limiter.js";
 import { CircuitBreaker } from "../middleware/circuit-breaker.js";
+
+/**
+ * Transcribe audio using OpenAI Whisper API
+ */
+async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string> {
+  const response = await fetch(audioUrl);
+  if (!response.ok) throw new Error(`Failed to fetch audio: ${response.status}`);
+  const audioBuffer = await response.arrayBuffer();
+
+  const formData = new FormData();
+  formData.append("file", new Blob([audioBuffer]), "audio.ogg");
+  formData.append("model", "whisper-1");
+
+  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: formData,
+  });
+
+  if (!res.ok) throw new Error(`Transcription failed: ${res.status}`);
+  const data = (await res.json()) as { text?: string };
+  return data.text ?? "";
+}
 
 const config = loadConfig();
 const messagingService = new MessagingService();
@@ -31,6 +55,24 @@ const circuitBreaker = new CircuitBreaker({
   resetTimeout: 30000,
   fallbackMessage: config.aiFallbackMessage,
 });
+
+// LLM Response Cache
+let llmCache: LLMCache | null = null;
+
+export function initLLMCacheConnection(redisUrl: string): void {
+  llmCache = initLLMCache({ ttl: 3600, clientScope: true });
+  llmCache.connect(redisUrl).catch((err) => {
+    console.error("[DMReply] LLM cache connection failed:", err);
+    llmCache = null;
+  });
+}
+
+/**
+ * Generate cache key for LLM request
+ */
+function getCacheKey(message: string, history: ChatMessage[], userId: string, model: string): string {
+  return `${userId}:${message.slice(0, 100)}:${history.length}:${model}`;
+}
 
 // Dependency injection for conversation history
 export interface ConversationHistoryProvider {
@@ -100,9 +142,22 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
     }
   }
 
+  // Handle voice messages - transcribe first
+  let messageText = data.incomingMessage.text ?? "";
+  if (!messageText && data.incomingMessage.audioUrls?.length) {
+    const audioUrl = data.incomingMessage.audioUrls[0];
+    try {
+      messageText = await transcribeAudio(audioUrl, config.openaiApiKey);
+      console.log(`[DMReply] Transcribed voice message: ${messageText.slice(0, 100)}`);
+    } catch (err) {
+      console.warn(`[DMReply] Failed to transcribe audio: ${audioUrl}`, err);
+      messageText = "[Voice message - transcription failed]";
+    }
+  }
+
   // Build agent input
   const agentInput: AgentInput = {
-    message: data.incomingMessage.text ?? "",
+    message: messageText,
     images: data.incomingMessage.imageUrls,
     context: {
       userId: data.userId,
@@ -121,29 +176,68 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
   };
 
   try {
-    // Run AI with circuit breaker
-    const response = await circuitBreaker.run(async () => {
-      const agent = createSalesAgent({
-        apiKey: config.openaiApiKey,
-        baseUrl: config.openaiBaseUrl,
-        model: config.openaiModel,
-        debug: config.debug,
-      });
+    // Check LLM cache first (keyed by message + history hash + client)
+    const cacheKey = getCacheKey(data.incomingMessage.text ?? "", history, data.userId, config.openaiModel);
+    let responseText: string;
 
-      return agent.run(agentInput);
-    });
+    if (llmCache?.isConnected()) {
+      const cached = await llmCache.get(
+        data.incomingMessage.text ?? "",
+        history,
+        data.userId,
+        config.openaiModel
+      );
+      if (cached) {
+        console.log(`[DMReply] Cache hit for job ${job.id}, using cached response`);
+        responseText = cached.response;
+      } else {
+        // Run AI with circuit breaker
+        const response = await circuitBreaker.run(async () => {
+          const agent = createSalesAgent({
+            apiKey: config.openaiApiKey,
+            baseUrl: config.openaiBaseUrl,
+            model: config.openaiModel,
+            debug: config.debug,
+          });
+
+          return agent.run(agentInput);
+        });
+
+        responseText = response.response;
+
+        // Cache the response
+        await llmCache.set(
+          data.incomingMessage.text ?? "",
+          history,
+          data.userId,
+          config.openaiModel,
+          responseText
+        );
+      }
+    } else {
+      // No cache, run AI directly
+      const response = await circuitBreaker.run(async () => {
+        const agent = createSalesAgent({
+          apiKey: config.openaiApiKey,
+          baseUrl: config.openaiBaseUrl,
+          model: config.openaiModel,
+          debug: config.debug,
+        });
+
+        return agent.run(agentInput);
+      });
+      responseText = response.response;
+    }
 
     console.log(`[DMReply] Job ${job.id} generated response:`, {
-      text: response.response.slice(0, 300),
-      llmCalls: response.llmCalls,
-      toolCalls: response.toolCalls?.map((tc) => tc.name),
+      text: responseText.slice(0, 300),
     });
 
     // Send the response
     const result = await messagingService.sendMessage(connection, {
       platform: data.platform,
       recipientId: data.recipientId,
-      text: response.response,
+      text: responseText,
     });
 
     if (result.success) {
@@ -151,7 +245,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
 
       // Log the outbound message
       if (outboundLogger) {
-        await outboundLogger.logOutbound(job.data, result.messageId, response.response);
+        await outboundLogger.logOutbound(job.data, result.messageId, responseText);
       }
     } else {
       console.error(`[DMReply] Failed to send reply: ${result.error}`);
@@ -159,9 +253,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
     }
 
     console.log(`[DMReply] Job ${job.id} completed`, {
-      processingTime: response.processingTime,
-      llmCalls: response.llmCalls,
-      toolCalls: response.toolCalls?.length ?? 0,
+      processingTime: Date.now() - (job.timestamp ?? Date.now()),
     });
   } catch (err) {
     console.error(`[DMReply] Job ${job.id} failed:`, err);

@@ -2,7 +2,7 @@ import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth";
 import { expo } from "@better-auth/expo";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { oAuthProxy } from "better-auth/plugins";
+import { oAuthProxy, admin } from "better-auth/plugins";
 
 import { db } from "@acme/db/client";
 
@@ -51,6 +51,7 @@ export function initAuth<
         productionURL: options.productionUrl,
       }),
       expo(),
+      admin(),
       ...(options.extraPlugins ?? []),
     ],
     socialProviders: {
@@ -63,7 +64,7 @@ export function initAuth<
         clientSecret: options.facebookClientSecret,
       },
     },
-    trustedOrigins: ["expo://"],
+    trustedOrigins: ["expo://", "http://localhost:3000"],
     onAPIError: {
       onError(error, ctx) {
         console.error("BETTER AUTH API ERROR", error, ctx);

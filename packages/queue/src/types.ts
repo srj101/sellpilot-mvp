@@ -116,6 +116,7 @@ export interface MetaDMReplyJob {
   incomingMessage: {
     text?: string;
     imageUrls?: string[];
+    audioUrls?: string[];
     timestamp: number;
   };
   accessToken: string;
