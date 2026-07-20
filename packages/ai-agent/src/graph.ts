@@ -264,7 +264,13 @@ export class SalesAgentGraph {
       let fullResponse = "";
 
       for await (const chunk of stream) {
-        const delta = chunk.content instanceof String ? chunk.content : "";
+        const content = chunk.content;
+        let delta = "";
+        if (typeof content === "string") {
+          delta = content;
+        } else if (Array.isArray(content)) {
+          delta = content.map((c) => (typeof c === "string" ? c : "text" in c ? c.text : "")).join("");
+        }
         fullResponse += delta;
 
         yield {

@@ -5,7 +5,7 @@
  */
 
 import Redis from "ioredis";
-import hash from "hash-itout";
+import { createHash } from "crypto";
 import type { LLMCacheEntry, LLMCacheOptions } from "./types";
 
 const DEFAULT_TTL = 3600; // 1 hour
@@ -40,7 +40,7 @@ export class LLMCache {
     const payload = this.clientScope
       ? { message, history, clientId, model }
       : { message, history, model };
-    const hashValue = hash(payload);
+    const hashValue = createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 32);
     return `llm:cache:${hashValue}`;
   }
 
