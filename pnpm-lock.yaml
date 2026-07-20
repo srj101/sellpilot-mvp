@@ -116,6 +116,9 @@ importers:
       '@acme/queue':
         specifier: workspace:*
         version: link:../../packages/queue
+      '@acme/realtime':
+        specifier: workspace:*
+        version: link:../../packages/realtime
       '@acme/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -161,12 +164,18 @@ importers:
       recharts:
         specifier: ^3.2.1
         version: 3.9.2(@types/react@19.1.12)(react-dom@19.1.4(react@19.1.4))(react-is@19.2.0)(react@19.1.4)(redux@5.0.1)
+      socket.io-client:
+        specifier: ^4.8.1
+        version: 4.8.3(bufferutil@4.0.8)(utf-8-validate@6.0.4)
       superjson:
         specifier: 2.2.3
         version: 2.2.3
       zod:
         specifier: 'catalog:'
         version: 4.1.12
+      zustand:
+        specifier: ^5.0.3
+        version: 5.0.14(@types/react@19.1.12)(immer@11.1.11)(react@19.1.4)(use-sync-external-store@1.6.0(react@19.1.4))
     devDependencies:
       '@acme/eslint-config':
         specifier: workspace:*
@@ -432,12 +441,6 @@ importers:
       socket.io:
         specifier: ^4.8.1
         version: 4.8.3(bufferutil@4.0.8)(utf-8-validate@6.0.4)
-      socket.io-client:
-        specifier: ^4.8.1
-        version: 4.8.3(bufferutil@4.0.8)(utf-8-validate@6.0.4)
-      zustand:
-        specifier: ^5.0.3
-        version: 5.0.14(@types/react@19.1.12)(immer@11.1.11)(react@19.1.4)(use-sync-external-store@1.6.0(react@19.1.4))
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

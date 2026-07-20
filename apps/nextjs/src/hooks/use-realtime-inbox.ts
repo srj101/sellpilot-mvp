@@ -10,7 +10,7 @@ import type {
   InboxUpdatePayload,
   NewMessagePayload,
   TypingPayload,
-} from "../types";
+} from "@acme/realtime";
 
 interface RealtimeState {
   unreadCount: number;
