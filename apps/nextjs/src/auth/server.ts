@@ -21,8 +21,8 @@ export const auth = initAuth({
   secret: env.AUTH_SECRET,
   googleClientId: env.GOOGLE_CLIENT_ID,
   googleClientSecret: env.GOOGLE_CLIENT_SECRET,
-  facebookClientId: env.FACEBOOK_APP_ID,
-  facebookClientSecret: env.FACEBOOK_APP_SECRET,
+  facebookClientId: env.FACEBOOK_CLIENT_ID,
+  facebookClientSecret: env.FACEBOOK_CLIENT_SECRET,
   extraPlugins: [nextCookies()],
 });
 

@@ -15,7 +15,8 @@
     "@acme/ai-agent": "workspace:*",
     "@acme/db": "workspace:*",
     "@acme/messaging": "workspace:*",
-    "@acme/queue": "workspace:*"
+    "@acme/queue": "workspace:*",
+    "@acme/realtime": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

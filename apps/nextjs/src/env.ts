@@ -23,6 +23,8 @@ export const env = createEnv({
     SSLCOMMERZ_IS_SANDBOX: z.coerce.boolean().default(true),
     GOOGLE_CLIENT_ID: z.string(),
     GOOGLE_CLIENT_SECRET: z.string(),
+    FACEBOOK_CLIENT_ID: z.string(),
+    FACEBOOK_CLIENT_SECRET: z.string(),
     FACEBOOK_APP_ID: z.string(),
     // Also used to verify the X-Hub-Signature-256 header on incoming Meta
     // webhooks — Meta always signs webhooks with the same App Secret used
