@@ -11,7 +11,7 @@
  *   pnpm --filter @acme/worker start  # Production
  */
 
-import { createQueue, type Job, type MetaDMReplyJob, type MetaCommentReplyJob } from "@acme/queue";
+import { createQueue, type MetaDMReplyJob, type MetaCommentReplyJob } from "@acme/queue";
 import { initializeHelpers } from "@acme/ai-agent";
 
 import { loadConfig } from "./config.js";
@@ -47,7 +47,7 @@ const queue = createQueue({
 async function initializeAIHelpers() {
   try {
     // Dynamic import to avoid bundling issues
-    const dbModule = await import("@acme/db/client");
+    await import("@acme/db/client");
     const helpersModule = await import("@acme/db/helpers/aiHelpers");
 
     const aiHelpers = helpersModule.aiHelpers;
@@ -90,6 +90,7 @@ async function initializeAIHelpers() {
           threadId: job.threadId,
           platform: job.platform,
           platformAccountId: job.accountId,
+          recipientId: job.recipientId,
           messageId,
           text,
         }),

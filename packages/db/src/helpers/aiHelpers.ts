@@ -507,10 +507,11 @@ export async function logOutboundMessage(params: {
   threadId: string;
   platform: string;
   platformAccountId: string;
+  recipientId?: string;
   messageId?: string;
   text: string;
 }): Promise<void> {
-  const { userId, threadId, platform, platformAccountId, messageId, text } = params;
+  const { userId, threadId, platform, platformAccountId, recipientId, messageId, text } = params;
 
   await db.insert(metaWebhookEvent).values({
     dedupeKey: `outbound:aireply:${platform}:${threadId}:${Date.now()}:${crypto.randomUUID()}`,
@@ -521,7 +522,12 @@ export async function logOutboundMessage(params: {
     platformAccountId,
     threadId,
     sourceId: messageId ?? null,
-    rawPayload: { text },
+    rawPayload: {
+      direction: "outbound",
+      threadKey: threadId,
+      recipientId: recipientId ?? null,
+      text,
+    },
     status: "sent",
   });
 }
