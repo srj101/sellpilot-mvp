@@ -67,16 +67,9 @@ export function initLLMCacheConnection(redisUrl: string): void {
   });
 }
 
-/**
- * Generate cache key for LLM request
- */
-function getCacheKey(message: string, history: ChatMessage[], userId: string, model: string): string {
-  return `${userId}:${message.slice(0, 100)}:${history.length}:${model}`;
-}
-
 // Dependency injection for conversation history
 export interface ConversationHistoryProvider {
-  getHistory(userId: string, threadId: string): Promise<ChatMessage[]>;
+  getHistory(organizationId: string, threadId: string): Promise<ChatMessage[]>;
 }
 
 let historyProvider: ConversationHistoryProvider | null = null;
@@ -110,6 +103,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
     platform: data.platform,
     threadId: data.threadId,
     userId: data.userId,
+    organizationId: data.organizationId,
   });
 
   // Check rate limit
@@ -136,7 +130,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
   let history: ChatMessage[] = [];
   if (historyProvider) {
     try {
-      history = await historyProvider.getHistory(data.userId, data.threadId);
+      history = await historyProvider.getHistory(data.organizationId, data.threadId);
     } catch (err) {
       console.error("[DMReply] Failed to load history:", err);
     }
@@ -144,8 +138,8 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
 
   // Handle voice messages - transcribe first
   let messageText = data.incomingMessage.text ?? "";
-  if (!messageText && data.incomingMessage.audioUrls?.length) {
-    const audioUrl = data.incomingMessage.audioUrls[0];
+  const audioUrl = data.incomingMessage.audioUrls?.[0];
+  if (!messageText && audioUrl) {
     try {
       messageText = await transcribeAudio(audioUrl, config.openaiApiKey);
       console.log(`[DMReply] Transcribed voice message: ${messageText.slice(0, 100)}`);
@@ -161,6 +155,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
     images: data.incomingMessage.imageUrls,
     context: {
       userId: data.userId,
+      organizationId: data.organizationId,
       threadId: data.threadId,
       platform: data.platform,
       customerId: data.recipientId,
@@ -176,15 +171,14 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
   };
 
   try {
-    // Check LLM cache first (keyed by message + history hash + client)
-    const cacheKey = getCacheKey(data.incomingMessage.text ?? "", history, data.userId, config.openaiModel);
+    // Check LLM cache first (keyed by message + history hash + store)
     let responseText: string;
 
     if (llmCache?.isConnected()) {
       const cached = await llmCache.get(
         data.incomingMessage.text ?? "",
         history,
-        data.userId,
+        data.organizationId,
         config.openaiModel
       );
       if (cached) {
@@ -209,7 +203,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
         await llmCache.set(
           data.incomingMessage.text ?? "",
           history,
-          data.userId,
+          data.organizationId,
           config.openaiModel,
           responseText
         );
@@ -261,11 +255,15 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
     // Send fallback message if circuit is open
     if (circuitBreaker.isOpen()) {
       try {
-        await messagingService.sendMessage(connection, {
+        const fallbackResult = await messagingService.sendMessage(connection, {
           platform: data.platform,
           recipientId: data.recipientId,
           text: config.aiFallbackMessage,
         });
+
+        if (fallbackResult.success && outboundLogger) {
+          await outboundLogger.logOutbound(job.data, fallbackResult.messageId, config.aiFallbackMessage);
+        }
       } catch {
         // Ignore fallback send failure
       }

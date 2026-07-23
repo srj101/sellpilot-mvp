@@ -1,10 +1,10 @@
 import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod/v4";
 
-import { eq } from "@acme/db";
-import { customer, order, orderItem, pageView, product } from "@acme/db/schema";
+import { eq, inArray } from "@acme/db";
+import { agentSession, customer, metaWebhookEvent, order, orderItem, pageView, product } from "@acme/db/schema";
 
-import { protectedProcedure } from "../trpc";
+import { storeProcedure } from "../trpc";
 
 const DAY = 86_400_000;
 
@@ -20,7 +20,7 @@ function formatDate(ms: number) {
 }
 
 export const analyticsRouter = {
-  getSummary: protectedProcedure
+  getSummary: storeProcedure
     .input(
       z.object({
         range: z.enum(["7d", "30d", "90d", "1y", "custom"]).default("30d"),
@@ -29,7 +29,7 @@ export const analyticsRouter = {
       }),
     )
     .query(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
+      const organizationId = ctx.organizationId;
       const now = Date.now();
 
       // Resolve the window either from a preset range or an explicit custom date pair.
@@ -50,15 +50,32 @@ export const analyticsRouter = {
       const prevStart = windowStart - windowMs;
       const prevEnd = windowStart;
 
-      const [views, customers, categoryRows] = await Promise.all([
-        ctx.db.select().from(pageView).where(eq(pageView.userId, userId)),
-        ctx.db.select({ country: customer.country }).from(customer).where(eq(customer.userId, userId)),
+      const [views, customers, categoryRows, orders, sessions, messageEvents] = await Promise.all([
+        ctx.db.select().from(pageView).where(eq(pageView.organizationId, organizationId)),
+        ctx.db
+          .select({ country: customer.country, district: customer.district })
+          .from(customer)
+          .where(eq(customer.organizationId, organizationId)),
         ctx.db
           .select({ category: product.category, lineTotal: orderItem.lineTotal })
           .from(orderItem)
           .innerJoin(product, eq(orderItem.productId, product.id))
           .innerJoin(order, eq(orderItem.orderId, order.id))
-          .where(eq(order.userId, userId)),
+          .where(eq(order.organizationId, organizationId)),
+        ctx.db
+          .select({ id: order.id, createdAt: order.createdAt, total: order.total })
+          .from(order)
+          .where(eq(order.organizationId, organizationId)),
+        ctx.db
+          .select({ createdAt: agentSession.createdAt })
+          .from(agentSession)
+          .where(eq(agentSession.organizationId, organizationId)),
+        ctx.db
+          .select({ eventType: metaWebhookEvent.eventType, receivedAt: metaWebhookEvent.receivedAt })
+          .from(metaWebhookEvent)
+          .where(eq(metaWebhookEvent.organizationId, organizationId))
+          .orderBy(metaWebhookEvent.receivedAt)
+          .limit(5000),
       ]);
 
       const inWindow = (t: number, start: number, end: number) => t >= start && t < end;
@@ -138,11 +155,117 @@ export const analyticsRouter = {
         .map(([category, revenue]) => ({ category, revenue }))
         .sort((a, b) => b.revenue - a.revenue);
 
+      const cityCounts = new Map<string, number>();
+      for (const c of customers) {
+        const key = c.district?.trim() || "Unknown";
+        cityCounts.set(key, (cityCounts.get(key) ?? 0) + 1);
+      }
+      const totalCustomers = customers.length || 1;
+      const customersByCity = [...cityCounts.entries()]
+        .map(([city, count]) => ({ city, count, pct: Math.round((count / totalCustomers) * 1000) / 10 }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 6);
+
+      // Chat sessions & orders placed, bucketed on the same boundaries as dailySeries.
+      const currentOrders = orders.filter((o) => inWindow(o.createdAt.getTime(), windowStart, windowEnd));
+      const prevOrders = orders.filter((o) => inWindow(o.createdAt.getTime(), prevStart, prevEnd));
+      const currentSessions = sessions.filter((s) => inWindow(s.createdAt.getTime(), windowStart, windowEnd));
+      const prevSessions = sessions.filter((s) => inWindow(s.createdAt.getTime(), prevStart, prevEnd));
+
+      const chatOrderSeries: { label: string; sessions: number; orders: number }[] = [];
+      if (bucketByMonth) {
+        const cursor = new Date(windowStart);
+        cursor.setDate(1);
+        cursor.setHours(0, 0, 0, 0);
+        while (cursor.getTime() < windowEnd) {
+          const start = cursor.getTime();
+          const end = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1).getTime();
+          chatOrderSeries.push({
+            label: cursor.toLocaleDateString("en-US", { month: "short" }),
+            sessions: sessions.filter((s) => inWindow(s.createdAt.getTime(), start, end)).length,
+            orders: orders.filter((o) => inWindow(o.createdAt.getTime(), start, end)).length,
+          });
+          cursor.setMonth(cursor.getMonth() + 1);
+        }
+      } else {
+        const totalDays = Math.round(windowMs / DAY);
+        for (let i = 0; i < totalDays; i++) {
+          const dayStart = windowStart + i * DAY;
+          const dayEnd = dayStart + DAY;
+          chatOrderSeries.push({
+            label: new Date(dayStart).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+            sessions: sessions.filter((s) => inWindow(s.createdAt.getTime(), dayStart, dayEnd)).length,
+            orders: orders.filter((o) => inWindow(o.createdAt.getTime(), dayStart, dayEnd)).length,
+          });
+        }
+      }
+
+      const outboundEvents = messageEvents.filter((e) => e.eventType === "outbound");
+      const currentOutbound = outboundEvents.filter((e) => inWindow(e.receivedAt.getTime(), windowStart, windowEnd));
+      const prevOutbound = outboundEvents.filter((e) => inWindow(e.receivedAt.getTime(), prevStart, prevEnd));
+
+      const conversionRateOf = (orderCount: number, sessionCount: number) =>
+        sessionCount > 0 ? (orderCount / sessionCount) * 100 : 0;
+      const currentConversion = conversionRateOf(currentOrders.length, uniqueSessionsOf(currentViews));
+      const prevConversion = conversionRateOf(prevOrders.length, uniqueSessionsOf(prevViews));
+
+      const messagingStats = {
+        messagesSent: currentOutbound.length,
+        messagesSentTrend: trendPct(currentOutbound.length, prevOutbound.length),
+        chatSessions: currentSessions.length,
+        chatSessionsTrend: trendPct(currentSessions.length, prevSessions.length),
+        conversionRate: currentConversion,
+        conversionRateTrend: trendPct(currentConversion, prevConversion),
+      };
+
+      // Inquiries in the last 7 real calendar days — independent of the selected range.
+      const inboundEvents = messageEvents.filter((e) => e.eventType !== "outbound");
+      const weeklyDays: { label: string; count: number }[] = [];
+      for (let i = 6; i >= 0; i--) {
+        const dayStart = new Date(now).setHours(0, 0, 0, 0) - i * DAY;
+        const dayEnd = dayStart + DAY;
+        weeklyDays.push({
+          label: new Date(dayStart).toLocaleDateString("en-US", { weekday: "short" }),
+          count: inboundEvents.filter((e) => inWindow(e.receivedAt.getTime(), dayStart, dayEnd)).length,
+        });
+      }
+      const weeklyInquiries = {
+        total: weeklyDays.reduce((sum, d) => sum + d.count, 0),
+        days: weeklyDays,
+      };
+
+      // Top selling products within the selected window.
+      const currentOrderIds = currentOrders.map((o) => o.id);
+      const windowItems =
+        currentOrderIds.length > 0
+          ? await ctx.db
+              .select({ productId: orderItem.productId, name: orderItem.name, qty: orderItem.qty, lineTotal: orderItem.lineTotal })
+              .from(orderItem)
+              .where(inArray(orderItem.orderId, currentOrderIds))
+          : [];
+      const productAgg = new Map<string, { name: string; qty: number; revenue: number }>();
+      for (const item of windowItems) {
+        const key = item.productId ?? item.name;
+        const existing = productAgg.get(key);
+        if (existing) {
+          existing.qty += item.qty;
+          existing.revenue += item.lineTotal;
+        } else {
+          productAgg.set(key, { name: item.name, qty: item.qty, revenue: item.lineTotal });
+        }
+      }
+      const topProducts = [...productAgg.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+
       return {
         pageViewStats,
         dailySeries,
         topCountries,
         revenueByCategory,
+        customersByCity,
+        chatOrderSeries,
+        messagingStats,
+        weeklyInquiries,
+        topProducts,
         rangeLabel: { start: formatDate(windowStart), end: formatDate(windowEnd - DAY) },
       };
     }),

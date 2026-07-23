@@ -144,12 +144,17 @@ export async function handleCommentReply(
 
     // Send fallback reply if circuit is open
     if (circuitBreaker.isOpen()) {
+      const fallbackText = "Thanks for your comment! We've sent you a message with more details.";
       try {
-        await messagingService.replyToComment(
+        const fallbackResult = await messagingService.replyToComment(
           connection,
           data.commentId,
-          "Thanks for your comment! We've sent you a message with more details."
+          fallbackText
         );
+
+        if (fallbackResult.success && commentLogger) {
+          await commentLogger.logCommentReply(job.data, fallbackResult.messageId, fallbackText);
+        }
       } catch {
         // Ignore fallback send failure
       }

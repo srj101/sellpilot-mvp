@@ -79,14 +79,15 @@ async function initializeAIHelpers() {
     });
 
     setHistoryProvider({
-      getHistory: (userId, threadId) =>
-        aiHelpers.getConversationHistory(userId, threadId),
+      getHistory: (organizationId, threadId) =>
+        aiHelpers.getConversationHistory(organizationId, threadId),
     });
 
     setOutboundLogger({
       logOutbound: (job, messageId, text) =>
         aiHelpers.logOutboundMessage({
           userId: job.userId,
+          organizationId: job.organizationId,
           threadId: job.threadId,
           platform: job.platform,
           platformAccountId: job.accountId,

@@ -43,21 +43,29 @@ export async function GET(req: Request) {
   const state = requestUrl.searchParams.get("state");
   const error = requestUrl.searchParams.get("error");
 
+  // Stashed by connectChannel before leaving for Facebook's OAuth dialog — this route
+  // isn't under /{storeSlug}/dashboard/*, so it can't get the slug from middleware the
+  // way every other page here does; the cookie is what survives the round trip.
+  // Falls back to the bare /dashboard redirector (resolves the right store itself) if
+  // the cookie is somehow missing.
+  const cookieStore = await cookies();
+  const storeSlug = cookieStore.get("meta_channel_store_slug")?.value;
+  const integrationsBase = storeSlug ? `/${storeSlug}/dashboard/integrations` : "/dashboard";
+
   if (error || !code) {
     console.error("Meta OAuth error:", error);
     return NextResponse.redirect(
-      `${protocol}://${host}/dashboard/integrations?error=meta_denied`,
+      `${protocol}://${host}${integrationsBase}?error=meta_denied`,
     );
   }
 
   // Validate state to prevent CSRF
-  const cookieStore = await cookies();
   const savedState = cookieStore.get("meta_channel_state")?.value;
 
   if (!state || state !== savedState) {
     console.error("Meta OAuth state mismatch");
     return NextResponse.redirect(
-      `${protocol}://${host}/dashboard/integrations?error=invalid_state`,
+      `${protocol}://${host}${integrationsBase}?error=invalid_state`,
     );
   }
 
@@ -96,13 +104,12 @@ export async function GET(req: Request) {
           ? "whatsapp"
           : "facebook";
 
-    return NextResponse.redirect(
-      `${protocol}://${host}/dashboard/integrations/${channelParam}`,
-    );
+    const successTarget = storeSlug ? `${integrationsBase}/${channelParam}` : "/dashboard";
+    return NextResponse.redirect(`${protocol}://${host}${successTarget}`);
   } catch (err) {
     console.error("Meta OAuth callback error:", err);
     return NextResponse.redirect(
-      `${protocol}://${host}/dashboard/integrations?error=meta_failed`,
+      `${protocol}://${host}${integrationsBase}?error=meta_failed`,
     );
   }
 }

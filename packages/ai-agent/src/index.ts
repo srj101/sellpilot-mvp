@@ -150,6 +150,7 @@ export async function chat(
   message: string,
   context: {
     userId: string;
+    organizationId: string;
     threadId?: string;
     platform?: "facebook_page" | "instagram" | "whatsapp";
     customerId?: string;
@@ -159,6 +160,7 @@ export async function chat(
     message,
     context: {
       userId: context.userId,
+      organizationId: context.organizationId,
       threadId: context.threadId ?? `temp-${Date.now()}`,
       platform: context.platform ?? "whatsapp",
       customerId: context.customerId ?? "unknown",

@@ -14,6 +14,8 @@ import { createCaller } from "~/trpc/caller";
 import { ScrollToBottom } from "./_components/scroll-to-bottom";
 import { ConversationList } from "./_components/conversation-list";
 import { ReplyForm } from "./_components/reply-form";
+import { ThreadHeaderActions } from "./_components/thread-header-actions";
+import { ContactPanel } from "./_components/contact-panel";
 import {
   avatarColor,
   channelIcon,
@@ -52,11 +54,13 @@ function MessageBubble({
   text,
   timestamp,
   imageUrl,
+  sentBy,
 }: {
   direction: "inbound" | "outbound";
   text: string;
   timestamp: Date;
   imageUrl?: string;
+  sentBy?: string;
 }) {
   const outbound = direction === "outbound";
 
@@ -77,7 +81,19 @@ function MessageBubble({
         )}
         {text && (text !== "Sent an image" || !imageUrl) && <div>{text}</div>}
       </div>
-      <div className="text-[11px] text-muted-foreground">{formatDetailedTime(timestamp)}</div>
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        {formatDetailedTime(timestamp)}
+        {outbound && sentBy && (
+          <span
+            className={cn(
+              "rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+              sentBy === "ai" ? "bg-violet-500/10 text-violet-500" : "bg-blue-500/10 text-blue-500",
+            )}
+          >
+            {sentBy === "ai" ? "Replied by AI" : "Replied by You"}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -102,12 +118,12 @@ export default async function InboxPage(props: { searchParams?: Promise<InboxSea
   return (
     <DashboardShell>
       <div className="flex h-full w-full flex-col">
-        <div className="shrink-0 pb-4">
-          <h1 className="text-3xl font-bold tracking-tight">Chat</h1>
-          <p className="mt-1 text-base text-muted-foreground">Messages and conversations</p>
-        </div>
-
-        <div className="grid w-full min-h-0 flex-1 grid-cols-1 overflow-hidden rounded-2xl border bg-card md:grid-cols-[320px_1fr]">
+        <div
+          className={cn(
+            "grid w-full min-h-0 flex-1 grid-cols-1 overflow-hidden rounded-2xl border bg-card",
+            selectedThread ? "md:grid-cols-[320px_1fr_320px]" : "md:grid-cols-[320px_1fr]",
+          )}
+        >
           <div className="min-h-0 border-b md:border-b-0 md:border-r">
             <ConversationList threads={data.threads} selectedThreadId={selectedThread?.id ?? null} />
           </div>
@@ -131,6 +147,7 @@ export default async function InboxPage(props: { searchParams?: Promise<InboxSea
                       {channelLabel(selectedThread.platform)} · Active {formatRelativeTimeLong(selectedThread.lastMessageAt)}
                     </p>
                   </div>
+                  <ThreadHeaderActions threadId={selectedThread.id} status={selectedThread.status} starred={selectedThread.starred} />
                 </div>
 
                 <div className="flex-1 space-y-4 overflow-y-auto p-6">
@@ -141,6 +158,7 @@ export default async function InboxPage(props: { searchParams?: Promise<InboxSea
                       text={message.text}
                       timestamp={message.timestamp}
                       imageUrl={message.imageUrl}
+                      sentBy={message.sentBy}
                     />
                   ))}
                   <ScrollToBottom />
@@ -161,6 +179,17 @@ export default async function InboxPage(props: { searchParams?: Promise<InboxSea
               <EmptyState />
             )}
           </div>
+
+          {selectedThread && (
+            <div className="hidden min-h-0 border-l md:block">
+              <ContactPanel
+                threadId={selectedThread.id}
+                customerId={selectedThread.customerId}
+                contactLabel={selectedThread.contactLabel}
+                messages={selectedThread.messages}
+              />
+            </div>
+          )}
         </div>
       </div>
     </DashboardShell>

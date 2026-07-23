@@ -26,8 +26,10 @@ export interface AgentConfig {
 // ============================================
 
 export interface ConversationContext {
-  /** User ID (business owner) */
+  /** Platform user ID of the business owner — kept for rows that record "who", not "which store". */
   userId: string;
+  /** Store (organization) ID — the actual tenant-scoping key. One user can own more than one store. */
+  organizationId: string;
   /** Thread ID for conversation history */
   threadId: string;
   /** Platform (facebook, instagram, whatsapp) */

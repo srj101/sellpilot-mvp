@@ -111,6 +111,8 @@ export interface MetaDMReplyJob {
   platform: "facebook_page" | "instagram" | "whatsapp";
   connectionId: string;
   userId: string;
+  /** Store (organization) ID — the actual tenant-scoping key; a user can own more than one store. */
+  organizationId: string;
   recipientId: string;
   threadId: string;
   incomingMessage: {
@@ -128,6 +130,8 @@ export interface MetaCommentReplyJob {
   platform: "facebook_page" | "instagram";
   connectionId: string;
   userId: string;
+  /** Store (organization) ID — the actual tenant-scoping key; a user can own more than one store. */
+  organizationId: string;
   commentId: string;
   commentText: string;
   accessToken: string;

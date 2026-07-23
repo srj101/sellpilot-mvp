@@ -5,6 +5,7 @@ import { db } from "@acme/db/client";
 import { product } from "@acme/db/schema";
 
 import { auth } from "~/auth/server";
+import { resolveActiveOrganizationId } from "~/lib/resolve-active-org";
 import { searchProductsByImage } from "@acme/api/chromadb";
 
 export async function POST(req: NextRequest) {
@@ -23,8 +24,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const activeOrganizationId = (session.session as { activeOrganizationId?: string | null }).activeOrganizationId;
+  const organizationId = await resolveActiveOrganizationId(session.user.id, activeOrganizationId);
+
   const matches = await searchProductsByImage({
-    userId: session.user.id,
+    organizationId,
     imageUrl,
     limit: 5,
   });
@@ -41,7 +45,7 @@ export async function POST(req: NextRequest) {
     .from(product)
     .where(
       and(
-        eq(product.userId, session.user.id),
+        eq(product.organizationId, organizationId),
         inArray(product.id, productIds),
       ),
     );

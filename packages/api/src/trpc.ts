@@ -11,7 +11,9 @@ import superjson from "superjson";
 import { z, ZodError } from "zod/v4";
 
 import type { Auth, Session } from "@acme/auth";
+import { and, eq } from "@acme/db";
 import { db } from "@acme/db/client";
+import { member, organization } from "@acme/db/schema";
 
 /**
  * 1. CONTEXT
@@ -31,6 +33,7 @@ export const createTRPCContext = async (opts: {
   auth: Auth;
 }): Promise<{
   authApi: any;
+  headers: Headers;
   session: Session | null;
   db: typeof db;
 }> => {
@@ -40,6 +43,7 @@ export const createTRPCContext = async (opts: {
   });
   return {
     authApi,
+    headers: opts.headers,
     session,
     db,
   };
@@ -130,3 +134,95 @@ export const protectedProcedure = t.procedure
       },
     });
   });
+
+/**
+ * Org-aware procedure — resolves which "store" the caller acts on.
+ *
+ * Every table in this app is scoped by a userId that represents "the store" (e.g.
+ * `order.userId`, `product.userId`). Historically that was always the logged-in user's
+ * own id — one login, one store. Once a merchant can invite teammates (see
+ * packages/auth's `organization` plugin), an invited member logs in with *their own*
+ * user id, which must still resolve to the *owner's* store for every query, or they'd
+ * see an empty account.
+ *
+ * Resolution is authoritative from the URL, not from session state: every request under
+ * /{storeSlug}/dashboard/* carries an `x-store-slug` header (injected by middleware.ts
+ * for server-rendered pages, and by trpc/react.tsx's link for client-fetched queries —
+ * both derive it fresh from the current URL every time). That header is looked up
+ * directly against real membership rows here. This deliberately does NOT trust
+ * `session.activeOrganizationId` as the primary source — it's a side-effect field
+ * (see org.setActive) that a page might navigate away from before it's re-read, and
+ * trusting it caused one store's data to render under another store's URL. It's kept
+ * only as a fallback for the handful of routes with no store in the URL at all
+ * (/onboarding/select-store, the bare /dashboard redirector).
+ */
+export const orgProcedure = protectedProcedure.use(async ({ ctx, next }) => {
+  const userId = ctx.session.user.id;
+  const requestedSlug = ctx.headers.get("x-store-slug");
+
+  const memberships = await ctx.db
+    .select({ organizationId: member.organizationId, role: member.role, customRoleKey: member.customRoleKey })
+    .from(member)
+    .where(eq(member.userId, userId));
+
+  let membership: (typeof memberships)[number] | undefined;
+
+  if (requestedSlug) {
+    const [org] = await ctx.db
+      .select({ id: organization.id })
+      .from(organization)
+      .where(eq(organization.slug, requestedSlug))
+      .limit(1);
+    membership = org ? memberships.find((m) => m.organizationId === org.id) : undefined;
+    if (!membership) {
+      // The URL names a real store, but this caller isn't a member of it — fail loudly
+      // rather than silently falling back to a *different* store's data.
+      throw new TRPCError({ code: "FORBIDDEN", message: "You don't have access to this store." });
+    }
+  } else {
+    const activeOrganizationId = (ctx.session.session as { activeOrganizationId?: string | null }).activeOrganizationId;
+    membership =
+      (activeOrganizationId ? memberships.find((m) => m.organizationId === activeOrganizationId) : undefined) ??
+      memberships[0];
+  }
+
+  let storeOwnerId = userId;
+  let memberRole = "owner";
+  let customRoleKey: string | null = null;
+  let organizationId: string | null = null;
+
+  if (membership) {
+    organizationId = membership.organizationId;
+    memberRole = membership.role;
+    customRoleKey = membership.customRoleKey;
+    if (membership.role !== "owner") {
+      const [owner] = await ctx.db
+        .select({ userId: member.userId })
+        .from(member)
+        .where(and(eq(member.organizationId, membership.organizationId), eq(member.role, "owner")))
+        .limit(1);
+      storeOwnerId = owner?.userId ?? userId;
+    }
+  }
+
+  return next({
+    ctx: { ...ctx, storeOwnerId, memberRole, customRoleKey, organizationId },
+  });
+});
+
+/**
+ * Store-scoped procedure — for every business-data router (products, orders, customers,
+ * inbox, integrations, ...). Every table these touch is keyed by `organizationId`, not
+ * `userId` — a single platform user can own more than one store, and `userId` alone can't
+ * tell them apart (see orgProcedure's doc comment above). This narrows `ctx.organizationId`
+ * from `string | null` to `string`, since every route that reaches these routers is always
+ * under /{storeSlug}/dashboard/*, so orgProcedure has already resolved a real store or
+ * thrown FORBIDDEN. Routes that can legitimately run with no store yet (invites, the store
+ * picker) stay on the plain `orgProcedure`.
+ */
+export const storeProcedure = orgProcedure.use(({ ctx, next }) => {
+  if (!ctx.organizationId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "No active store selected." });
+  }
+  return next({ ctx: { ...ctx, organizationId: ctx.organizationId } });
+});

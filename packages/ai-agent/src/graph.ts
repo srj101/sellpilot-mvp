@@ -302,7 +302,6 @@ export class SalesAgentGraph {
     // System prompt with user context
     const systemPrompt = `${SALES_AGENT_SYSTEM_PROMPT}
 
-Current userId for tool calls: ${input.context.userId}
 Platform: ${input.context.platform}
 ${input.context.customerName ? `Customer name: ${input.context.customerName}` : ""}`;
 
@@ -385,9 +384,7 @@ export class SimpleChatAgent {
 Help customers find products and answer questions.
 Be friendly, concise, and helpful.
 Reply in the customer's language.
-Never use markdown formatting.
-
-Current userId: ${input.context.userId}`),
+Never use markdown formatting.`),
     ];
 
     if (input.history) {

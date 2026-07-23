@@ -1,18 +1,57 @@
 import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod";
 
-import { desc, eq, and, inArray } from "@acme/db";
+import { desc, eq, and, inArray, createCustomerAndOrder, quoteOrder } from "@acme/db";
 import { order, orderItem } from "@acme/db/schema";
 
-import { protectedProcedure } from "../trpc";
+import { storeProcedure } from "../trpc";
 
 export const ordersRouter = {
-  list: protectedProcedure.query(async ({ ctx }) => {
-    const userId = ctx.session.user.id;
+  /** Live price/stock preview for the manual order form — same pricing logic the AI agent uses. */
+  quote: storeProcedure
+    .input(
+      z.object({
+        productId: z.string(),
+        variantId: z.string().optional(),
+        quantity: z.number().min(1),
+        district: z.string().optional(),
+        offerCode: z.string().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      return quoteOrder({ organizationId: ctx.organizationId, ...input });
+    }),
+
+  /**
+   * Manual order creation — for when a human agent (not the AI) handled the chat and needs
+   * to place the order themselves. Reuses the exact same customer-upsert/pricing/inventory
+   * logic as the AI's automatic checkout (createCustomerAndOrder), just triggered by a person.
+   */
+  create: storeProcedure
+    .input(
+      z.object({
+        threadId: z.string(),
+        channel: z.string().default("manual"),
+        productId: z.string(),
+        variantId: z.string().optional(),
+        quantity: z.number().min(1),
+        customerName: z.string().min(1),
+        phone: z.string().min(1),
+        address: z.string().min(1),
+        district: z.string().optional(),
+        offerCode: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return createCustomerAndOrder({ userId: ctx.storeOwnerId, organizationId: ctx.organizationId, ...input });
+    }),
+
+  list: storeProcedure.query(async ({ ctx }) => {
+    const organizationId = ctx.organizationId;
     const orders = await ctx.db
       .select()
       .from(order)
-      .where(eq(order.userId, userId))
+      .where(eq(order.organizationId, organizationId))
       .orderBy(desc(order.createdAt));
 
     const items =
@@ -23,15 +62,15 @@ export const ordersRouter = {
     return { orders, items };
   }),
 
-  getById: protectedProcedure
+  getById: storeProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
+      const organizationId = ctx.organizationId;
 
       const [ord] = await ctx.db
         .select()
         .from(order)
-        .where(and(eq(order.id, input.id), eq(order.userId, userId)))
+        .where(and(eq(order.id, input.id), eq(order.organizationId, organizationId)))
         .limit(1);
 
       if (!ord) return null;
@@ -44,7 +83,7 @@ export const ordersRouter = {
       return { ...ord, items };
     }),
 
-  updateStatus: protectedProcedure
+  updateStatus: storeProcedure
     .input(
       z.object({
         id: z.string(),
@@ -52,20 +91,20 @@ export const ordersRouter = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
+      const organizationId = ctx.organizationId;
 
       await ctx.db
         .update(order)
         .set({ status: input.status })
-        .where(and(eq(order.id, input.id), eq(order.userId, userId)));
+        .where(and(eq(order.id, input.id), eq(order.organizationId, organizationId)));
 
       return { success: true };
     }),
 
-  delete: protectedProcedure
+  delete: storeProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
+      const organizationId = ctx.organizationId;
 
       // Delete order items first (cascade should handle, but be explicit)
       await ctx.db
@@ -74,7 +113,7 @@ export const ordersRouter = {
 
       await ctx.db
         .delete(order)
-        .where(and(eq(order.id, input.id), eq(order.userId, userId)));
+        .where(and(eq(order.id, input.id), eq(order.organizationId, organizationId)));
 
       return { success: true };
     }),

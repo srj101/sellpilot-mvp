@@ -53,10 +53,10 @@
   --spacing: 0.25rem;
 
   /* Haze specific color mappings for light mode */
-  --haze-sidebar-bg: #1c252e;
-  --haze-sidebar-text: #919eab;
+  --haze-sidebar-bg: #ffffff;
+  --haze-sidebar-text: #637381;
   --haze-sidebar-active-bg: #00a76f14;
-  --haze-sidebar-text-active: #ffffff;
+  --haze-sidebar-text-active: #00926f;
   --haze-primary: #00926f;
   --haze-primary-darker: #005e44;
   --haze-primary-lighter: #cbeee0;

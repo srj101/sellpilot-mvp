@@ -19,6 +19,8 @@ export interface InboxMessage {
   sourceId?: string;
   isRead: boolean;
   imageUrl?: string;
+  /** "ai" | "human" | undefined (inbound messages, or legacy rows sent before this was tracked). */
+  sentBy?: string;
 }
 
 export interface InboxThread {
@@ -34,6 +36,14 @@ export interface InboxThread {
   preview: string;
   messageCount: number;
   messages: InboxMessage[];
+  /** True when an active (not delivered/cancelled/returned) order is tied to this thread. Set by the inbox router. */
+  hasOrderRequest: boolean;
+  /** Everything below is set by the inbox router from the conversationMeta table, defaulted here. */
+  status: string;
+  starred: boolean;
+  customerId: string | null;
+  tags: { id: string; label: string; color: string }[];
+  assignedMemberId: string | null;
 }
 
 export interface InboxActivityItem {
@@ -477,6 +487,7 @@ export function buildInboxData({
         sourceId: event.sourceId ?? undefined,
         isRead: event.isRead,
         imageUrl,
+        sentBy: event.sentBy ?? undefined,
       };
 
       const existingThread = threadsById.get(threadKey);
@@ -504,6 +515,12 @@ export function buildInboxData({
         preview: message.text,
         messageCount: 1,
         messages: [message],
+        hasOrderRequest: false,
+        status: "open",
+        starred: false,
+        customerId: null,
+        tags: [],
+        assignedMemberId: null,
       });
       continue;
     }

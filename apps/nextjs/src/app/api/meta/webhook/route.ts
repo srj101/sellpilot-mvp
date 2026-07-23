@@ -171,6 +171,7 @@ export async function POST(req: NextRequest) {
       eventType: event.eventType,
       metaConnectionId: connection?.id ?? null,
       userId: connection?.userId ?? null,
+      organizationId: connection?.organizationId ?? null,
       platformAccountId: event.accountId,
       sourceId: event.message?.id ?? null,
       threadId: event.message?.threadId ?? null,
@@ -198,15 +199,15 @@ export async function POST(req: NextRequest) {
 
   const insertedKeys = new Set(inserted.map((r) => r.dedupeKey));
 
-  // Trigger inbox updates for affected users
-  const userIds = new Set<string>();
+  // Trigger inbox updates for affected stores
+  const organizationIds = new Set<string>();
   for (const row of rows) {
-    if (row.userId) {
-      userIds.add(row.userId);
+    if (row.organizationId) {
+      organizationIds.add(row.organizationId);
     }
   }
-  for (const userId of userIds) {
-    void triggerInboxBroadcast(userId);
+  for (const organizationId of organizationIds) {
+    void triggerInboxBroadcast(organizationId);
   }
 
   // Enqueue jobs for new events only (not duplicates) - FIRE AND FORGET
@@ -220,6 +221,7 @@ export async function POST(req: NextRequest) {
             platform: event.platform as "facebook_page" | "instagram" | "whatsapp",
             connectionId: connection.id,
             userId: connection.userId,
+            organizationId: connection.organizationId,
             recipientId: event.message.senderId,
             threadId: event.message.threadId,
             incomingMessage: {
@@ -246,6 +248,7 @@ export async function POST(req: NextRequest) {
             platform: event.platform as "facebook_page" | "instagram",
             connectionId: connection.id,
             userId: connection.userId,
+            organizationId: connection.organizationId,
             commentId: event.message.id,
             commentText: event.message.text ?? "",
             accessToken: connection.accessToken ?? connection.facebookPageAccessToken ?? "",

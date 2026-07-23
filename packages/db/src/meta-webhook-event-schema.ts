@@ -9,7 +9,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 
-import { user } from "./auth-schema";
+import { user, organization } from "./auth-schema";
 import { metaConnection } from "./meta-connection-schema";
 
 export const metaWebhookEvent = pgTable(
@@ -39,8 +39,11 @@ export const metaWebhookEvent = pgTable(
       },
     ),
 
-    /** Resolved internal tenant. Useful for background workers and analytics. */
+    /** Resolved internal tenant (platform user). Useful for background workers and analytics. */
     userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+
+    /** Resolved store — the actual tenant-scoping key (a user can own more than one store). */
+    organizationId: text("organization_id").references(() => organization.id, { onDelete: "set null" }),
 
     /** Platform-specific routing account identifier. */
     platformAccountId: text("platform_account_id").notNull(),
@@ -59,6 +62,9 @@ export const metaWebhookEvent = pgTable(
 
     isRead: boolean("is_read").default(false).notNull(),
 
+    /** "ai" | "human" — only set on outbound rows, distinguishes an AI-generated reply from a dashboard-sent one. */
+    sentBy: text("sent_by"),
+
     receivedAt: timestamp("received_at").defaultNow().notNull(),
     processedAt: timestamp("processed_at"),
     status: text("status").notNull().default("received"),
@@ -71,8 +77,9 @@ export const metaWebhookEvent = pgTable(
       table.platformAccountId,
     ),
     index("meta_webhook_event_user_id_idx").on(table.userId),
+    index("meta_webhook_event_org_id_idx").on(table.organizationId),
     index("meta_webhook_event_connection_id_idx").on(table.metaConnectionId),
-    index("meta_webhook_event_thread_idx").on(table.userId, table.threadId),
+    index("meta_webhook_event_thread_idx").on(table.organizationId, table.threadId),
   ],
 );
 

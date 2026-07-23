@@ -6,7 +6,7 @@ import { product, productVariant } from "@acme/db/schema";
 
 import { deleteProductImageFromVectorDb, searchProductsByImage } from "../lib/chromadb";
 import { queueProductImageIndexing } from "../lib/queue";
-import { protectedProcedure } from "../trpc";
+import { storeProcedure } from "../trpc";
 
 const VariantInput = z.object({
   id: z.string().optional(),
@@ -33,12 +33,12 @@ const ProductInput = z.object({
 });
 
 export const productsRouter = {
-  list: protectedProcedure.query(async ({ ctx }) => {
-    const userId = ctx.session.user.id;
+  list: storeProcedure.query(async ({ ctx }) => {
+    const organizationId = ctx.organizationId;
     const products = await ctx.db
       .select()
       .from(product)
-      .where(eq(product.userId, userId))
+      .where(eq(product.organizationId, organizationId))
       .orderBy(desc(product.createdAt));
 
     const variants =
@@ -52,13 +52,15 @@ export const productsRouter = {
     return { products, variants };
   }),
 
-  create: protectedProcedure.input(ProductInput).mutation(async ({ ctx, input }) => {
-    const userId = ctx.session.user.id;
+  create: storeProcedure.input(ProductInput).mutation(async ({ ctx, input }) => {
+    const userId = ctx.storeOwnerId;
+    const organizationId = ctx.organizationId;
 
     const [newProduct] = await ctx.db
       .insert(product)
       .values({
         userId,
+        organizationId,
         title: input.title,
         description: input.description,
         category: input.category,
@@ -91,7 +93,7 @@ export const productsRouter = {
       for (const variant of insertedVariants) {
         if (variant.imageUrl) {
           void queueProductImageIndexing({
-            userId,
+            organizationId,
             productId: newProduct.id,
             variantId: variant.id,
             imageUrl: variant.imageUrl,
@@ -105,7 +107,7 @@ export const productsRouter = {
       const isVariantImage = input.variants.some((v) => v.imageUrl === imgUrl);
       if (!isVariantImage) {
         void queueProductImageIndexing({
-          userId,
+          organizationId,
           productId: newProduct.id,
           imageUrl: imgUrl,
           productTitle: newProduct.title,
@@ -116,11 +118,11 @@ export const productsRouter = {
     return newProduct;
   }),
 
-  update: protectedProcedure.input(ProductInput).mutation(async ({ ctx, input }) => {
+  update: storeProcedure.input(ProductInput).mutation(async ({ ctx, input }) => {
     if (!input.id) {
       throw new Error("Missing product id");
     }
-    const userId = ctx.session.user.id;
+    const organizationId = ctx.organizationId;
     const productId = input.id;
 
     const [updatedProduct] = await ctx.db
@@ -133,7 +135,7 @@ export const productsRouter = {
         images: input.images,
         options: input.options,
       })
-      .where(and(eq(product.id, productId), eq(product.userId, userId)))
+      .where(and(eq(product.id, productId), eq(product.organizationId, organizationId)))
       .returning();
 
     if (!updatedProduct) {
@@ -176,7 +178,7 @@ export const productsRouter = {
 
         if (updated?.imageUrl) {
           void queueProductImageIndexing({
-            userId,
+            organizationId,
             productId,
             variantId: updated.id,
             imageUrl: updated.imageUrl,
@@ -204,7 +206,7 @@ export const productsRouter = {
 
         if (inserted?.imageUrl) {
           void queueProductImageIndexing({
-            userId,
+            organizationId,
             productId,
             variantId: inserted.id,
             imageUrl: inserted.imageUrl,
@@ -220,7 +222,7 @@ export const productsRouter = {
       const isVariantImage = input.variants.some((v) => v.imageUrl === imgUrl);
       if (!isVariantImage) {
         void queueProductImageIndexing({
-          userId,
+          organizationId,
           productId,
           imageUrl: imgUrl,
           productTitle: updatedProduct.title,
@@ -231,12 +233,12 @@ export const productsRouter = {
     return updatedProduct;
   }),
 
-  delete: protectedProcedure.input(z.object({ productId: z.string() })).mutation(async ({ ctx, input }) => {
-    const userId = ctx.session.user.id;
+  delete: storeProcedure.input(z.object({ productId: z.string() })).mutation(async ({ ctx, input }) => {
+    const organizationId = ctx.organizationId;
 
     const [deleted] = await ctx.db
       .delete(product)
-      .where(and(eq(product.id, input.productId), eq(product.userId, userId)))
+      .where(and(eq(product.id, input.productId), eq(product.organizationId, organizationId)))
       .returning();
 
     if (deleted) {
@@ -246,12 +248,12 @@ export const productsRouter = {
     return deleted ?? null;
   }),
 
-  testImageSearch: protectedProcedure
+  testImageSearch: storeProcedure
     .input(z.object({ imageUrl: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
+      const organizationId = ctx.organizationId;
 
-      const matches = await searchProductsByImage({ userId, imageUrl: input.imageUrl, limit: 5 });
+      const matches = await searchProductsByImage({ organizationId, imageUrl: input.imageUrl, limit: 5 });
       if (matches.length === 0) {
         return [];
       }
@@ -260,7 +262,7 @@ export const productsRouter = {
       const products = await ctx.db
         .select()
         .from(product)
-        .where(and(inArray(product.id, productIds), eq(product.userId, userId)));
+        .where(and(inArray(product.id, productIds), eq(product.organizationId, organizationId)));
 
       return matches.map((match) => ({
         ...match,

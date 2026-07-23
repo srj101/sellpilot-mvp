@@ -10,12 +10,14 @@ import {
   boolean,
 } from "drizzle-orm/pg-core";
 
-import { user } from "./auth-schema";
+import { user, organization } from "./auth-schema";
 import { product, productVariant } from "./product-schema";
 
 /**
- * Business profile per user (merchant). Scoped by userId so the AI agent
- * never crosses tenant boundaries when answering questions.
+ * Business profile per user (merchant). Scoped by organizationId ("store") so the
+ * AI agent never crosses tenant boundaries when answering questions — userId alone
+ * isn't enough once one person can own more than one store (see organizationId
+ * migration note at the top of packages/api/src/trpc.ts's orgProcedure).
  */
 export const businessProfile = pgTable(
   "business_profile",
@@ -26,6 +28,9 @@ export const businessProfile = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     description: text("description"),
     logoUrl: text("logo_url"),
@@ -40,11 +45,11 @@ export const businessProfile = pgTable(
       .$onUpdate(() => new Date())
       .notNull(),
   },
-  (table) => [unique("business_profile_user_unique").on(table.userId)],
+  (table) => [unique("business_profile_org_unique").on(table.organizationId)],
 );
 
 /**
- * Discount / promotional offers. Scoped by userId.
+ * Discount / promotional offers. Scoped by organizationId.
  */
 export const offer = pgTable(
   "offer",
@@ -55,6 +60,9 @@ export const offer = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     code: text("code"),
     description: text("description"),
@@ -72,11 +80,11 @@ export const offer = pgTable(
       .$onUpdate(() => new Date())
       .notNull(),
   },
-  (table) => [index("offer_user_id_idx").on(table.userId)],
+  (table) => [index("offer_org_id_idx").on(table.organizationId)],
 );
 
 /**
- * Customers (shoppers) per merchant. Scoped by userId.
+ * Customers (shoppers) per merchant. Scoped by organizationId.
  * Lookup by phone/email — created lazily by the AI agent when placing an order.
  */
 export const customer = pgTable(
@@ -88,6 +96,9 @@ export const customer = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     phone: text("phone"),
     email: text("email"),
@@ -103,14 +114,14 @@ export const customer = pgTable(
       .notNull(),
   },
   (table) => [
-    index("customer_user_id_idx").on(table.userId),
-    unique("customer_user_phone_unique").on(table.userId, table.phone),
-    unique("customer_user_email_unique").on(table.userId, table.email),
+    index("customer_org_id_idx").on(table.organizationId),
+    unique("customer_org_phone_unique").on(table.organizationId, table.phone),
+    unique("customer_org_email_unique").on(table.organizationId, table.email),
   ],
 );
 
 /**
- * Orders. Scoped by userId. status lifecycle:
+ * Orders. Scoped by organizationId. status lifecycle:
  * pending -> confirmed -> paid -> shipped -> delivered -> cancelled | returned
  */
 export const order = pgTable(
@@ -122,6 +133,9 @@ export const order = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     customerId: text("customer_id").references(() => customer.id, {
       onDelete: "set null",
     }),
@@ -162,10 +176,10 @@ export const order = pgTable(
       .notNull(),
   },
   (table) => [
-    index("order_user_id_idx").on(table.userId),
+    index("order_org_id_idx").on(table.organizationId),
     index("order_customer_id_idx").on(table.customerId),
     index("order_thread_id_idx").on(table.threadId),
-    unique("order_user_order_number_unique").on(table.userId, table.orderNumber),
+    unique("order_org_order_number_unique").on(table.organizationId, table.orderNumber),
     unique("order_payment_token_unique").on(table.paymentToken),
   ],
 );
@@ -355,6 +369,9 @@ export const faq = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     question: text("question").notNull(),
     answer: text("answer").notNull(),
     tags: jsonb("tags").$type<string[]>().default([]).notNull(),
@@ -364,11 +381,11 @@ export const faq = pgTable(
       .$onUpdate(() => new Date())
       .notNull(),
   },
-  (table) => [index("faq_user_id_idx").on(table.userId)],
+  (table) => [index("faq_org_id_idx").on(table.organizationId)],
 );
 
 /**
- * Store policies (shipping, return, warranty, privacy...). Scoped by userId.
+ * Store policies (shipping, return, warranty, privacy...). Scoped by organizationId.
  * type values: "shipping" | "return" | "warranty" | "privacy" | "terms"
  */
 export const policy = pgTable(
@@ -380,6 +397,9 @@ export const policy = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     type: text("type").notNull(),
     title: text("title").notNull(),
     body: text("body").notNull(),
@@ -391,13 +411,13 @@ export const policy = pgTable(
       .notNull(),
   },
   (table) => [
-    index("policy_user_id_idx").on(table.userId),
-    unique("policy_user_type_unique").on(table.userId, table.type),
+    index("policy_org_id_idx").on(table.organizationId),
+    unique("policy_org_type_unique").on(table.organizationId, table.type),
   ],
 );
 
 /**
- * Shipping rates per district. Scoped by userId.
+ * Shipping rates per district. Scoped by organizationId.
  * Used by the AI agent's calculateShipping tool.
  */
 export const shippingRate = pgTable(
@@ -409,6 +429,9 @@ export const shippingRate = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     district: text("district").notNull(),
     /** Cost in minor units */
     cost: integer("cost").notNull().default(0),
@@ -422,9 +445,9 @@ export const shippingRate = pgTable(
       .notNull(),
   },
   (table) => [
-    index("shipping_rate_user_id_idx").on(table.userId),
-    unique("shipping_rate_user_district_unique").on(
-      table.userId,
+    index("shipping_rate_org_id_idx").on(table.organizationId),
+    unique("shipping_rate_org_district_unique").on(
+      table.organizationId,
       table.district,
     ),
   ],
@@ -445,6 +468,9 @@ export const agentSession = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
     /** Channel: "messenger" | "instagram" | "whatsapp" | "web" */
     channel: text("channel").notNull(),
     /** Meta thread key or web session id */
@@ -463,8 +489,8 @@ export const agentSession = pgTable(
       .notNull(),
   },
   (table) => [
-    index("agent_session_user_id_idx").on(table.userId),
-    unique("agent_session_thread_unique").on(table.userId, table.threadId),
+    index("agent_session_org_id_idx").on(table.organizationId),
+    unique("agent_session_org_thread_unique").on(table.organizationId, table.threadId),
   ],
 );
 

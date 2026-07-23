@@ -1,7 +1,7 @@
 import { relations } from "drizzle-orm";
 import { pgTable, text, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
 
-import { user } from "./auth-schema";
+import { user, organization } from "./auth-schema";
 
 export const product = pgTable("product", {
   id: text("id")
@@ -10,6 +10,9 @@ export const product = pgTable("product", {
   userId: text("user_id")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description"),
   category: text("category"),

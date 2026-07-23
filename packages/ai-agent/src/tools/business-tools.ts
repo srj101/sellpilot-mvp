@@ -8,9 +8,9 @@ import { getToolContext } from "./context";
 
 // Type for business helpers (injected at runtime)
 export interface BusinessHelpers {
-  getBusinessProfile(userId: string): Promise<unknown>;
-  getOfferByCode(userId: string, code: string): Promise<unknown>;
-  getFAQMatches(userId: string, query: string, limit?: number): Promise<unknown[]>;
+  getBusinessProfile(organizationId: string): Promise<unknown>;
+  getOfferByCode(organizationId: string, code: string): Promise<unknown>;
+  getFAQMatches(organizationId: string, query: string, limit?: number): Promise<unknown[]>;
 }
 
 let helpers: BusinessHelpers | null = null;
@@ -31,9 +31,9 @@ export const getBusinessProfileTool = new DynamicStructuredTool({
   description: "Get the store's business profile (name, description, currency, support contact). Call this at the start of a new conversation to greet the customer using the real store name.",
   schema: z.object({}),
   func: async () => {
-    const { userId } = getToolContext();
-    console.log("[Tool] getBusinessProfile", { userId });
-    const result = await getHelpers().getBusinessProfile(userId);
+    const { organizationId } = getToolContext();
+    console.log("[Tool] getBusinessProfile", { organizationId });
+    const result = await getHelpers().getBusinessProfile(organizationId);
     return JSON.stringify(result);
   },
 });
@@ -46,9 +46,9 @@ export const getOfferByCodeTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { code } = input as { code: string };
-    const { userId } = getToolContext();
-    console.log("[Tool] getOfferByCode", { userId, code });
-    const result = await getHelpers().getOfferByCode(userId, code);
+    const { organizationId } = getToolContext();
+    console.log("[Tool] getOfferByCode", { organizationId, code });
+    const result = await getHelpers().getOfferByCode(organizationId, code);
     return JSON.stringify(result);
   },
 });
@@ -62,9 +62,9 @@ export const getFAQMatchesTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { query, limit } = input as { query: string; limit?: number };
-    const { userId } = getToolContext();
-    console.log("[Tool] getFAQMatches", { userId, query, limit });
-    const results = await getHelpers().getFAQMatches(userId, query, limit ?? 5);
+    const { organizationId } = getToolContext();
+    console.log("[Tool] getFAQMatches", { organizationId, query, limit });
+    const results = await getHelpers().getFAQMatches(organizationId, query, limit ?? 5);
     return JSON.stringify(results);
   },
 });

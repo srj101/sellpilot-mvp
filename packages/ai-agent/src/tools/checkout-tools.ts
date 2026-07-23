@@ -8,7 +8,7 @@ import { z } from "zod";
 import { getToolContext } from "./context";
 
 export interface QuoteOrderParams {
-  userId: string;
+  organizationId: string;
   productId: string;
   variantId?: string;
   quantity: number;
@@ -67,10 +67,10 @@ export const quoteOrderTool = new DynamicStructuredTool({
       district?: string;
       offerCode?: string;
     };
-    const { userId } = getToolContext();
-    console.log("[Tool] quoteOrder", { userId, productId, variantId, quantity, district });
+    const { organizationId } = getToolContext();
+    console.log("[Tool] quoteOrder", { organizationId, productId, variantId, quantity, district });
     const result = await getHelpers().quoteOrder({
-      userId,
+      organizationId,
       productId,
       variantId,
       quantity,

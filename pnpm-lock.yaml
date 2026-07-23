@@ -149,6 +149,9 @@ importers:
       chromadb:
         specifier: ^3.5.0
         version: 3.5.0
+      framer-motion:
+        specifier: ^12.42.2
+        version: 12.42.2(react-dom@19.1.4(react@19.1.4))(react@19.1.4)
       lucide-react:
         specifier: ^0.469.0
         version: 0.469.0(react@19.1.4)
@@ -258,13 +261,13 @@ importers:
     dependencies:
       '@langchain/core':
         specifier: ^1.2.3
-        version: 1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))
+        version: 1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))
       '@langchain/langgraph':
         specifier: ^1.4.8
-        version: 1.4.8(@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)))(react-dom@19.1.4(react@19.1.4))(react@19.1.4)(zod@4.1.12)
+        version: 1.4.8(@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)))(react-dom@19.1.4(react@19.1.4))(react@19.1.4)(zod@4.1.12)
       '@langchain/openai':
         specifier: ^1.5.5
-        version: 1.5.5(@aws-sdk/credential-provider-node@3.972.70)(@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)))(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))
+        version: 1.5.5(@aws-sdk/credential-provider-node@3.972.71)(@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)))(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))
       zod:
         specifier: 'catalog:'
         version: 4.1.12
@@ -327,6 +330,9 @@ importers:
       '@acme/db':
         specifier: workspace:*
         version: link:../db
+      '@aws-sdk/client-sesv2':
+        specifier: ^3.600.0
+        version: 3.1093.0
       '@better-auth/expo':
         specifier: 'catalog:'
         version: 1.4.0-beta.9(better-auth@1.4.0-beta.9(better-sqlite3@12.2.0)(react-dom@19.1.4(react@19.1.4))(react@19.1.4))(expo-constants@18.0.10)(expo-crypto@15.0.7(expo@54.0.20))(expo-linking@8.0.8)(expo-secure-store@15.0.7(expo@54.0.20))(expo-web-browser@15.0.8(expo@54.0.20)(react-native@0.82.0(@babel/core@7.28.5)(@types/react@19.1.12)(bufferutil@4.0.8)(react@19.1.4)(utf-8-validate@6.0.4)))
@@ -652,6 +658,10 @@ packages:
   '@ark/util@0.46.0':
     resolution: {integrity: sha512-JPy/NGWn/lvf1WmGCPw2VGpBg5utZraE84I7wli18EDF3p3zc/e9WolT35tINeZO3l7C77SjqRJeAUoT0CvMRg==}
 
+  '@aws-sdk/client-sesv2@3.1093.0':
+    resolution: {integrity: sha512-Lv39fmVecZiZvu92AHAZOC/BmubCoLlXTr7WUDv8cn2QYerkmhf5RV4m57NUj1K3yw1xKm7fleWm5odHE8rEMA==}
+    engines: {node: '>=20.0.0'}
+
   '@aws-sdk/client-sqs@3.1090.0':
     resolution: {integrity: sha512-XgBD9RoOgF0W1768kRkNNxwZOQZ18pucXWTsa2i4ebfHlbE4fM1Sz30jTLMIbkRGL/JXfMT76ywY3er3N0x5xw==}
     engines: {node: '>=20.0.0'}
@@ -660,36 +670,72 @@ packages:
     resolution: {integrity: sha512-7ur3kCKuvPLqlsZ2XlvnNBVQ7KkpSu6Y6dOTwSPHLrFpTEfZM8isLBJc4cgv96WB7GifeVM436mpycwxBd2vEA==}
     engines: {node: '>=20.0.0'}
 
+  '@aws-sdk/core@3.976.0':
+    resolution: {integrity: sha512-0cjRaEdlVoOrsNb9pP5q1Syyc8pXw5xSj2Np2ryReRTr9FppIIRVSdZK4lbnfmc2Hvgux/xBOUU6baB7z8//uA==}
+    engines: {node: '>=20.0.0'}
+
   '@aws-sdk/credential-provider-env@3.972.59':
     resolution: {integrity: sha512-Ny5e4Mfh3QPmiAc0AiUe+cbTXDlxkU3Rc+EpWOfyWeWEy6yp7Fa1KmfNeCc+1a8by9zQ9gtohmiQUkMPScF3ng==}
+    engines: {node: '>=20.0.0'}
+
+  '@aws-sdk/credential-provider-env@3.972.60':
+    resolution: {integrity: sha512-BAkxdoe7tpDDqCghGpuOeHQRbm/2znVvOQm0AvpQbA2tbfMN46doN4zx65fv85ImP3KADwc2zQPmbrlI9MPfMg==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/credential-provider-http@3.972.61':
     resolution: {integrity: sha512-8jAjgStl5Ytq4+HF3X/9f+EmRinaRbGRRtQGktlPfBRVx73H+R1y48vIeXerQtYGFaUqkEp3fT6jP854rVO2yQ==}
     engines: {node: '>=20.0.0'}
 
+  '@aws-sdk/credential-provider-http@3.972.62':
+    resolution: {integrity: sha512-g/0fGqKTb9xpKdd9AtpmV5Eo3DFKbnkpA2+w0peISSlu7NfAoWOuYBFxsu+yWBtxU89ka55ezoZBCbFaS8pjYQ==}
+    engines: {node: '>=20.0.0'}
+
   '@aws-sdk/credential-provider-ini@3.973.4':
     resolution: {integrity: sha512-e6ZvVsj90aRALf1kHP+J4iqC1496ZpVgqI/+u0LJ5HL7q7ATauGy4gdDvRCP13L1pN/fMiZLah162PGIYkbUVQ==}
+    engines: {node: '>=20.0.0'}
+
+  '@aws-sdk/credential-provider-ini@3.973.5':
+    resolution: {integrity: sha512-ylubazcRfq2TVus/qXucSXeC42Qdjp5HQxTu68K/BsdMiZlcSLD1zkpoCgApXZX1Y6YJhtGGs7ZHhO/GuIgBlw==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/credential-provider-login@3.972.66':
     resolution: {integrity: sha512-g2fsqm87r/nKthLZ0VkkDBElkGg0PvSa8d97HQ6EilMbJTZ6hxa8FxkSZyJfgPfFdZn0TTmkOffQmTSUcAHIng==}
     engines: {node: '>=20.0.0'}
 
+  '@aws-sdk/credential-provider-login@3.972.67':
+    resolution: {integrity: sha512-CCygIKJ9YbI3n84OClSaSppkgKKHVj2TGT33c6FRORZrYNZQ1POmD+ip0FLYokiJAK7sSdc3YVkOsBm90oxWMQ==}
+    engines: {node: '>=20.0.0'}
+
   '@aws-sdk/credential-provider-node@3.972.70':
     resolution: {integrity: sha512-3xzvkGdykBunxqh8WudmUpSyLWvIhfI6aBQo1b5rb3mDO5mNLadK+0hiI0qBQBMVynJbfLO+Ajy9dztMwy9O8w==}
+    engines: {node: '>=20.0.0'}
+
+  '@aws-sdk/credential-provider-node@3.972.71':
+    resolution: {integrity: sha512-HIg7Q2osBzajQwL+1Vkyh2E7Gim3eTNb9RHIsOxDGjW0eZg4oEKtRs5sioCnc73ilhaOm4gX2lHVF8J7+nt2rg==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/credential-provider-process@3.972.59':
     resolution: {integrity: sha512-DlZF2/MhLlatDdlrIy3CUCpfdbLrKx+3SMjVo+WyHnPpwzkc/M3vwAHw4OVJf7DMvO+4vfRqSCMc/E9I1auN0g==}
     engines: {node: '>=20.0.0'}
 
+  '@aws-sdk/credential-provider-process@3.972.60':
+    resolution: {integrity: sha512-YIo3f99hM43QdYG8hDzwGemnR/pU95b0kramqSJUTleCqaB7+HwKf7YZFHqvOgTqZTPx/mRmNIqoDRr3U0Z3Tw==}
+    engines: {node: '>=20.0.0'}
+
   '@aws-sdk/credential-provider-sso@3.973.3':
     resolution: {integrity: sha512-hmdDHoy2G5Es2e8IgelNMYUuSQI6uCIAKZMJ2u2PdKDhxvbk1uWD/g4+R7R5c/tJfKEB1+KjjWiaoCr/S+ZTiQ==}
     engines: {node: '>=20.0.0'}
 
+  '@aws-sdk/credential-provider-sso@3.973.4':
+    resolution: {integrity: sha512-BPdmL8sSBOCv4ngZ+3LHxyc3CNqDCEK37CHioCk7zGrTMY5sUtkH8q+o6qA80nn6w3/fyBPGNE7OIRlmoOxRQA==}
+    engines: {node: '>=20.0.0'}
+
   '@aws-sdk/credential-provider-web-identity@3.972.65':
     resolution: {integrity: sha512-gHQb/Kt0chjk/JQDa/GJDqmAvEuVn8n7z10wK2h0LFM9TUDRkohgOO4aEF+s2sBLM0br7Cl5W6P7phgjrrJvLQ==}
+    engines: {node: '>=20.0.0'}
+
+  '@aws-sdk/credential-provider-web-identity@3.972.66':
+    resolution: {integrity: sha512-kSAziJboOmZmsR9/MTbiNjowl2BPes1bQuJpne4qAZ62ubi8fjfr/aupJSQje6udBoYxXTQbsL0e0kby2la3ng==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/middleware-sdk-sqs@3.972.37':
@@ -700,12 +746,20 @@ packages:
     resolution: {integrity: sha512-dVZOroI/r3/ENvqNGgjMPul+jjlz9GddfVusgTXlVjfZj5isibOxecLkGQbRPp8XOuX+RAfjXLFgPkD1JS5xrw==}
     engines: {node: '>=20.0.0'}
 
+  '@aws-sdk/nested-clients@3.997.34':
+    resolution: {integrity: sha512-Y9REVrSwmLM+Qy6sZJ7ofMC2S3Hr3tPP/4CzL5U1olPP7OGoF+6+Px0E49cVQBtSxJtyeLJMf0UaBErfeSahAA==}
+    engines: {node: '>=20.0.0'}
+
   '@aws-sdk/signature-v4-multi-region@3.996.41':
     resolution: {integrity: sha512-QMUytg+FQMGouc8gHS00KoYih3+N6cqmVI/pQGOIo7Nr7OpQaiXjSYOuL+vsPZ1tymY4LAQ8MYcHJmws5LRxng==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/token-providers@3.1088.0':
     resolution: {integrity: sha512-4ObatWt2qpJg5FBk4LOOKrTQYzaqeewAtdO3r9ZO8lH9YqLtpTzLyIdy0mJ+nVdfYOnqISkKNfmzP22bNDhwyw==}
+    engines: {node: '>=20.0.0'}
+
+  '@aws-sdk/token-providers@3.1092.0':
+    resolution: {integrity: sha512-hBYUAr6iBLNFcsiWTgtBb0stdSw39VOUq4Sp4A5caCNf66BAZplWN4FleKrVpJx5li2YgdnK2DqoFSMWC642FQ==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/types@3.974.2':
@@ -5731,6 +5785,20 @@ packages:
     resolution: {integrity: sha512-gIXjKqtFuWEgzFRJA9WCQeSJLZDjgJUOMCMzxtvFq/37KojM1BFGufqsCy0r4qSQmYLsZYMeyRqzIWOMup03sw==}
     engines: {node: '>=14'}
 
+  framer-motion@12.42.2:
+    resolution: {integrity: sha512-5XY9luDiu0oHfHBjpDthFMh0ES+122w6p/papSJBweMkO8Sn+PW2QaEgRblQBpWFnuvZS5qvarpt/hO2pjGmnw==}
+    peerDependencies:
+      '@emotion/is-prop-valid': '*'
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
+    peerDependenciesMeta:
+      '@emotion/is-prop-valid':
+        optional: true
+      react:
+        optional: true
+      react-dom:
+        optional: true
+
   freeport-async@2.0.0:
     resolution: {integrity: sha512-K7od3Uw45AJg00XUmy15+Hae2hOcgKcmN3/EF6Y7i01O0gaqiRx8sUSpsb9+BRNL8RPBrhzPsVfy8q9ADlJuWQ==}
     engines: {node: '>=8'}
@@ -6759,6 +6827,12 @@ packages:
     resolution: {integrity: sha512-vVqVZQyf3WLx2Shd0qJ9xuvqgAyKPLAiqITEtqW0oIUjzo3PePDd6fW9iFz30ef7Ysp/oiWqbhszeGWW2T6Gzw==}
     engines: {node: '>=10'}
     hasBin: true
+
+  motion-dom@12.42.2:
+    resolution: {integrity: sha512-5gIMWLp/PycBtJRJWRgjxke5n8dlvkSn2DrYW+tr3XcqAZY1xZh6BJyooJXCM8wdfM7wfMjkBJNLge1CKPUIRA==}
+
+  motion-utils@12.39.0:
+    resolution: {integrity: sha512-8nadJAJjTtqRkmRF36FoJTrywK9nnFmnPwnSMyxaOCU7GDjN9RTMJIxx9De8ErM+vpPhMccr/6fo5WciyQLnMQ==}
 
   ms@2.0.0:
     resolution: {integrity: sha512-Tpp60P6IUJDTuOq/5Z8cdskzJujfwqfOTkrwIwj7IRISpnkJnT6SyJ4PCPnGMoFjC9ddhal5KVIYtAt97ix05A==}
@@ -8816,6 +8890,18 @@ snapshots:
   '@ark/util@0.46.0':
     optional: true
 
+  '@aws-sdk/client-sesv2@3.1093.0':
+    dependencies:
+      '@aws-sdk/core': 3.976.0
+      '@aws-sdk/credential-provider-node': 3.972.71
+      '@aws-sdk/signature-v4-multi-region': 3.996.41
+      '@aws-sdk/types': 3.974.2
+      '@smithy/core': 3.29.5
+      '@smithy/fetch-http-handler': 5.6.7
+      '@smithy/node-http-handler': 4.9.7
+      '@smithy/types': 4.16.1
+      tslib: 2.8.1
+
   '@aws-sdk/client-sqs@3.1090.0':
     dependencies:
       '@aws-sdk/core': 3.975.3
@@ -8839,6 +8925,17 @@ snapshots:
       bowser: 2.14.1
       tslib: 2.8.1
 
+  '@aws-sdk/core@3.976.0':
+    dependencies:
+      '@aws-sdk/types': 3.974.2
+      '@aws-sdk/xml-builder': 3.972.36
+      '@aws/lambda-invoke-store': 0.3.0
+      '@smithy/core': 3.29.5
+      '@smithy/signature-v4': 5.6.6
+      '@smithy/types': 4.16.1
+      bowser: 2.14.1
+      tslib: 2.8.1
+
   '@aws-sdk/credential-provider-env@3.972.59':
     dependencies:
       '@aws-sdk/core': 3.975.3
@@ -8847,9 +8944,27 @@ snapshots:
       '@smithy/types': 4.16.1
       tslib: 2.8.1
 
+  '@aws-sdk/credential-provider-env@3.972.60':
+    dependencies:
+      '@aws-sdk/core': 3.976.0
+      '@aws-sdk/types': 3.974.2
+      '@smithy/core': 3.29.5
+      '@smithy/types': 4.16.1
+      tslib: 2.8.1
+
   '@aws-sdk/credential-provider-http@3.972.61':
     dependencies:
       '@aws-sdk/core': 3.975.3
+      '@aws-sdk/types': 3.974.2
+      '@smithy/core': 3.29.5
+      '@smithy/fetch-http-handler': 5.6.7
+      '@smithy/node-http-handler': 4.9.7
+      '@smithy/types': 4.16.1
+      tslib: 2.8.1
+
+  '@aws-sdk/credential-provider-http@3.972.62':
+    dependencies:
+      '@aws-sdk/core': 3.976.0
       '@aws-sdk/types': 3.974.2
       '@smithy/core': 3.29.5
       '@smithy/fetch-http-handler': 5.6.7
@@ -8873,10 +8988,35 @@ snapshots:
       '@smithy/types': 4.16.1
       tslib: 2.8.1
 
+  '@aws-sdk/credential-provider-ini@3.973.5':
+    dependencies:
+      '@aws-sdk/core': 3.976.0
+      '@aws-sdk/credential-provider-env': 3.972.60
+      '@aws-sdk/credential-provider-http': 3.972.62
+      '@aws-sdk/credential-provider-login': 3.972.67
+      '@aws-sdk/credential-provider-process': 3.972.60
+      '@aws-sdk/credential-provider-sso': 3.973.4
+      '@aws-sdk/credential-provider-web-identity': 3.972.66
+      '@aws-sdk/nested-clients': 3.997.34
+      '@aws-sdk/types': 3.974.2
+      '@smithy/core': 3.29.5
+      '@smithy/credential-provider-imds': 4.4.10
+      '@smithy/types': 4.16.1
+      tslib: 2.8.1
+
   '@aws-sdk/credential-provider-login@3.972.66':
     dependencies:
       '@aws-sdk/core': 3.975.3
       '@aws-sdk/nested-clients': 3.997.33
+      '@aws-sdk/types': 3.974.2
+      '@smithy/core': 3.29.5
+      '@smithy/types': 4.16.1
+      tslib: 2.8.1
+
+  '@aws-sdk/credential-provider-login@3.972.67':
+    dependencies:
+      '@aws-sdk/core': 3.976.0
+      '@aws-sdk/nested-clients': 3.997.34
       '@aws-sdk/types': 3.974.2
       '@smithy/core': 3.29.5
       '@smithy/types': 4.16.1
@@ -8896,9 +9036,31 @@ snapshots:
       '@smithy/types': 4.16.1
       tslib: 2.8.1
 
+  '@aws-sdk/credential-provider-node@3.972.71':
+    dependencies:
+      '@aws-sdk/credential-provider-env': 3.972.60
+      '@aws-sdk/credential-provider-http': 3.972.62
+      '@aws-sdk/credential-provider-ini': 3.973.5
+      '@aws-sdk/credential-provider-process': 3.972.60
+      '@aws-sdk/credential-provider-sso': 3.973.4
+      '@aws-sdk/credential-provider-web-identity': 3.972.66
+      '@aws-sdk/types': 3.974.2
+      '@smithy/core': 3.29.5
+      '@smithy/credential-provider-imds': 4.4.10
+      '@smithy/types': 4.16.1
+      tslib: 2.8.1
+
   '@aws-sdk/credential-provider-process@3.972.59':
     dependencies:
       '@aws-sdk/core': 3.975.3
+      '@aws-sdk/types': 3.974.2
+      '@smithy/core': 3.29.5
+      '@smithy/types': 4.16.1
+      tslib: 2.8.1
+
+  '@aws-sdk/credential-provider-process@3.972.60':
+    dependencies:
+      '@aws-sdk/core': 3.976.0
       '@aws-sdk/types': 3.974.2
       '@smithy/core': 3.29.5
       '@smithy/types': 4.16.1
@@ -8914,10 +9076,29 @@ snapshots:
       '@smithy/types': 4.16.1
       tslib: 2.8.1
 
+  '@aws-sdk/credential-provider-sso@3.973.4':
+    dependencies:
+      '@aws-sdk/core': 3.976.0
+      '@aws-sdk/nested-clients': 3.997.34
+      '@aws-sdk/token-providers': 3.1092.0
+      '@aws-sdk/types': 3.974.2
+      '@smithy/core': 3.29.5
+      '@smithy/types': 4.16.1
+      tslib: 2.8.1
+
   '@aws-sdk/credential-provider-web-identity@3.972.65':
     dependencies:
       '@aws-sdk/core': 3.975.3
       '@aws-sdk/nested-clients': 3.997.33
+      '@aws-sdk/types': 3.974.2
+      '@smithy/core': 3.29.5
+      '@smithy/types': 4.16.1
+      tslib: 2.8.1
+
+  '@aws-sdk/credential-provider-web-identity@3.972.66':
+    dependencies:
+      '@aws-sdk/core': 3.976.0
+      '@aws-sdk/nested-clients': 3.997.34
       '@aws-sdk/types': 3.974.2
       '@smithy/core': 3.29.5
       '@smithy/types': 4.16.1
@@ -8941,6 +9122,17 @@ snapshots:
       '@smithy/types': 4.16.1
       tslib: 2.8.1
 
+  '@aws-sdk/nested-clients@3.997.34':
+    dependencies:
+      '@aws-sdk/core': 3.976.0
+      '@aws-sdk/signature-v4-multi-region': 3.996.41
+      '@aws-sdk/types': 3.974.2
+      '@smithy/core': 3.29.5
+      '@smithy/fetch-http-handler': 5.6.7
+      '@smithy/node-http-handler': 4.9.7
+      '@smithy/types': 4.16.1
+      tslib: 2.8.1
+
   '@aws-sdk/signature-v4-multi-region@3.996.41':
     dependencies:
       '@aws-sdk/types': 3.974.2
@@ -8952,6 +9144,15 @@ snapshots:
     dependencies:
       '@aws-sdk/core': 3.975.3
       '@aws-sdk/nested-clients': 3.997.33
+      '@aws-sdk/types': 3.974.2
+      '@smithy/core': 3.29.5
+      '@smithy/types': 4.16.1
+      tslib: 2.8.1
+
+  '@aws-sdk/token-providers@3.1092.0':
+    dependencies:
+      '@aws-sdk/core': 3.976.0
+      '@aws-sdk/nested-clients': 3.997.34
       '@aws-sdk/types': 3.974.2
       '@smithy/core': 3.29.5
       '@smithy/types': 4.16.1
@@ -10592,12 +10793,12 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))':
+  '@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))':
     dependencies:
       '@cfworker/json-schema': 4.1.1
       '@standard-schema/spec': 1.1.0
       js-tiktoken: 1.0.21
-      langsmith: 0.8.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))
+      langsmith: 0.8.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))
       mustache: 4.2.0
       p-queue: 6.6.2
       zod: 4.1.12
@@ -10608,13 +10809,13 @@ snapshots:
       - openai
       - ws
 
-  '@langchain/langgraph-checkpoint@1.1.3(@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)))':
+  '@langchain/langgraph-checkpoint@1.1.3(@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)))':
     dependencies:
-      '@langchain/core': 1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))
+      '@langchain/core': 1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))
 
-  '@langchain/langgraph-sdk@1.9.27(@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)))(react-dom@19.1.4(react@19.1.4))(react@19.1.4)':
+  '@langchain/langgraph-sdk@1.9.27(@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)))(react-dom@19.1.4(react@19.1.4))(react@19.1.4)':
     dependencies:
-      '@langchain/core': 1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))
+      '@langchain/core': 1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))
       '@langchain/protocol': 0.0.18
       '@types/json-schema': 7.0.15
       p-queue: 9.3.1
@@ -10623,11 +10824,11 @@ snapshots:
       react: 19.1.4
       react-dom: 19.1.4(react@19.1.4)
 
-  '@langchain/langgraph@1.4.8(@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)))(react-dom@19.1.4(react@19.1.4))(react@19.1.4)(zod@4.1.12)':
+  '@langchain/langgraph@1.4.8(@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)))(react-dom@19.1.4(react@19.1.4))(react@19.1.4)(zod@4.1.12)':
     dependencies:
-      '@langchain/core': 1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))
-      '@langchain/langgraph-checkpoint': 1.1.3(@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)))
-      '@langchain/langgraph-sdk': 1.9.27(@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)))(react-dom@19.1.4(react@19.1.4))(react@19.1.4)
+      '@langchain/core': 1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))
+      '@langchain/langgraph-checkpoint': 1.1.3(@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)))
+      '@langchain/langgraph-sdk': 1.9.27(@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)))(react-dom@19.1.4(react@19.1.4))(react@19.1.4)
       '@langchain/protocol': 0.0.18
       '@standard-schema/spec': 1.1.0
       zod: 4.1.12
@@ -10637,11 +10838,11 @@ snapshots:
       - svelte
       - vue
 
-  '@langchain/openai@1.5.5(@aws-sdk/credential-provider-node@3.972.70)(@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)))(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))':
+  '@langchain/openai@1.5.5(@aws-sdk/credential-provider-node@3.972.71)(@langchain/core@1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)))(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))':
     dependencies:
-      '@langchain/core': 1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))
+      '@langchain/core': 1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))
       js-tiktoken: 1.0.21
-      openai: 6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12)
+      openai: 6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12)
       zod: 4.1.12
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
@@ -14606,6 +14807,15 @@ snapshots:
       cross-spawn: 7.0.6
       signal-exit: 4.1.0
 
+  framer-motion@12.42.2(react-dom@19.1.4(react@19.1.4))(react@19.1.4):
+    dependencies:
+      motion-dom: 12.42.2
+      motion-utils: 12.39.0
+      tslib: 2.8.1
+    optionalDependencies:
+      react: 19.1.4
+      react-dom: 19.1.4(react@19.1.4)
+
   freeport-async@2.0.0: {}
 
   fresh@0.5.2: {}
@@ -15333,12 +15543,12 @@ snapshots:
 
   lan-network@0.1.7: {}
 
-  langsmith@0.8.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)):
+  langsmith@0.8.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)):
     dependencies:
       p-queue: 6.6.2
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
-      openai: 6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12)
+      openai: 6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12)
       ws: 8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)
 
   language-subtag-registry@0.3.23: {}
@@ -15890,6 +16100,12 @@ snapshots:
 
   mkdirp@1.0.4: {}
 
+  motion-dom@12.42.2:
+    dependencies:
+      motion-utils: 12.39.0
+
+  motion-utils@12.39.0: {}
+
   ms@2.0.0: {}
 
   ms@2.1.3: {}
@@ -16144,9 +16360,9 @@ snapshots:
       is-docker: 2.2.1
       is-wsl: 2.2.0
 
-  openai@6.45.0(@aws-sdk/credential-provider-node@3.972.70)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12):
+  openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12):
     optionalDependencies:
-      '@aws-sdk/credential-provider-node': 3.972.70
+      '@aws-sdk/credential-provider-node': 3.972.71
       '@smithy/signature-v4': 5.6.6
       ws: 8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4)
       zod: 4.1.12

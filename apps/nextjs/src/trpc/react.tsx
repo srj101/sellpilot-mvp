@@ -46,6 +46,11 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
           headers() {
             const headers = new Headers();
             headers.set("x-trpc-source", "nextjs-react");
+            // Mirrors the middleware's server-side injection (see middleware.ts) so
+            // client-fetched queries resolve against the store the URL is actually on,
+            // not a possibly-stale session.activeOrganizationId.
+            const match = /^\/([^/]+)\/dashboard(?:\/|$)/.exec(window.location.pathname);
+            if (match) headers.set("x-store-slug", match[1]!);
             return headers;
           },
         }),

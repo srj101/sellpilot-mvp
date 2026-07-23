@@ -3,7 +3,7 @@ import { Queue, Worker } from "bullmq";
 import { addProductImageToVectorDb } from "./chromadb";
 
 export interface ProductImageJobData {
-  userId: string;
+  organizationId: string;
   productId: string;
   variantId?: string;
   imageUrl: string;

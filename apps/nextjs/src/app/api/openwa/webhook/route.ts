@@ -98,16 +98,28 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Derive userId from sessionId
-  let userId: string | null = null;
+  // Derive the store (organizationId) from sessionId — session names are "org-{organizationId}"
+  // (see integrations.ts's sessionName helper). The "user-" prefix is legacy: sessions created
+  // before the org migration, kept here only so those old sessions don't just stop working.
+  let organizationId: string | null = null;
   let connection: any = null;
 
-  if (sessionId.startsWith("user-")) {
-    userId = sessionId.slice("user-".length);
-    if (userId) {
+  if (sessionId.startsWith("org-")) {
+    organizationId = sessionId.slice("org-".length);
+    if (organizationId) {
       connection = await db.query.metaConnection.findFirst({
         where: and(
-          eq(metaConnection.userId, userId),
+          eq(metaConnection.organizationId, organizationId),
+          eq(metaConnection.platform, "whatsapp")
+        ),
+      });
+    }
+  } else if (sessionId.startsWith("user-")) {
+    const legacyUserId = sessionId.slice("user-".length);
+    if (legacyUserId) {
+      connection = await db.query.metaConnection.findFirst({
+        where: and(
+          eq(metaConnection.userId, legacyUserId),
           eq(metaConnection.platform, "whatsapp")
         ),
       });
@@ -121,12 +133,15 @@ export async function POST(req: NextRequest) {
         const meta = c.metadata;
         return meta?.sessionId === sessionId;
       }) ?? null;
-    if (connection) {
-      userId = connection.userId;
-    }
   }
 
-  if (!userId || !connection) {
+  if (connection) {
+    organizationId = connection.organizationId;
+  }
+
+  const userId: string | null = connection?.userId ?? null;
+
+  if (!userId || !connection || !organizationId) {
     console.log(
       "[OpenWA Webhook] Connection not found for session:",
       sessionId
@@ -243,6 +258,7 @@ export async function POST(req: NextRequest) {
       eventType: isOutbound ? "outbound" : "message",
       metaConnectionId: connection.id,
       userId,
+      organizationId,
       platformAccountId: connection.platformAccountId,
       sourceId: data.id,
       rawPayload,
@@ -259,7 +275,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Trigger inbox updates
-  void triggerInboxBroadcast(userId);
+  void triggerInboxBroadcast(organizationId);
 
   // Enqueue AI reply job for incoming messages
   if (!isOutbound) {
@@ -280,6 +296,7 @@ export async function POST(req: NextRequest) {
         platform: "whatsapp",
         connectionId: connection.id,
         userId,
+        organizationId,
         recipientId: contactJid,
         threadId: `whatsapp:${contactPhone}`,
         incomingMessage: {

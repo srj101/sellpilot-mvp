@@ -4,18 +4,18 @@ import { z } from "zod/v4";
 import { and, desc, eq } from "@acme/db";
 import { offer } from "@acme/db/schema";
 
-import { protectedProcedure } from "../trpc";
+import { storeProcedure } from "../trpc";
 
 export const offersRouter = {
-  list: protectedProcedure.query(async ({ ctx }) => {
+  list: storeProcedure.query(async ({ ctx }) => {
     return ctx.db
       .select()
       .from(offer)
-      .where(eq(offer.userId, ctx.session.user.id))
+      .where(eq(offer.organizationId, ctx.organizationId))
       .orderBy(desc(offer.createdAt));
   }),
 
-  create: protectedProcedure
+  create: storeProcedure
     .input(
       z.object({
         title: z.string().min(1),
@@ -33,14 +33,15 @@ export const offersRouter = {
       const [newOffer] = await ctx.db
         .insert(offer)
         .values({
-          userId: ctx.session.user.id,
+          userId: ctx.storeOwnerId,
+          organizationId: ctx.organizationId,
           ...input,
         })
         .returning();
       return newOffer;
     }),
 
-  update: protectedProcedure
+  update: storeProcedure
     .input(
       z.object({
         id: z.string(),
@@ -60,17 +61,17 @@ export const offersRouter = {
       const [updatedOffer] = await ctx.db
         .update(offer)
         .set(data)
-        .where(and(eq(offer.id, id), eq(offer.userId, ctx.session.user.id)))
+        .where(and(eq(offer.id, id), eq(offer.organizationId, ctx.organizationId)))
         .returning();
       return updatedOffer;
     }),
 
-  delete: protectedProcedure
+  delete: storeProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const [deletedOffer] = await ctx.db
         .delete(offer)
-        .where(and(eq(offer.id, input.id), eq(offer.userId, ctx.session.user.id)))
+        .where(and(eq(offer.id, input.id), eq(offer.organizationId, ctx.organizationId)))
         .returning();
       return deletedOffer;
     }),
