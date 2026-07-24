@@ -226,3 +226,35 @@ export const storeProcedure = orgProcedure.use(({ ctx, next }) => {
   }
   return next({ ctx: { ...ctx, organizationId: ctx.organizationId } });
 });
+
+/**
+ * Owner-only procedure — for actions only the store owner can perform:
+ * connecting/disconnecting integrations (Meta, WhatsApp, Instagram) and
+ * deleting the store itself. Invited members, even with the "admin" custom
+ * role, cannot do these.
+ */
+export const ownerOnlyProcedure = storeProcedure.use(({ ctx, next }) => {
+  if (ctx.memberRole !== "owner") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Only the store owner can perform this action.",
+    });
+  }
+  return next({ ctx });
+});
+
+/**
+ * Superadmin procedure — for the SellPilot platform owner / developer.
+ * Assigned manually via DB: UPDATE \"user\" SET role = 'superadmin' WHERE email = '...';
+ * Has no store/org restrictions — can view any user, any store, enter any dashboard.
+ */
+export const superadminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  const userRole = (ctx.session.user as { role?: string | null }).role;
+  if (userRole !== "superadmin") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Superadmin access required.",
+    });
+  }
+  return next({ ctx });
+});

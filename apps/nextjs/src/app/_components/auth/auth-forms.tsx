@@ -27,7 +27,7 @@ import {
 } from "@acme/ui/field";
 import { Input } from "@acme/ui/input";
 
-import { signInWithFacebook, signInWithGoogle } from "~/app/login/actions";
+import { authClient } from "~/auth/client";
 
 interface AuthNotice {
   tone: "success" | "error";
@@ -162,29 +162,68 @@ function PasswordInput({
 }
 
 function SocialButtons() {
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isFacebookLoading, setIsFacebookLoading] = useState(false);
+
+  const handleGoogleSignIn = async () => {
+    setIsGoogleLoading(true);
+    try {
+      await authClient.signIn.social({
+        provider: "google",
+        callbackURL: "/dashboard",
+      });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  };
+
+  const handleFacebookSignIn = async () => {
+    setIsFacebookLoading(true);
+    try {
+      await authClient.signIn.social({
+        provider: "facebook",
+        callbackURL: "/dashboard",
+      });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsFacebookLoading(false);
+    }
+  };
+
   return (
     <div className="grid gap-2.5 sm:grid-cols-2">
-      <form action={signInWithGoogle}>
-        <Button
-          type="submit"
-          variant="outline"
-          className="h-11 w-full gap-2.5 border-border/80 bg-background/60 text-sm font-medium transition-all hover:border-primary/30 hover:bg-primary/5"
-        >
+      <Button
+        type="button"
+        variant="outline"
+        disabled={isGoogleLoading || isFacebookLoading}
+        onClick={handleGoogleSignIn}
+        className="h-11 w-full gap-2.5 border-border/80 bg-background/60 text-sm font-medium transition-all hover:border-primary/30 hover:bg-primary/5"
+      >
+        {isGoogleLoading ? (
+          <LoaderCircle className="size-4 animate-spin" />
+        ) : (
           <GoogleIcon className="size-4" />
-          Google
-        </Button>
-      </form>
+        )}
+        Google
+      </Button>
 
-      <form action={signInWithFacebook}>
-        <Button
-          type="submit"
-          variant="outline"
-          className="h-11 w-full gap-2.5 border-border/80 bg-background/60 text-sm font-medium transition-all hover:border-primary/30 hover:bg-primary/5"
-        >
+      <Button
+        type="button"
+        variant="outline"
+        disabled={isGoogleLoading || isFacebookLoading}
+        onClick={handleFacebookSignIn}
+        className="h-11 w-full gap-2.5 border-border/80 bg-background/60 text-sm font-medium transition-all hover:border-primary/30 hover:bg-primary/5"
+      >
+        {isFacebookLoading ? (
+          <LoaderCircle className="size-4 animate-spin" />
+        ) : (
           <Facebook className="size-4 text-[#1877F2]" />
-          Facebook
-        </Button>
-      </form>
+        )}
+        Facebook
+      </Button>
     </div>
   );
 }

@@ -6,31 +6,66 @@ import { role, member, invitation, user, organization } from "@acme/db/schema";
 
 import { orgProcedure, protectedProcedure, publicProcedure, storeProcedure } from "../trpc";
 
-const RESOURCES = ["orders", "products", "customers", "invoices", "users"] as const;
+const RESOURCES = [
+  "orders",
+  "products",
+  "customers",
+  "invoices",
+  "users",
+  "inbox",
+  "analytics",
+  "agent",
+  "offers",
+  "integrations",
+  "settings",
+] as const;
 const ACTIONS = ["view", "create", "edit", "delete"] as const;
 
 function perms(resources: readonly string[], actions: readonly string[]) {
   return resources.flatMap((r) => actions.map((a) => `${r}:${a}`));
 }
 
+/**
+ * Default roles returned when a store hasn't created any custom roles yet.
+ *
+ * - integrations:connect / integrations:disconnect are intentionally absent from
+ *   all default roles — those actions are owner-only at the procedure level and
+ *   cannot be delegated via a custom role.
+ * - integrations:view lets editors/admins see the integrations page without
+ *   being able to add or remove connections.
+ */
 const DEFAULT_ROLES = [
   {
     name: "Admin",
     key: "admin",
-    description: "Full access to every resource, plus can invite and manage team members.",
-    permissions: perms(RESOURCES, ACTIONS),
+    description: "Full access to every resource. Cannot connect/disconnect integrations (owner only).",
+    permissions: [
+      ...perms(["orders", "products", "customers", "invoices", "users"], ACTIONS),
+      ...perms(["inbox", "analytics", "agent", "offers", "settings"], ACTIONS),
+      "integrations:view",
+    ],
   },
   {
     name: "Editor",
     key: "editor",
-    description: "Can view, create, and edit records. Cannot delete or manage users.",
-    permissions: [...perms(["orders", "products", "customers", "invoices"], ["view", "create", "edit"]), "users:view"],
+    description: "Can view, create, and edit records. Cannot delete or manage users/settings.",
+    permissions: [
+      ...perms(["orders", "products", "customers", "invoices"], ["view", "create", "edit"]),
+      ...perms(["inbox", "offers"], ["view", "create", "edit"]),
+      "users:view",
+      "analytics:view",
+      "agent:view",
+      "integrations:view",
+    ],
   },
   {
     name: "Viewer",
     key: "viewer",
     description: "Read-only access across the store.",
-    permissions: perms(RESOURCES, ["view"]),
+    permissions: perms(
+      ["orders", "products", "customers", "invoices", "users", "inbox", "analytics", "agent", "offers", "integrations", "settings"],
+      ["view"],
+    ),
   },
 ];
 

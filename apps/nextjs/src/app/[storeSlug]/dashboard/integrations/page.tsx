@@ -15,7 +15,15 @@ export default async function IntegrationsPage({ params }: { params: Promise<{ s
 
   const { storeSlug } = await params;
   const caller = await createCaller(await headers());
-  const connections = await caller.integrations.list();
+  const [connections, membersData] = await Promise.all([
+    caller.integrations.list(),
+    caller.roles.listMembers(),
+  ]);
+
+  // Determine if the current user is the store owner
+  const currentUserId = session.user.id;
+  const currentMember = membersData.members.find((m) => m.userId === currentUserId);
+  const isOwner = currentMember?.role === "owner";
 
   const fbConnection = connections.find(
     (c) => c.platform === "facebook_page",
@@ -56,13 +64,22 @@ export default async function IntegrationsPage({ params }: { params: Promise<{ s
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Integrations</h1>
         <p className="text-muted-foreground mt-1 text-base">
-          Tap a channel to connect it and manage auto-replies.
+          {isOwner
+            ? "Tap a channel to connect it and manage auto-replies."
+            : "View connected channels. Only the store owner can connect or disconnect channels."}
         </p>
       </div>
 
-      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-6">
+      {!isOwner && (
+        <div className="mb-6 flex items-center gap-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+          <span className="font-semibold">Read-only:</span>
+          Connecting and disconnecting channels is restricted to the store owner.
+        </div>
+      )}
+
+      <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 max-w-5xl">
         {APPS.map((app) => (
-          <IntegrationCard key={app.id} {...app} storeSlug={storeSlug} />
+          <IntegrationCard key={app.id} {...app} storeSlug={storeSlug} isOwner={isOwner} />
         ))}
       </div>
     </DashboardShell>

@@ -2,7 +2,7 @@
 
 import { Button } from "@acme/ui/button";
 
-import { signInWithFacebook, signInWithGoogle } from "../actions";
+import { authClient } from "~/auth/client";
 
 function GoogleIcon(props: React.ComponentProps<"svg">) {
   return (
@@ -34,6 +34,20 @@ function FacebookIcon(props: React.ComponentProps<"svg">) {
 }
 
 export function LoginCard() {
+  const handleGoogleSignIn = () => {
+    void authClient.signIn.social({
+      provider: "google",
+      callbackURL: "/dashboard",
+    });
+  };
+
+  const handleFacebookSignIn = () => {
+    void authClient.signIn.social({
+      provider: "facebook",
+      callbackURL: "/dashboard",
+    });
+  };
+
   return (
     <div className="bg-card/80 text-card-foreground w-full max-w-md rounded-2xl border p-8 shadow-xl backdrop-blur-xl">
       <div className="mb-6 text-center">
@@ -45,24 +59,21 @@ export function LoginCard() {
       </div>
 
       <div className="space-y-3">
-        <form action={signInWithGoogle}>
-          <Button size="lg" className="w-full" type="submit">
-            <GoogleIcon className="mr-2 size-5" />
-            Sign in with Google
-          </Button>
-        </form>
+        <Button size="lg" className="w-full" type="button" onClick={handleGoogleSignIn}>
+          <GoogleIcon className="mr-2 size-5" />
+          Sign in with Google
+        </Button>
 
-        <form action={signInWithFacebook}>
-          <Button
-            size="lg"
-            variant="outline"
-            className="w-full"
-            type="submit"
-          >
-            <FacebookIcon className="mr-2 size-5 text-[#1877F2]" />
-            Sign in with Facebook
-          </Button>
-        </form>
+        <Button
+          size="lg"
+          variant="outline"
+          className="w-full"
+          type="button"
+          onClick={handleFacebookSignIn}
+        >
+          <FacebookIcon className="mr-2 size-5 text-[#1877F2]" />
+          Sign in with Facebook
+        </Button>
       </div>
     </div>
   );

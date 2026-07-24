@@ -14,6 +14,7 @@ import { postRouter } from "./router/post";
 import { productsRouter } from "./router/products";
 import { rolesRouter } from "./router/roles";
 import { settingsRouter } from "./router/settings";
+import { superadminRouter } from "./router/superadmin";
 import { usersRouter } from "./router/users";
 import { createTRPCRouter } from "./trpc";
 
@@ -34,6 +35,7 @@ export const appRouter = createTRPCRouter({
   org: orgRouter,
   roles: rolesRouter,
   settings: settingsRouter,
+  superadmin: superadminRouter,
   users: usersRouter,
 });
 

@@ -4,7 +4,7 @@ import { z } from "zod/v4";
 import { and, eq, ilike } from "@acme/db";
 import { member, organization } from "@acme/db/schema";
 
-import { protectedProcedure } from "../trpc";
+import { ownerOnlyProcedure, protectedProcedure, storeProcedure } from "../trpc";
 
 function slugify(name: string) {
   return (
@@ -139,5 +139,68 @@ export const orgRouter = {
       }
 
       return { ok: true as const, name: org.name };
+    }),
+
+  /**
+   * Permanently delete the caller's store and all data inside it.
+   * Only the store owner can do this — ownerOnlyProcedure enforces it.
+   * All child rows (members, integrations, products, orders, …) are removed
+   * by the ON DELETE CASCADE constraints on their organizationId foreign keys.
+   */
+  delete: ownerOnlyProcedure.mutation(async ({ ctx }) => {
+    await ctx.authApi.deleteOrganization({
+      body: { organizationId: ctx.organizationId },
+      headers: ctx.headers,
+    });
+    return { success: true };
+  }),
+
+  current: storeProcedure.query(async ({ ctx }) => {
+    const [org] = await ctx.db
+      .select({
+        id: organization.id,
+        name: organization.name,
+        slug: organization.slug,
+        logo: organization.logo,
+        metadata: organization.metadata,
+      })
+      .from(organization)
+      .where(eq(organization.id, ctx.organizationId))
+      .limit(1);
+    if (!org) throw new Error("Store not found");
+    return org;
+  }),
+
+  update: ownerOnlyProcedure
+    .input(
+      z.object({
+        name: z.string().min(1),
+        description: z.string().optional(),
+        logo: z.string().nullable().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db
+        .update(organization)
+        .set({
+          name: input.name.trim(),
+          logo: input.logo || null,
+          metadata: input.description?.trim() || null,
+        })
+        .where(eq(organization.id, ctx.organizationId));
+      return { success: true };
+    }),
+
+  getUploadUrl: ownerOnlyProcedure
+    .input(z.object({ contentType: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const ext = input.contentType.split("/")[1] ?? "jpg";
+      const key = `store-logos/${ctx.organizationId}/logo-${Date.now()}.${ext}`;
+      
+      const { getPresignedUploadUrl, getPublicUrl } = await import("../lib/s3");
+      const uploadUrl = await getPresignedUploadUrl(key, input.contentType);
+      const publicUrl = getPublicUrl(key);
+      
+      return { uploadUrl, publicUrl, key };
     }),
 } satisfies TRPCRouterRecord;

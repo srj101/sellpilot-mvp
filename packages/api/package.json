@@ -30,6 +30,10 @@
     "./queue": {
       "types": "./dist/lib/queue.d.ts",
       "default": "./src/lib/queue.ts"
+    },
+    "./s3": {
+      "types": "./dist/lib/s3.d.ts",
+      "default": "./src/lib/s3.ts"
     }
   },
   "license": "MIT",
@@ -45,6 +49,8 @@
     "@acme/auth": "workspace:*",
     "@acme/db": "workspace:*",
     "@acme/validators": "workspace:*",
+    "@aws-sdk/client-s3": "^3.1094.0",
+    "@aws-sdk/s3-request-presigner": "^3.1094.0",
     "@trpc/server": "catalog:",
     "bullmq": "^5.79.3",
     "chromadb": "^3.5.0",

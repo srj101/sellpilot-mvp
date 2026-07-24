@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { LogOut, Sparkles, Store } from "lucide-react";
 
 import { cn } from "@acme/ui";
@@ -201,12 +202,12 @@ export function StoreChatIntake({ userName }: { userName: string }) {
   return (
     <main className="flex h-screen w-full flex-col bg-background">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b px-6 py-4">
-        <div className="flex items-center gap-2">
+        <Link href="/onboarding/select-store" className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Store className="h-4 w-4" />
           </div>
           <span className="text-sm font-semibold">SellPilot Setup</span>
-        </div>
+        </Link>
         <form action={signOut}>
           <button
             type="submit"

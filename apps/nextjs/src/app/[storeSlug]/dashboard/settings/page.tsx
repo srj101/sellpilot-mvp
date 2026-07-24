@@ -14,7 +14,8 @@ export default async function SettingsPage() {
   }
 
   const caller = await createCaller(await headers());
-  const [profile, shippingRates, policies, faqs] = await Promise.all([
+  const [storeProfile, profile, shippingRates, policies, faqs] = await Promise.all([
+    caller.org.current(),
     caller.agent.getBusinessProfile(),
     caller.agent.listShippingRates(),
     caller.settings.listAllPolicies(),
@@ -24,6 +25,7 @@ export default async function SettingsPage() {
   return (
     <DashboardShell>
       <SettingsClient
+        storeProfile={storeProfile}
         profile={profile ?? null}
         shippingRates={shippingRates}
         faqs={faqs}

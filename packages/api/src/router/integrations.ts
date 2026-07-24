@@ -24,7 +24,7 @@ import {
   startSession,
   stopSession,
 } from "../lib/openwa";
-import { storeProcedure } from "../trpc";
+import { ownerOnlyProcedure, storeProcedure } from "../trpc";
 
 /** OpenWA session names are external WhatsApp Web session identifiers, so this must be
  * keyed by store (organizationId), not platform userId — a user owning two stores would
@@ -212,7 +212,7 @@ export const integrationsRouter = {
       .where(eq(metaConnection.organizationId, ctx.organizationId));
   }),
 
-  disconnectChannel: storeProcedure
+  disconnectChannel: ownerOnlyProcedure
     .input(z.object({ connectionId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const deleted = await ctx.db
@@ -235,7 +235,7 @@ export const integrationsRouter = {
       return { ok: true };
     }),
 
-  completeWhatsAppSignup: storeProcedure
+  completeWhatsAppSignup: ownerOnlyProcedure
     .input(
       z.object({
         code: z.string(),
@@ -263,7 +263,7 @@ export const integrationsRouter = {
       }
     }),
 
-  startOpenWASession: storeProcedure.mutation(async ({ ctx }) => {
+  startOpenWASession: ownerOnlyProcedure.mutation(async ({ ctx }) => {
     const name = sessionName(ctx.organizationId);
 
     try {
@@ -289,7 +289,7 @@ export const integrationsRouter = {
     }
   }),
 
-  fetchOpenWAQr: storeProcedure.mutation(async ({ ctx }) => {
+  fetchOpenWAQr: ownerOnlyProcedure.mutation(async ({ ctx }) => {
     const name = sessionName(ctx.organizationId);
     try {
       const qr = await getQrCode(name);
@@ -303,7 +303,7 @@ export const integrationsRouter = {
     }
   }),
 
-  checkOpenWAStatus: storeProcedure.mutation(async ({ ctx }) => {
+  checkOpenWAStatus: ownerOnlyProcedure.mutation(async ({ ctx }) => {
     const name = sessionName(ctx.organizationId);
     try {
       const s = await getSessionStatus(name);
@@ -314,7 +314,7 @@ export const integrationsRouter = {
     }
   }),
 
-  saveOpenWAConnection: storeProcedure.mutation(async ({ ctx }) => {
+  saveOpenWAConnection: ownerOnlyProcedure.mutation(async ({ ctx }) => {
     const name = sessionName(ctx.organizationId);
 
     try {
@@ -383,7 +383,7 @@ export const integrationsRouter = {
     }
   }),
 
-  disconnectOpenWA: storeProcedure.mutation(async ({ ctx }) => {
+  disconnectOpenWA: ownerOnlyProcedure.mutation(async ({ ctx }) => {
     const name = sessionName(ctx.organizationId);
     const storedSessionId = await getOpenWASessionIdForOrg(ctx.db, ctx.organizationId);
 

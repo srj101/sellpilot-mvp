@@ -15,6 +15,9 @@ import {
   Phone,
   DollarSign,
   MapPin,
+  Store,
+  UploadCloud,
+  Loader2,
 } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
@@ -23,6 +26,14 @@ import { Label } from "@acme/ui/label";
 import { Badge } from "@acme/ui/badge";
 
 import { useTRPC } from "~/trpc/react";
+
+type StoreProfile = {
+  id: string;
+  name: string;
+  slug: string;
+  logo: string | null;
+  metadata: string | null;
+};
 
 type BusinessProfile = {
   id: string;
@@ -59,6 +70,7 @@ interface Policy {
 }
 
 interface SettingsClientProps {
+  storeProfile: StoreProfile;
   profile: BusinessProfile;
   shippingRates: ShippingRate[];
   faqs: FAQ[];
@@ -107,6 +119,7 @@ function SettingsSection({
 
 /* ─── Main settings component ──────────────────────────────────────── */
 export function SettingsClient({
+  storeProfile,
   profile,
   shippingRates,
   faqs,
@@ -116,7 +129,16 @@ export function SettingsClient({
   const trpc = useTRPC();
   const [saving, setSaving] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
   const upsertProfile = useMutation(trpc.agent.upsertBusinessProfile.mutationOptions());
+  const updateStore = useMutation(trpc.org.update.mutationOptions());
+  const getUploadUrl = useMutation(trpc.org.getUploadUrl.mutationOptions());
+
+  // Store Profile state
+  const [storeName, setStoreName] = useState(storeProfile.name);
+  const [storeDescription, setStoreDescription] = useState(storeProfile.metadata ?? "");
+  const [storeLogo, setStoreLogo] = useState<string | null>(storeProfile.logo);
 
   // Business Profile state
   const [bpName, setBpName] = useState(profile?.name ?? "");
@@ -129,6 +151,71 @@ export function SettingsClient({
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
+  };
+
+  // Check if store profile inputs differ from database values to enable Save button
+  const isStoreProfileDirty =
+    storeName.trim() !== storeProfile.name ||
+    storeDescription.trim() !== (storeProfile.metadata ?? "") ||
+    storeLogo !== storeProfile.logo;
+
+  const handleSaveStore = async () => {
+    if (!storeName.trim()) {
+      showToast("Store name cannot be empty");
+      return;
+    }
+    setSaving("store");
+    try {
+      await updateStore.mutateAsync({
+        name: storeName.trim(),
+        description: storeDescription.trim() || undefined,
+        logo: storeLogo,
+      });
+      showToast("Store profile updated successfully!");
+      router.refresh();
+    } catch (err: any) {
+      showToast(err.message || "Failed to update store profile");
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Support standard image files
+    if (!file.type.startsWith("image/")) {
+      showToast("Please upload an image file");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const res = await getUploadUrl.mutateAsync({
+        contentType: file.type,
+      });
+
+      const uploadRes = await fetch(res.uploadUrl, {
+        method: "PUT",
+        body: file,
+        headers: {
+          "Content-Type": file.type,
+        },
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error("Failed to write image data to storage");
+      }
+
+      setStoreLogo(res.publicUrl);
+      showToast("Logo uploaded successfully!");
+    } catch (err: any) {
+      console.error(err);
+      showToast(err.message || "Error uploading image to S3");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleSaveProfile = async () => {
@@ -167,12 +254,106 @@ export function SettingsClient({
         </div>
       )}
 
+      {/* ─── Store Settings (Top Profile Section) ───────────────── */}
+      <SettingsSection
+        icon={Store}
+        title="Store Profile"
+        description="Configure your active store name, description, and display logo."
+        defaultOpen={true}
+      >
+        <div className="flex flex-col gap-6 md:flex-row">
+          {/* Logo Upload Avatar */}
+          <div className="flex flex-col items-center gap-3">
+            <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Store Display Image</Label>
+            <div className="relative group h-28 w-28 shrink-0 overflow-hidden rounded-2xl border bg-muted flex items-center justify-center shadow-inner">
+              {storeLogo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={storeLogo} alt="Store logo" className="h-full w-full object-cover" />
+              ) : (
+                <div className="text-center">
+                  <Store className="h-8 w-8 text-muted-foreground/60 mx-auto" />
+                  <span className="text-[10px] text-muted-foreground/50 font-bold block mt-1">No Image</span>
+                </div>
+              )}
+
+              {/* Upload Overlay */}
+              <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-all duration-200">
+                {uploading ? (
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                ) : (
+                  <>
+                    <UploadCloud className="h-5 w-5 mb-0.5" />
+                    <span className="text-[9px] font-bold uppercase tracking-wider">Upload</span>
+                  </>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoUpload}
+                  disabled={uploading}
+                  className="hidden"
+                />
+              </label>
+            </div>
+            {uploading && (
+              <span className="text-[10px] text-primary animate-pulse font-semibold">Uploading to S3...</span>
+            )}
+          </div>
+
+          {/* Text fields */}
+          <div className="flex-1 space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="store-name">Store Name</Label>
+                <Input
+                  id="store-name"
+                  value={storeName}
+                  onChange={(e) => setStoreName(e.target.value)}
+                  placeholder="My Store"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="store-slug">Store Handle (Slug)</Label>
+                <Input
+                  id="store-slug"
+                  value={storeProfile.slug}
+                  disabled
+                  className="bg-muted text-muted-foreground cursor-not-allowed"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="store-description">Store Description</Label>
+              <textarea
+                id="store-description"
+                value={storeDescription}
+                onChange={(e) => setStoreDescription(e.target.value)}
+                placeholder="Describe your store profile..."
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button
+                onClick={handleSaveStore}
+                disabled={!isStoreProfileDirty || saving === "store"}
+                className="gap-2"
+              >
+                <Save className="h-4 w-4" />
+                {saving === "store" ? "Saving..." : "Save Store Profile"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </SettingsSection>
+
       {/* ─── Business Profile ──────────────────────────────────── */}
       <SettingsSection
         icon={Building2}
         title="Business Profile"
         description="Your store name, contact info, and defaults used by the AI agent."
-        defaultOpen={true}
+        defaultOpen={false}
       >
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">

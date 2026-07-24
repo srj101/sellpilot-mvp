@@ -34,6 +34,7 @@ Write-Host "== Freeing ports ==" -ForegroundColor Cyan
 Clear-Port -Port 3000  # Next.js
 Clear-Port -Port 3001  # Worker health check
 Clear-Port -Port 6379  # Redis
+Clear-Port -Port 4566  # LocalStack (AWS Emulation)
 
 # If some OTHER container (not ours) already published 6379, stop it instead
 # of fighting Docker's own proxy process for the port.
@@ -41,6 +42,14 @@ $otherRedisContainer = docker ps --filter "publish=6379" --format "{{.Names}}" 2
     Where-Object { $_ -ne "local-redis" }
 foreach ($name in $otherRedisContainer) {
     Write-Host "Container '$name' is already publishing port 6379 - stopping it." -ForegroundColor Yellow
+    docker stop $name | Out-Null
+}
+
+# If some OTHER container (not ours) already published 4566, stop it instead
+$otherLocalstackContainer = docker ps --filter "publish=4566" --format "{{.Names}}" 2>$null |
+    Where-Object { $_ -ne "local-aws" }
+foreach ($name in $otherLocalstackContainer) {
+    Write-Host "Container '$name' is already publishing port 4566 - stopping it." -ForegroundColor Yellow
     docker stop $name | Out-Null
 }
 
@@ -67,7 +76,29 @@ if (-not `$exists) {
 docker logs -f local-redis
 "@
 
+$minioCmd = @"
+Write-Host 'MinIO S3 Emulator (Docker)' -ForegroundColor Cyan
+docker info *> `$null
+if (`$LASTEXITCODE -ne 0) {
+    Write-Host 'Docker does not seem to be running - start Docker Desktop and re-run.' -ForegroundColor Red
+    exit 1
+}
+`$exists = docker ps -a --filter 'name=^local-aws`$' --format '{{.Names}}' 2>`$null
+if (-not `$exists) {
+    Write-Host 'Creating local-aws (MinIO) container...' -ForegroundColor Yellow
+    docker run -d --name local-aws -p 4566:9000 -p 9001:9001 -e "MINIO_ROOT_USER=mock-key" -e "MINIO_ROOT_PASSWORD=mock-secret" --restart unless-stopped minio/minio server /data --console-address ":9001" | Out-Null
+} else {
+    `$running = docker inspect -f '{{.State.Running}}' local-aws 2>`$null
+    if (`$running -ne 'true') {
+        Write-Host 'Starting existing local-aws container...' -ForegroundColor Yellow
+        docker start local-aws | Out-Null
+    }
+}
+docker logs -f local-aws
+"@
+
 Start-Process powershell -ArgumentList @("-NoExit", "-Command", $redisCmd)
+Start-Process powershell -ArgumentList @("-NoExit", "-Command", $minioCmd)
 
 Start-Process powershell -ArgumentList @(
     "-NoExit", "-Command",
@@ -79,4 +110,4 @@ Start-Process powershell -ArgumentList @(
     "Set-Location '$repoRoot'; Write-Host 'Worker dev server' -ForegroundColor Cyan; pnpm --filter @acme/worker dev"
 )
 
-Write-Host "Started Redis, Next.js (http://localhost:3000), and worker dev servers, each in its own terminal window." -ForegroundColor Green
+Write-Host "Started Redis, LocalStack, Next.js (http://localhost:3000), and worker dev servers, each in its own terminal window." -ForegroundColor Green

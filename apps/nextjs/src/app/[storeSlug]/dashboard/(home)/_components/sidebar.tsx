@@ -509,7 +509,20 @@ function NavRow({
 }
 
 
-/* ─── Footer (sign out + theme + live status) ───────────────────────── */
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
+}
+
+function useActiveStoreInfo() {
+  const trpc = useTRPC();
+  const storesQuery = useQuery(trpc.org.listMine.queryOptions());
+  const activeStore = storesQuery.data?.find((s) => s.isActive);
+  return {
+    name: activeStore?.name ?? null,
+    role: activeStore?.role ?? null,
+  };
+}
 
 function SidebarFooter({ isCollapsed }: { isCollapsed: boolean }) {
   if (isCollapsed) {
@@ -542,7 +555,7 @@ function SidebarFooter({ isCollapsed }: { isCollapsed: boolean }) {
       <form action={signOut}>
         <Button variant="ghost" type="submit" className="w-full justify-start gap-2.5 rounded-lg px-3 text-[13px] font-medium text-rose-500 hover:bg-rose-500/10 hover:text-rose-500 transition-colors">
           <LogOut className="h-4 w-4" />
-          {!isCollapsed && <span>Log out</span>}
+          <span>Log out</span>
         </Button>
       </form>
     </div>
@@ -570,16 +583,8 @@ function useSidebarData() {
   return { pathname, active, unreadCount, storeSlug };
 }
 
-/* ─── Active store name (shown under the logo, links to the store switcher) ──── */
-
-function useActiveStoreName() {
-  const trpc = useTRPC();
-  const storesQuery = useQuery(trpc.org.listMine.queryOptions());
-  return storesQuery.data?.find((s) => s.isActive)?.name ?? null;
-}
-
 function SidebarLogoHeader({ isCollapsed }: { isCollapsed: boolean }) {
-  const storeName = useActiveStoreName();
+  const { name: storeName, role } = useActiveStoreInfo();
 
   return (
     <Link
@@ -594,11 +599,18 @@ function SidebarLogoHeader({ isCollapsed }: { isCollapsed: boolean }) {
       </div>
       {!isCollapsed && (
         <div className="min-w-0 flex-1">
-          <span className="block truncate text-[15px] font-semibold tracking-tight text-foreground">
-            SellPilot
-          </span>
+          <div className="flex items-center justify-between gap-1">
+            <span className="block truncate text-[14px] font-bold tracking-tight text-foreground">
+              SellPilot
+            </span>
+            {role && (
+              <span className="shrink-0 text-[8px] font-extrabold uppercase text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded-md leading-none">
+                {role}
+              </span>
+            )}
+          </div>
           {storeName && (
-            <span className="block truncate text-[11px] font-medium text-muted-foreground">
+            <span className="block truncate text-[11px] font-semibold text-foreground/80 mt-0.5">
               {storeName}
             </span>
           )}

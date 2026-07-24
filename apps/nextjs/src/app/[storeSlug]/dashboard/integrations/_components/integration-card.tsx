@@ -32,6 +32,7 @@ export interface IntegrationCardProps {
   connected: boolean;
   account?: string | null;
   storeSlug: string;
+  isOwner: boolean;
 }
 
 export function IntegrationCard({
@@ -41,16 +42,14 @@ export function IntegrationCard({
   connected,
   account,
   storeSlug,
+  isOwner,
 }: IntegrationCardProps) {
   const Icon = ICONS[id] ?? FacebookIcon;
   const gradient = GRADIENTS[id] ?? "from-primary to-primary/60";
   const href = `/${storeSlug}/dashboard/${ROUTES[id] ?? "integrations"}`;
 
-  return (
-    <Link
-      href={href}
-      className="group relative flex h-64 w-full flex-col justify-end overflow-hidden rounded-2xl shadow-md ring-1 ring-black/5 transition-transform duration-300 hover:-translate-y-0.5 hover:shadow-xl"
-    >
+  const cardBody = (
+    <>
       {/* Brand gradient background */}
       <div className={`absolute inset-0 bg-gradient-to-br ${gradient}`} />
 
@@ -87,12 +86,35 @@ export function IntegrationCard({
           <span className="truncate text-[11px] font-medium text-white/65">
             {connected ? (account ?? "Connected") : "Not connected"}
           </span>
-          <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-black shadow transition-transform duration-200 group-hover:scale-105">
-            Go
-            <ArrowUpRight className="h-3 w-3" />
-          </span>
+          {isOwner ? (
+            <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-black shadow transition-transform duration-200 group-hover:scale-105">
+              Go
+              <ArrowUpRight className="h-3 w-3" />
+            </span>
+          ) : (
+            <span className="inline-flex shrink-0 items-center rounded-full bg-white/20 px-2.5 py-1 text-xs font-medium text-white/80">
+              View only
+            </span>
+          )}
         </div>
       </div>
+    </>
+  );
+
+  if (!isOwner) {
+    return (
+      <div className="group relative flex h-64 w-full flex-col justify-end overflow-hidden rounded-2xl shadow-md ring-1 ring-black/5 opacity-80 cursor-default">
+        {cardBody}
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      href={href}
+      className="group relative flex h-64 w-full flex-col justify-end overflow-hidden rounded-2xl shadow-md ring-1 ring-black/5 transition-transform duration-300 hover:-translate-y-0.5 hover:shadow-xl"
+    >
+      {cardBody}
     </Link>
   );
 }
