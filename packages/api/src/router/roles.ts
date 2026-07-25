@@ -90,6 +90,31 @@ export const rolesRouter = {
     }));
   }),
 
+  /** Resolves the caller's own effective permissions — used by the dashboard nav to hide pages the member can't reach. */
+  getMyPermissions: businessScopedProcedure.query(async ({ ctx }) => {
+    if (ctx.memberRole === "owner") {
+      return { role: ctx.memberRole, permissions: ["*"] };
+    }
+    if (!ctx.customRoleKey) {
+      return { role: ctx.memberRole, permissions: [] as string[] };
+    }
+
+    const [customRole] = await ctx.db
+      .select({ permissions: role.permissions })
+      .from(role)
+      .where(and(eq(role.businessId, ctx.businessId), eq(role.key, ctx.customRoleKey)))
+      .limit(1);
+
+    if (customRole) {
+      return { role: ctx.memberRole, permissions: customRole.permissions };
+    }
+
+    // No custom role row yet (business never created any) — the member's key may still
+    // point at one of the synthesized defaults `list` falls back to (see DEFAULT_ROLES above).
+    const fallback = DEFAULT_ROLES.find((r) => r.key === ctx.customRoleKey);
+    return { role: ctx.memberRole, permissions: fallback?.permissions ?? [] };
+  }),
+
   create: businessScopedProcedure
     .input(
       z.object({
@@ -167,13 +192,27 @@ export const rolesRouter = {
           role: businessInvitation.customRoleKey,
           expiresAt: businessInvitation.expiresAt,
           businessName: business.name,
+          businessId: businessInvitation.businessId,
         })
         .from(businessInvitation)
         .innerJoin(business, eq(businessInvitation.businessId, business.id))
         .where(eq(businessInvitation.id, input.invitationId))
         .limit(1);
 
-      return row ?? null;
+      if (!row) return null;
+
+      // Only meaningful once a session exists — logged-out visitors just see the invite itself.
+      let alreadyMember = false;
+      if (ctx.session?.user) {
+        const [existingMembership] = await ctx.db
+          .select({ id: businessMember.id })
+          .from(businessMember)
+          .where(and(eq(businessMember.businessId, row.businessId), eq(businessMember.userId, ctx.session.user.id)))
+          .limit(1);
+        alreadyMember = !!existingMembership;
+      }
+
+      return { ...row, alreadyMember };
     }),
 
   /**

@@ -298,7 +298,15 @@ function PasswordStrength({ password }: { password: string }) {
   );
 }
 
-export function SignInForm({ notice }: { notice?: AuthNotice | null }) {
+export function SignInForm({
+  notice,
+  defaultEmail,
+  invitationId,
+}: {
+  notice?: AuthNotice | null;
+  defaultEmail?: string;
+  invitationId?: string;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -318,7 +326,7 @@ export function SignInForm({ notice }: { notice?: AuthNotice | null }) {
             rememberMe: true,
           });
 
-          router.push(data.url ?? "/dashboard");
+          router.push(invitationId ? `/accept-invitation?id=${invitationId}` : (data.url ?? "/dashboard"));
           router.refresh();
         } catch (cause) {
           setError(
@@ -355,6 +363,7 @@ export function SignInForm({ notice }: { notice?: AuthNotice | null }) {
               type="email"
               autoComplete="email"
               placeholder="you@company.com"
+              defaultValue={defaultEmail}
               required
               aria-invalid={!!error}
               className="h-11 rounded-xl pl-10"
@@ -402,7 +411,11 @@ export function SignInForm({ notice }: { notice?: AuthNotice | null }) {
         New to SellPilot?{" "}
         <Link
           className="text-primary font-semibold underline-offset-4 hover:underline"
-          href="/signup"
+          href={
+            invitationId
+              ? `/signup?email=${encodeURIComponent(defaultEmail ?? "")}&invitation=${invitationId}`
+              : "/signup"
+          }
         >
           Create an account
         </Link>
@@ -411,7 +424,13 @@ export function SignInForm({ notice }: { notice?: AuthNotice | null }) {
   );
 }
 
-export function SignUpForm() {
+export function SignUpForm({
+  defaultEmail,
+  invitationId,
+}: {
+  defaultEmail?: string;
+  invitationId?: string;
+} = {}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -441,7 +460,7 @@ export function SignUpForm() {
             rememberMe: true,
           });
 
-          router.push("/dashboard");
+          router.push(invitationId ? `/accept-invitation?id=${invitationId}` : "/dashboard");
           router.refresh();
         } catch (cause) {
           setError(
@@ -498,6 +517,7 @@ export function SignUpForm() {
                 type="email"
                 autoComplete="email"
                 placeholder="you@company.com"
+                defaultValue={defaultEmail}
                 required
                 aria-invalid={!!error}
                 className="h-11 rounded-xl pl-10"

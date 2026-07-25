@@ -40,5 +40,21 @@ export default async function StoreLayout({
     redirect("/onboarding/select-business");
   }
 
+  // Business exists but the wizard was abandoned partway (e.g. closed the browser right after
+  // step 1) — resume it instead of dropping them into a dashboard they never finished setting up.
+  // No loop-guard needed here: /onboarding/create-business is outside this layout's scope.
+  if (!result.onboardingCompleted) {
+    redirect(`/onboarding/create-business?step=connect&slug=${businessSlug}`);
+  }
+
+  // The locked page itself lives under /{businessSlug}/dashboard/locked, which this layout
+  // also governs — skip the redirect there or every visit to it would loop right back.
+  if (result.locked) {
+    const pathname = (await headers()).get("x-pathname") ?? "";
+    if (!pathname.endsWith("/dashboard/locked")) {
+      redirect(`/${businessSlug}/dashboard/locked`);
+    }
+  }
+
   return <>{children}</>;
 }

@@ -42,6 +42,14 @@ export default async function AcceptInvitationPage({
     );
   }
 
+  if (details.expiresAt && new Date(details.expiresAt) < new Date()) {
+    return (
+      <AuthShell eyebrow="Team invite" title="Invitation expired" description={`This invitation to join ${details.businessName} has expired. Ask them to send you a new one.`}>
+        <Link href="/login"><Button className="w-full">Back to sign in</Button></Link>
+      </AuthShell>
+    );
+  }
+
   if (!session) {
     return (
       <AuthShell
@@ -50,8 +58,8 @@ export default async function AcceptInvitationPage({
         description={`You've been invited as ${details.role ?? "a team member"}. Sign in or create an account with ${details.email} to accept, then come back to this link.`}
       >
         <div className="flex flex-col gap-2.5">
-          <Link href={`/login?email=${encodeURIComponent(details.email)}`}><Button className="w-full">Sign in</Button></Link>
-          <Link href={`/signup?email=${encodeURIComponent(details.email)}`}><Button variant="outline" className="w-full">Create an account</Button></Link>
+          <Link href={`/login?email=${encodeURIComponent(details.email)}&invitation=${id}`}><Button className="w-full">Sign in</Button></Link>
+          <Link href={`/signup?email=${encodeURIComponent(details.email)}&invitation=${id}`}><Button variant="outline" className="w-full">Create an account</Button></Link>
         </div>
       </AuthShell>
     );
@@ -65,6 +73,14 @@ export default async function AcceptInvitationPage({
         description={`This invitation was sent to ${details.email}, but you're signed in as ${session.user.email}. Sign out and try again with the invited email.`}
       >
         <Link href="/login"><Button className="w-full">Switch account</Button></Link>
+      </AuthShell>
+    );
+  }
+
+  if (details.alreadyMember) {
+    return (
+      <AuthShell eyebrow="Team invite" title="Already a member" description={`You're already a member of ${details.businessName}.`}>
+        <Link href="/dashboard"><Button className="w-full">Go to Dashboard</Button></Link>
       </AuthShell>
     );
   }

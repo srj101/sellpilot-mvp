@@ -25,6 +25,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   const params = searchParams ? await searchParams : {};
   const reset = getSearchValue(params, "reset");
+  const email = getSearchValue(params, "email");
+  const invitation = getSearchValue(params, "invitation");
 
   return (
     <AuthShell
@@ -41,6 +43,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             }
             : undefined
         }
+        defaultEmail={email}
+        invitationId={invitation}
       />
     </AuthShell>
   );

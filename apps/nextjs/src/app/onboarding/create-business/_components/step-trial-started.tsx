@@ -1,7 +1,10 @@
 "use client";
 
-import { CheckCircle2, Sparkles, ArrowRight } from "lucide-react";
+import { CheckCircle2, Sparkles, ArrowRight, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+
+import { useTRPC } from "~/trpc/react";
 
 export function StepTrialStarted({
   businessSlug,
@@ -10,7 +13,23 @@ export function StepTrialStarted({
   businessSlug: string;
   trialEndsAt?: string;
 }) {
+  const trpc = useTRPC();
+  const completeOnboarding = useMutation(trpc.business.completeOnboarding.mutationOptions());
   const [dateStr, setDateStr] = useState("");
+  const [navigating, setNavigating] = useState(false);
+
+  async function handleGoToDashboard() {
+    setNavigating(true);
+    try {
+      // Marks the wizard as actually finished — until this lands, [businessSlug]/layout.tsx
+      // would bounce a returning visitor back into the wizard instead of the dashboard.
+      // Awaited (not fire-and-forget) so the redirect below can't race ahead of the write.
+      await completeOnboarding.mutateAsync();
+    } catch {
+      // Best-effort — don't trap the user on the confirmation screen over this.
+    }
+    window.location.href = `/${businessSlug}/dashboard`;
+  }
 
   useEffect(() => {
     const date = trialEndsAt
@@ -69,11 +88,12 @@ export function StepTrialStarted({
           </div>
 
           <button
-            onClick={() => { window.location.href = `/${businessSlug}/dashboard`; }}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors"
+            onClick={handleGoToDashboard}
+            disabled={navigating}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
-            Go to Dashboard
-            <ArrowRight className="h-4 w-4" />
+            {navigating ? "Redirecting..." : "Go to Dashboard"}
+            {navigating ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
           </button>
         </div>
       </div>

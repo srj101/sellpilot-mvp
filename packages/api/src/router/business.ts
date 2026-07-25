@@ -1,8 +1,8 @@
 import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod/v4";
 
-import { and, eq, ilike } from "@acme/db";
-import { businessMember, business, subscription } from "@acme/db/schema";
+import { and, eq, ilike, isNotNull } from "@acme/db";
+import { businessMember, business, businessProfile, subscription } from "@acme/db/schema";
 import { sendEmail } from "@acme/auth/email";
 
 import { ownerOnlyProcedure, protectedProcedure, businessScopedProcedure, publicProcedure } from "../trpc";
@@ -34,6 +34,24 @@ async function uniqueSlugFor(ctx: { db: typeof import("@acme/db/client").db }, n
     n += 1;
     candidate = `${base}-${n}`;
   }
+}
+
+type SubscriptionRow = { status: string; currentPeriodEnd: Date | null; plan: string } | undefined;
+
+/** Shared by `enterBySlug` (the layout gate) and `checkLockStatus` so they can never disagree. */
+function computeLockStatus(sub: SubscriptionRow) {
+  if (!sub) return { locked: false, reason: null as string | null, expiresAt: null as Date | null, plan: null as string | null };
+
+  const isTrialExpired = sub.status === "trialing" && !!sub.currentPeriodEnd && sub.currentPeriodEnd < new Date();
+  const isCancelled = sub.status === "cancelled";
+  const isPastDue = sub.status === "past_due";
+
+  return {
+    locked: isTrialExpired || isCancelled || isPastDue,
+    reason: isTrialExpired ? "trial_expired" : isCancelled ? "cancelled" : isPastDue ? "past_due" : null,
+    expiresAt: sub.currentPeriodEnd,
+    plan: sub.plan,
+  };
 }
 
 export const businessRouter = {
@@ -91,7 +109,6 @@ export const businessRouter = {
         createdAt: new Date(),
       });
 
-      const { businessProfile, subscription } = await import("@acme/db/schema");
       await ctx.db.insert(businessProfile).values({
         userId: ctx.session.user.id,
         businessId,
@@ -191,8 +208,103 @@ export const businessRouter = {
           .where(eq(session.token, ctx.session.session.token));
       }
 
-      return { ok: true as const, name: org.name };
+      const [sub] = await ctx.db
+        .select({ status: subscription.status, currentPeriodEnd: subscription.currentPeriodEnd, plan: subscription.plan })
+        .from(subscription)
+        .where(eq(subscription.businessId, org.id))
+        .limit(1);
+      const lock = computeLockStatus(sub);
+
+      const [profile] = await ctx.db
+        .select({ onboardingCompletedAt: businessProfile.onboardingCompletedAt })
+        .from(businessProfile)
+        .where(eq(businessProfile.businessId, org.id))
+        .limit(1);
+
+      return {
+        ok: true as const,
+        name: org.name,
+        onboardingCompleted: !!profile?.onboardingCompletedAt,
+        locked: lock.locked,
+        lockReason: lock.reason,
+        plan: lock.plan,
+        trialEndsAt: lock.expiresAt,
+      };
     }),
+
+  /**
+   * Marks the onboarding wizard as actually finished — called when step-trial-started.tsx
+   * (the wizard's real final screen) mounts. Before this, the business "exists" but
+   * enterBySlug/getPostLoginRoute treat it as partial and resume the wizard instead of
+   * sending the user to the dashboard.
+   */
+  completeOnboarding: businessScopedProcedure.mutation(async ({ ctx }) => {
+    await ctx.db
+      .update(businessProfile)
+      .set({ onboardingCompletedAt: new Date() })
+      .where(eq(businessProfile.businessId, ctx.businessId));
+    return { success: true };
+  }),
+
+  /** Scoped lock check for the current store — same computation `enterBySlug` uses for the layout gate. */
+  checkLockStatus: businessScopedProcedure.query(async ({ ctx }) => {
+    const [sub] = await ctx.db
+      .select({ status: subscription.status, currentPeriodEnd: subscription.currentPeriodEnd, plan: subscription.plan })
+      .from(subscription)
+      .where(eq(subscription.businessId, ctx.businessId))
+      .limit(1);
+    return computeLockStatus(sub);
+  }),
+
+  /**
+   * Mirrors the redirect logic in apps/nextjs/src/app/dashboard/page.tsx. That page has its own
+   * direct DB access via a Server Component caller and doesn't call this over the network (no
+   * reason to add a round-trip to a check it can already do in-process) — this exists as a
+   * standalone, independently callable version of the same decision.
+   */
+  getPostLoginRoute: protectedProcedure.query(async ({ ctx }) => {
+    const userRole = (ctx.session.user as { role?: string | null }).role;
+    if (userRole === "superadmin") return { route: "/superadmin" };
+
+    if (!ctx.session.user.emailVerified) {
+      return { route: `/verify-email?email=${encodeURIComponent(ctx.session.user.email)}` };
+    }
+
+    const userId = ctx.session.user.id;
+    const activeBusinessId = (ctx.session.session as { activeBusinessId?: string | null }).activeBusinessId;
+
+    const memberships = await ctx.db
+      .select({
+        businessId: businessMember.businessId,
+        slug: business.slug,
+        onboardingCompletedAt: businessProfile.onboardingCompletedAt,
+      })
+      .from(businessMember)
+      .innerJoin(business, eq(businessMember.businessId, business.id))
+      .leftJoin(businessProfile, eq(businessProfile.businessId, business.id))
+      .where(eq(businessMember.userId, userId));
+
+    if (memberships.length === 0) return { route: "/onboarding/create-business" };
+
+    const target = memberships.length === 1 ? memberships[0]! : memberships.find((m) => m.businessId === activeBusinessId);
+    if (!target) return { route: "/onboarding/select-business" };
+
+    if (!target.onboardingCompletedAt) {
+      return { route: `/onboarding/create-business?step=connect&slug=${target.slug}` };
+    }
+    return { route: `/${target.slug}/dashboard` };
+  }),
+
+  /** Not currently called from anywhere in the app — added for API completeness per the work tracker. */
+  hasCompletedOnboarding: protectedProcedure.query(async ({ ctx }) => {
+    const [completed] = await ctx.db
+      .select({ id: businessMember.id })
+      .from(businessMember)
+      .innerJoin(businessProfile, eq(businessProfile.businessId, businessMember.businessId))
+      .where(and(eq(businessMember.userId, ctx.session.user.id), isNotNull(businessProfile.onboardingCompletedAt)))
+      .limit(1);
+    return { completed: !!completed };
+  }),
 
   /**
    * Permanently delete the caller's store and all data inside it.

@@ -41,6 +41,9 @@ export const businessProfile = pgTable(
     supportEmail: text("support_email"),
     supportPhone: text("support_phone"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    /** Set once the onboarding wizard reaches its final "trial started" screen — null means
+     * the business exists but the wizard was abandoned partway (see business.enterBySlug). */
+    onboardingCompletedAt: timestamp("onboarding_completed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

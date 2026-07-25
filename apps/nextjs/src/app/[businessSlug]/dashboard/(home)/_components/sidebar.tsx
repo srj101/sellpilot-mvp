@@ -142,6 +142,62 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+/**
+ * Business-level (resource:action) permission required for each gated nav item — matches the
+ * table in SELLPILOT_USER_FLOWS.md §4.3. "__owner__" means owner-only regardless of permissions
+ * array. Items not listed here (Overview, eCommerce, Support, Pricing, Notifications) are
+ * ungated. This is UX-only — the actual enforcement lives in each page's own procedure.
+ */
+const NAV_PERMISSIONS: Record<string, string> = {
+  "/dashboard/inbox": "inbox:view",
+  "/dashboard/products": "products:view",
+  "/dashboard/orders": "orders:view",
+  "/dashboard/customers": "customers:view",
+  "/dashboard/analytics": "analytics:view",
+  "/dashboard/offers": "offers:view",
+  "/dashboard/invoices": "invoices:view",
+  "/dashboard/integrations": "__owner__",
+  "/dashboard/billing": "__owner__",
+  "/dashboard/roles": "users:view",
+  "/dashboard/settings": "settings:view",
+};
+
+/**
+ * Shared by the desktop and mobile sidebars (was previously copy-pasted in both, only
+ * covering the platform-admin-only items). Layers the granular business-permission check
+ * (roles.getMyPermissions) on top of that existing platform-role check — they're different
+ * axes (platform role vs. business-member permission) and both still apply.
+ */
+function useFilteredNavGroups() {
+  const trpc = useTRPC();
+  const session = authClient.useSession();
+  const role = session.data?.user?.role ?? "client";
+  const isPlatformAdmin = role === "admin" || role === "super_admin";
+
+  const { data: myPermissions } = useQuery(trpc.roles.getMyPermissions.queryOptions());
+  const permissionsLoaded = myPermissions !== undefined;
+  const isOwner = myPermissions?.role === "owner";
+  const permissions = myPermissions?.permissions ?? [];
+  const hasAllPermissions = permissions.includes("*");
+
+  return NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => {
+      if ((item.label === "SaaS Dashboard" || item.label === "Users") && !isPlatformAdmin) {
+        return false;
+      }
+
+      const required = NAV_PERMISSIONS[item.href];
+      if (!required) return true;
+      // Fail open while the permissions query is still loading — avoids a flash of hidden
+      // items on first paint for the common case (owners / full-access members).
+      if (!permissionsLoaded || isOwner || hasAllPermissions) return true;
+      if (required === "__owner__") return false;
+      return permissions.includes(required);
+    }),
+  })).filter((group) => group.items.length > 0);
+}
+
 /* ─── Helpers ───────────────────────────────────────────────────────── */
 
 const normalize = (v: string | null) => {
@@ -626,19 +682,7 @@ function SidebarBody({ isCollapsed }: { isCollapsed: boolean }) {
   const { pathname, active: _active, unreadCount, businessSlug } = useSidebarData();
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
 
-  const session = authClient.useSession();
-  const role = session.data?.user?.role ?? "client";
-
-  const isPlatformAdmin = role === "admin" || role === "super_admin";
-  const filteredGroups = NAV_GROUPS.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => {
-      if ((item.label === "SaaS Dashboard" || item.label === "Users") && !isPlatformAdmin) {
-        return false;
-      }
-      return true;
-    }),
-  })).filter((group) => group.items.length > 0);
+  const filteredGroups = useFilteredNavGroups();
 
   return (
     <div
@@ -692,19 +736,7 @@ function MobileSidebarSheet() {
   const { pathname, unreadCount, businessSlug } = useSidebarData();
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
 
-  const session = authClient.useSession();
-  const role = session.data?.user?.role ?? "client";
-
-  const isPlatformAdmin = role === "admin" || role === "super_admin";
-  const filteredGroups = NAV_GROUPS.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => {
-      if ((item.label === "SaaS Dashboard" || item.label === "Users") && !isPlatformAdmin) {
-        return false;
-      }
-      return true;
-    }),
-  })).filter((group) => group.items.length > 0);
+  const filteredGroups = useFilteredNavGroups();
 
   return (
     <div className="flex h-full flex-col px-3 py-5">

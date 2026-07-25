@@ -14,6 +14,9 @@ export default async function DashboardRedirectPage() {
   if (!session) redirect("/login");
   if (!session.user.emailVerified) redirect("/verify-email");
 
+  const userRole = (session.user as { role?: string | null }).role;
+  if (userRole === "superadmin") redirect("/superadmin");
+
   const caller = await createCaller(await headers());
   const myStores = await caller.business.listMine();
 
