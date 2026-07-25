@@ -27,12 +27,12 @@ export const checkoutRouter = {
 
       const [items, profile, [view]] = await Promise.all([
         ctx.db.select().from(orderItem).where(eq(orderItem.orderId, orderRow.id)),
-        ctx.db.query.businessProfile.findFirst({ where: eq(businessProfile.organizationId, orderRow.organizationId) }),
+        ctx.db.query.businessProfile.findFirst({ where: eq(businessProfile.businessId, orderRow.businessId) }),
         ctx.db
           .insert(pageView)
           .values({
             userId: orderRow.userId,
-            organizationId: orderRow.organizationId,
+            businessId: orderRow.businessId,
             orderId: orderRow.id,
             sessionId: crypto.randomUUID(),
             path: `/pay/${input.token}`,

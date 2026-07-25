@@ -10,13 +10,13 @@ import {
   boolean,
 } from "drizzle-orm/pg-core";
 
-import { user, organization } from "./auth-schema";
+import { user, business } from "./auth-schema";
 import { product, productVariant } from "./product-schema";
 
 /**
- * Business profile per user (merchant). Scoped by organizationId ("store") so the
+ * Business profile per user (merchant). Scoped by businessId ("store") so the
  * AI agent never crosses tenant boundaries when answering questions — userId alone
- * isn't enough once one person can own more than one store (see organizationId
+ * isn't enough once one person can own more than one store (see businessId
  * migration note at the top of packages/api/src/trpc.ts's orgProcedure).
  */
 export const businessProfile = pgTable(
@@ -28,13 +28,15 @@ export const businessProfile = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    organizationId: text("organization_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
+      .references(() => business.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     description: text("description"),
+    industry: text("industry"),
+    address: text("address"),
     logoUrl: text("logo_url"),
-    currency: text("currency").default("USD").notNull(),
+    currency: text("currency").default("BDT").notNull(),
     defaultShippingCost: integer("default_shipping_cost").default(0).notNull(),
     supportEmail: text("support_email"),
     supportPhone: text("support_phone"),
@@ -45,11 +47,11 @@ export const businessProfile = pgTable(
       .$onUpdate(() => new Date())
       .notNull(),
   },
-  (table) => [unique("business_profile_org_unique").on(table.organizationId)],
+  (table) => [unique("business_profile_org_unique").on(table.businessId)],
 );
 
 /**
- * Discount / promotional offers. Scoped by organizationId.
+ * Discount / promotional offers. Scoped by businessId.
  */
 export const offer = pgTable(
   "offer",
@@ -60,9 +62,9 @@ export const offer = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    organizationId: text("organization_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
+      .references(() => business.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     code: text("code"),
     description: text("description"),
@@ -80,11 +82,11 @@ export const offer = pgTable(
       .$onUpdate(() => new Date())
       .notNull(),
   },
-  (table) => [index("offer_org_id_idx").on(table.organizationId)],
+  (table) => [index("offer_org_id_idx").on(table.businessId)],
 );
 
 /**
- * Customers (shoppers) per merchant. Scoped by organizationId.
+ * Customers (shoppers) per merchant. Scoped by businessId.
  * Lookup by phone/email — created lazily by the AI agent when placing an order.
  */
 export const customer = pgTable(
@@ -96,9 +98,9 @@ export const customer = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    organizationId: text("organization_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
+      .references(() => business.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     phone: text("phone"),
     email: text("email"),
@@ -114,14 +116,14 @@ export const customer = pgTable(
       .notNull(),
   },
   (table) => [
-    index("customer_org_id_idx").on(table.organizationId),
-    unique("customer_org_phone_unique").on(table.organizationId, table.phone),
-    unique("customer_org_email_unique").on(table.organizationId, table.email),
+    index("customer_org_id_idx").on(table.businessId),
+    unique("customer_org_phone_unique").on(table.businessId, table.phone),
+    unique("customer_org_email_unique").on(table.businessId, table.email),
   ],
 );
 
 /**
- * Orders. Scoped by organizationId. status lifecycle:
+ * Orders. Scoped by businessId. status lifecycle:
  * pending -> confirmed -> paid -> shipped -> delivered -> cancelled | returned
  */
 export const order = pgTable(
@@ -133,9 +135,9 @@ export const order = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    organizationId: text("organization_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
+      .references(() => business.id, { onDelete: "cascade" }),
     customerId: text("customer_id").references(() => customer.id, {
       onDelete: "set null",
     }),
@@ -176,10 +178,10 @@ export const order = pgTable(
       .notNull(),
   },
   (table) => [
-    index("order_org_id_idx").on(table.organizationId),
+    index("order_org_id_idx").on(table.businessId),
     index("order_customer_id_idx").on(table.customerId),
     index("order_thread_id_idx").on(table.threadId),
-    unique("order_org_order_number_unique").on(table.organizationId, table.orderNumber),
+    unique("order_org_order_number_unique").on(table.businessId, table.orderNumber),
     unique("order_payment_token_unique").on(table.paymentToken),
   ],
 );
@@ -335,6 +337,10 @@ export const subscription = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    businessId: text("business_id")
+      .references(() => business.id, { onDelete: "cascade" }),
+    billingCycle: text("billing_cycle").default("monthly"),
+    aiConversationsUsed: integer("ai_conversations_used").default(0),
     /** "starter" | "pro" | "enterprise" */
     plan: text("plan").notNull(),
     /** "trialing" | "active" | "past_due" | "cancelled" */
@@ -369,9 +375,9 @@ export const faq = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    organizationId: text("organization_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
+      .references(() => business.id, { onDelete: "cascade" }),
     question: text("question").notNull(),
     answer: text("answer").notNull(),
     tags: jsonb("tags").$type<string[]>().default([]).notNull(),
@@ -381,11 +387,11 @@ export const faq = pgTable(
       .$onUpdate(() => new Date())
       .notNull(),
   },
-  (table) => [index("faq_org_id_idx").on(table.organizationId)],
+  (table) => [index("faq_org_id_idx").on(table.businessId)],
 );
 
 /**
- * Store policies (shipping, return, warranty, privacy...). Scoped by organizationId.
+ * Store policies (shipping, return, warranty, privacy...). Scoped by businessId.
  * type values: "shipping" | "return" | "warranty" | "privacy" | "terms"
  */
 export const policy = pgTable(
@@ -397,9 +403,9 @@ export const policy = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    organizationId: text("organization_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
+      .references(() => business.id, { onDelete: "cascade" }),
     type: text("type").notNull(),
     title: text("title").notNull(),
     body: text("body").notNull(),
@@ -411,13 +417,13 @@ export const policy = pgTable(
       .notNull(),
   },
   (table) => [
-    index("policy_org_id_idx").on(table.organizationId),
-    unique("policy_org_type_unique").on(table.organizationId, table.type),
+    index("policy_org_id_idx").on(table.businessId),
+    unique("policy_org_type_unique").on(table.businessId, table.type),
   ],
 );
 
 /**
- * Shipping rates per district. Scoped by organizationId.
+ * Shipping rates per district. Scoped by businessId.
  * Used by the AI agent's calculateShipping tool.
  */
 export const shippingRate = pgTable(
@@ -429,9 +435,9 @@ export const shippingRate = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    organizationId: text("organization_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
+      .references(() => business.id, { onDelete: "cascade" }),
     district: text("district").notNull(),
     /** Cost in minor units */
     cost: integer("cost").notNull().default(0),
@@ -445,9 +451,9 @@ export const shippingRate = pgTable(
       .notNull(),
   },
   (table) => [
-    index("shipping_rate_org_id_idx").on(table.organizationId),
+    index("shipping_rate_org_id_idx").on(table.businessId),
     unique("shipping_rate_org_district_unique").on(
-      table.organizationId,
+      table.businessId,
       table.district,
     ),
   ],
@@ -468,9 +474,9 @@ export const agentSession = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    organizationId: text("organization_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
+      .references(() => business.id, { onDelete: "cascade" }),
     /** Channel: "messenger" | "instagram" | "whatsapp" | "web" */
     channel: text("channel").notNull(),
     /** Meta thread key or web session id */
@@ -489,8 +495,8 @@ export const agentSession = pgTable(
       .notNull(),
   },
   (table) => [
-    index("agent_session_org_id_idx").on(table.organizationId),
-    unique("agent_session_org_thread_unique").on(table.organizationId, table.threadId),
+    index("agent_session_org_id_idx").on(table.businessId),
+    unique("agent_session_org_thread_unique").on(table.businessId, table.threadId),
   ],
 );
 

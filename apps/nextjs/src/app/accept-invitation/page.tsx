@@ -36,7 +36,7 @@ export default async function AcceptInvitationPage({
 
   if (details.status !== "pending") {
     return (
-      <AuthShell eyebrow="Team invite" title="Invitation already used" description={`This invitation to join ${details.organizationName} has already been ${details.status}.`}>
+      <AuthShell eyebrow="Team invite" title="Invitation already used" description={`This invitation to join ${details.businessName} has already been ${details.status}.`}>
         <Link href="/login"><Button className="w-full">Back to sign in</Button></Link>
       </AuthShell>
     );
@@ -46,7 +46,7 @@ export default async function AcceptInvitationPage({
     return (
       <AuthShell
         eyebrow="Team invite"
-        title={`Join ${details.organizationName} on SellPilot`}
+        title={`Join ${details.businessName} on SellPilot`}
         description={`You've been invited as ${details.role ?? "a team member"}. Sign in or create an account with ${details.email} to accept, then come back to this link.`}
       >
         <div className="flex flex-col gap-2.5">
@@ -72,10 +72,10 @@ export default async function AcceptInvitationPage({
   return (
     <AuthShell
       eyebrow="Team invite"
-      title={`Join ${details.organizationName} on SellPilot`}
+      title={`Join ${details.businessName} on SellPilot`}
       description={`You've been invited as ${details.role ?? "a team member"}.`}
     >
-      <AcceptInvitationCard invitationId={id} organizationName={details.organizationName} />
+      <AcceptInvitationCard invitationId={id} businessName={details.businessName} />
     </AuthShell>
   );
 }

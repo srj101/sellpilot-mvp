@@ -7,17 +7,18 @@ import { createCaller } from "~/trpc/caller";
 /**
  * The bare, unscoped /dashboard is only ever a landing redirector — every login/signup
  * flow's callbackURL points here unchanged. Real dashboard routes live under
- * /{storeSlug}/dashboard/*; this resolves which store that should be.
+ * /{businessSlug}/dashboard/*; this resolves which store that should be.
  */
 export default async function DashboardRedirectPage() {
   const session = await getSession();
   if (!session) redirect("/login");
+  if (!session.user.emailVerified) redirect("/verify-email");
 
   const caller = await createCaller(await headers());
-  const myStores = await caller.org.listMine();
+  const myStores = await caller.business.listMine();
 
   if (myStores.length === 0) {
-    redirect("/onboarding/create-store");
+    redirect("/onboarding/create-business");
   }
 
   if (myStores.length === 1) {
@@ -25,5 +26,5 @@ export default async function DashboardRedirectPage() {
   }
 
   const active = myStores.find((s) => s.isActive);
-  redirect(active ? `/${active.slug}/dashboard` : "/onboarding/select-store");
+  redirect(active ? `/${active.slug}/dashboard` : "/onboarding/select-business");
 }

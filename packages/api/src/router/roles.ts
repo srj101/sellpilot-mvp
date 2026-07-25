@@ -2,9 +2,9 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod/v4";
 
 import { desc, eq, and } from "@acme/db";
-import { role, member, invitation, user, organization } from "@acme/db/schema";
+import { role, businessMember, businessInvitation, user, business } from "@acme/db/schema";
 
-import { orgProcedure, protectedProcedure, publicProcedure, storeProcedure } from "../trpc";
+import { businessProcedure, protectedProcedure, publicProcedure, businessScopedProcedure } from "../trpc";
 
 const RESOURCES = [
   "orders",
@@ -70,11 +70,11 @@ const DEFAULT_ROLES = [
 ];
 
 export const rolesRouter = {
-  list: storeProcedure.query(async ({ ctx }) => {
+  list: businessScopedProcedure.query(async ({ ctx }) => {
     const roles = await ctx.db
       .select()
       .from(role)
-      .where(eq(role.organizationId, ctx.organizationId))
+      .where(eq(role.businessId, ctx.businessId))
       .orderBy(desc(role.createdAt));
 
     if (roles.length === 0) {
@@ -90,7 +90,7 @@ export const rolesRouter = {
     }));
   }),
 
-  create: storeProcedure
+  create: businessScopedProcedure
     .input(
       z.object({
         name: z.string().min(1),
@@ -103,7 +103,7 @@ export const rolesRouter = {
       const existing = await ctx.db
         .select({ id: role.id })
         .from(role)
-        .where(and(eq(role.organizationId, ctx.organizationId), eq(role.key, input.key)))
+        .where(and(eq(role.businessId, ctx.businessId), eq(role.key, input.key)))
         .limit(1);
 
       if (existing.length > 0) {
@@ -113,8 +113,8 @@ export const rolesRouter = {
       const [newRole] = await ctx.db
         .insert(role)
         .values({
-          userId: ctx.storeOwnerId,
-          organizationId: ctx.organizationId,
+          userId: ctx.businessOwnerId,
+          businessId: ctx.businessId,
           name: input.name,
           key: input.key,
           description: input.description,
@@ -125,7 +125,7 @@ export const rolesRouter = {
       return newRole;
     }),
 
-  update: storeProcedure
+  update: businessScopedProcedure
     .input(
       z.object({
         key: z.string(),
@@ -142,16 +142,16 @@ export const rolesRouter = {
           description: input.description,
           permissions: input.permissions,
         })
-        .where(and(eq(role.organizationId, ctx.organizationId), eq(role.key, input.key)))
+        .where(and(eq(role.businessId, ctx.businessId), eq(role.key, input.key)))
         .returning();
 
       return updated ?? null;
     }),
 
-  delete: storeProcedure
+  delete: businessScopedProcedure
     .input(z.object({ key: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      await ctx.db.delete(role).where(and(eq(role.organizationId, ctx.organizationId), eq(role.key, input.key)));
+      await ctx.db.delete(role).where(and(eq(role.businessId, ctx.businessId), eq(role.key, input.key)));
       return { success: true };
     }),
 
@@ -162,33 +162,33 @@ export const rolesRouter = {
     .query(async ({ ctx, input }) => {
       const [row] = await ctx.db
         .select({
-          email: invitation.email,
-          status: invitation.status,
-          role: invitation.customRoleKey,
-          expiresAt: invitation.expiresAt,
-          organizationName: organization.name,
+          email: businessInvitation.email,
+          status: businessInvitation.status,
+          role: businessInvitation.customRoleKey,
+          expiresAt: businessInvitation.expiresAt,
+          businessName: business.name,
         })
-        .from(invitation)
-        .innerJoin(organization, eq(invitation.organizationId, organization.id))
-        .where(eq(invitation.id, input.invitationId))
+        .from(businessInvitation)
+        .innerJoin(business, eq(businessInvitation.businessId, business.id))
+        .where(eq(businessInvitation.id, input.invitationId))
         .limit(1);
 
       return row ?? null;
     }),
 
   /**
-   * Stays on the plain `orgProcedure` (not `storeProcedure`) because a brand-new account
+   * Stays on the plain `businessProcedure` (not `businessScopedProcedure`) because a brand-new account
    * with no store yet is a legitimate state here — it falls back to a self-only view
-   * instead of throwing. Once `ctx.organizationId` is set, it's already resolved from the
-   * URL (not re-derived from a possibly-ambiguous `member.userId` lookup), so it's correct
+   * instead of throwing. Once `ctx.businessId` is set, it's already resolved from the
+   * URL (not re-derived from a possibly-ambiguous `businessMember.userId` lookup), so it's correct
    * even for an account that owns more than one store.
    */
-  listMembers: orgProcedure.query(async ({ ctx }) => {
+  listMembers: businessProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
 
-    if (!ctx.organizationId) {
+    if (!ctx.businessId) {
       return {
-        organizationId: null as string | null,
+        businessId: null as string | null,
         currentUserRole: "owner" as const,
         canManageTeam: true,
         members: [
@@ -202,32 +202,32 @@ export const rolesRouter = {
             isYou: true,
           },
         ],
-        invitations: [] as (typeof invitation.$inferSelect)[],
+        invitations: [] as (typeof businessInvitation.$inferSelect)[],
       };
     }
 
-    const orgId = ctx.organizationId;
+    const orgId = ctx.businessId;
     const [memberRows, invitationRows] = await Promise.all([
       ctx.db
         .select({
-          id: member.id,
-          userId: member.userId,
-          role: member.role,
-          customRoleKey: member.customRoleKey,
+          id: businessMember.id,
+          userId: businessMember.userId,
+          role: businessMember.role,
+          customRoleKey: businessMember.customRoleKey,
           name: user.name,
           email: user.email,
         })
-        .from(member)
-        .innerJoin(user, eq(member.userId, user.id))
-        .where(eq(member.organizationId, orgId)),
+        .from(businessMember)
+        .innerJoin(user, eq(businessMember.userId, user.id))
+        .where(eq(businessMember.businessId, orgId)),
       ctx.db
         .select()
-        .from(invitation)
-        .where(and(eq(invitation.organizationId, orgId), eq(invitation.status, "pending"))),
+        .from(businessInvitation)
+        .where(and(eq(businessInvitation.businessId, orgId), eq(businessInvitation.status, "pending"))),
     ]);
 
     return {
-      organizationId: orgId,
+      businessId: orgId,
       currentUserRole: ctx.memberRole,
       canManageTeam: ctx.memberRole === "owner" || ctx.customRoleKey === "admin",
       members: memberRows.map((m) => ({ ...m, isYou: m.userId === userId })),
@@ -235,49 +235,56 @@ export const rolesRouter = {
     };
   }),
 
-  /** Stays on `orgProcedure`: the first invite ever sent by an account creates its
-   * organization lazily, so "no store yet" is a legitimate state to handle here. */
-  inviteMember: orgProcedure
+  /** Stays on `businessProcedure`: the first invite ever sent by an account creates its
+   * business lazily, so "no store yet" is a legitimate state to handle here. */
+  inviteMember: businessProcedure
     .input(z.object({ email: z.string().email(), customRoleKey: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      let organizationId = ctx.organizationId;
+      let businessId = ctx.businessId;
       let memberRole = ctx.memberRole;
       let customRoleKey = ctx.customRoleKey;
 
-      if (!organizationId) {
-        // First invite ever sent by this account — create their organization now (lazy,
-        // see orgProcedure's doc comment). They become the owner automatically.
+      if (!businessId) {
         const userId = ctx.session.user.id;
-        await ctx.authApi.createOrganization({
-          body: {
-            name: `${ctx.session.user.name}'s Store`,
-            slug: `store-${userId.slice(0, 10)}-${Date.now().toString(36)}`,
-          },
-          headers: ctx.headers,
+        businessId = `business_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
+        await ctx.db.insert(business).values({
+          id: businessId,
+          name: `${ctx.session.user.name}'s Store`,
+          slug: `store-${userId.slice(0, 10)}-${Date.now().toString(36)}`,
+          createdAt: new Date(),
         });
-        const [membership] = await ctx.db.select().from(member).where(eq(member.userId, userId)).limit(1);
-        if (!membership) throw new Error("Failed to create organization");
-        organizationId = membership.organizationId;
+        await ctx.db.insert(businessMember).values({
+          id: `member_${Date.now().toString(36)}`,
+          businessId,
+          userId,
+          role: "owner",
+          createdAt: new Date(),
+        });
+
+        const [membership] = await ctx.db.select().from(businessMember).where(eq(businessMember.userId, userId)).limit(1);
+        if (!membership) throw new Error("Failed to create business");
         memberRole = membership.role;
         customRoleKey = membership.customRoleKey;
       } else if (memberRole !== "owner" && customRoleKey !== "admin") {
         throw new Error("Only the store owner or an Admin can invite team members");
       }
 
-      await ctx.authApi.createInvitation({
-        body: {
-          email: input.email,
-          role: "member",
-          organizationId,
-          customRoleKey: input.customRoleKey,
-        },
-        headers: ctx.headers,
+      await ctx.db.insert(businessInvitation).values({
+        id: `invitation_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`,
+        businessId,
+        email: input.email,
+        role: "member",
+        status: "pending",
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
+        createdAt: new Date(),
+        inviterId: ctx.session.user.id,
+        customRoleKey: input.customRoleKey,
       });
 
       return { success: true };
     }),
 
-  cancelInvitation: storeProcedure
+  cancelInvitation: businessScopedProcedure
     .input(z.object({ invitationId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.memberRole !== "owner" && ctx.customRoleKey !== "admin") {
@@ -287,44 +294,44 @@ export const rolesRouter = {
       return { success: true };
     }),
 
-  acceptInvitation: orgProcedure
+  acceptInvitation: businessProcedure
     .input(z.object({ invitationId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const [inv] = await ctx.db.select().from(invitation).where(eq(invitation.id, input.invitationId)).limit(1);
+      const [inv] = await ctx.db.select().from(businessInvitation).where(eq(businessInvitation.id, input.invitationId)).limit(1);
       if (!inv) throw new Error("Invitation not found or already used");
 
       await ctx.authApi.acceptInvitation({ body: { invitationId: input.invitationId }, headers: ctx.headers });
 
       if (inv.customRoleKey) {
         await ctx.db
-          .update(member)
+          .update(businessMember)
           .set({ customRoleKey: inv.customRoleKey })
-          .where(and(eq(member.organizationId, inv.organizationId), eq(member.userId, ctx.session.user.id)));
+          .where(and(eq(businessMember.businessId, inv.businessId), eq(businessMember.userId, ctx.session.user.id)));
       }
 
       const [org] = await ctx.db
-        .select({ slug: organization.slug })
-        .from(organization)
-        .where(eq(organization.id, inv.organizationId))
+        .select({ slug: business.slug })
+        .from(business)
+        .where(eq(business.id, inv.businessId))
         .limit(1);
 
-      return { success: true, organizationSlug: org?.slug ?? null };
+      return { success: true, businessSlug: org?.slug ?? null };
     }),
 
   /** Pending invitations addressed to the caller's own email — for the in-app store-switcher panel. */
   listMyInvitations: protectedProcedure.query(async ({ ctx }) => {
     const rows = await ctx.db
       .select({
-        id: invitation.id,
-        organizationId: invitation.organizationId,
-        role: invitation.role,
-        customRoleKey: invitation.customRoleKey,
-        expiresAt: invitation.expiresAt,
-        organizationName: organization.name,
+        id: businessInvitation.id,
+        businessId: businessInvitation.businessId,
+        role: businessInvitation.role,
+        customRoleKey: businessInvitation.customRoleKey,
+        expiresAt: businessInvitation.expiresAt,
+        businessName: business.name,
       })
-      .from(invitation)
-      .innerJoin(organization, eq(invitation.organizationId, organization.id))
-      .where(and(eq(invitation.email, ctx.session.user.email), eq(invitation.status, "pending")));
+      .from(businessInvitation)
+      .innerJoin(business, eq(businessInvitation.businessId, business.id))
+      .where(and(eq(businessInvitation.email, ctx.session.user.email), eq(businessInvitation.status, "pending")));
     return rows;
   }),
 
@@ -335,27 +342,27 @@ export const rolesRouter = {
       return { success: true };
     }),
 
-  updateMemberRole: storeProcedure
+  updateMemberRole: businessScopedProcedure
     .input(z.object({ memberId: z.string(), customRoleKey: z.string() }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.memberRole !== "owner" && ctx.customRoleKey !== "admin") {
         throw new Error("Only the store owner or an Admin can manage team members");
       }
       await ctx.db
-        .update(member)
+        .update(businessMember)
         .set({ customRoleKey: input.customRoleKey })
-        .where(and(eq(member.id, input.memberId), eq(member.organizationId, ctx.organizationId)));
+        .where(and(eq(businessMember.id, input.memberId), eq(businessMember.businessId, ctx.businessId)));
       return { success: true };
     }),
 
-  removeMember: storeProcedure
+  removeMember: businessScopedProcedure
     .input(z.object({ memberId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.memberRole !== "owner" && ctx.customRoleKey !== "admin") {
         throw new Error("Only the store owner or an Admin can manage team members");
       }
       await ctx.authApi.removeMember({
-        body: { memberIdOrEmail: input.memberId, organizationId: ctx.organizationId },
+        body: { memberIdOrEmail: input.memberId, businessId: ctx.businessId },
         headers: ctx.headers,
       });
       return { success: true };

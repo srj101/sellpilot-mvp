@@ -114,18 +114,18 @@ export async function createRealtimeServer(httpServer: HTTPServer): Promise<Real
     },
 
     emitInboxUpdate(userId: string, payload: InboxUpdatePayload): void {
-      this.emitToUser(userId, "inbox:update", payload);
+      io.to(`user:${userId}`).emit("inbox:update", payload);
     },
 
     emitNewMessage(userId: string, payload: NewMessagePayload): void {
       // Emit to user's inbox room
-      this.emitToUser(userId, "message:new", payload);
+      io.to(`user:${userId}`).emit("message:new", payload);
       // Also emit to thread room for open conversations
       io.to(`thread:${payload.threadId}`).emit("message:new", payload);
     },
 
     emitMessageStatus(userId: string, payload: MessageStatusPayload): void {
-      this.emitToUser(userId, "message:status", payload);
+      io.to(`user:${userId}`).emit("message:status", payload);
     },
 
     emitTyping(userId: string, payload: TypingPayload): void {

@@ -2,7 +2,7 @@ import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth";
 import { expo } from "@better-auth/expo";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { oAuthProxy, admin, organization } from "better-auth/plugins";
+import { oAuthProxy, admin } from "better-auth/plugins";
 
 import { db } from "@acme/db/client";
 
@@ -29,6 +29,7 @@ export function initAuth<
     secret: options.secret,
     emailAndPassword: {
       enabled: true,
+      requireEmailVerification: true,
       minPasswordLength: 8,
       resetPasswordTokenExpiresIn: 60 * 60,
       revokeSessionsOnPasswordReset: true,
@@ -49,42 +50,37 @@ export function initAuth<
         });
       },
     },
+    emailVerification: {
+      sendOnSignUp: true,
+      autoSignInAfterVerification: true,
+      sendVerificationEmail: async ({ user, url }) => {
+        const appVerifyUrl = new URL("/verify-email", options.baseUrl);
+        appVerifyUrl.searchParams.set("url", url);
+        
+        await sendEmail({
+          to: user.email,
+          subject: "Verify your SellPilot email address",
+          html: `<p>Please click the link below to verify your email address:</p><p><a href="${appVerifyUrl.toString()}">${appVerifyUrl.toString()}</a></p>`,
+          text: `Verify your email: ${appVerifyUrl.toString()}`,
+        });
+      },
+    },
+    user: {
+      changeEmail: {
+        enabled: true,
+      },
+    },
+    session: {
+      additionalFields: {
+        activeBusinessId: { type: "string", required: false },
+      },
+    },
     plugins: [
       oAuthProxy({
         productionURL: options.productionUrl,
       }),
       expo(),
       admin(),
-      organization({
-        // Org-level management (invite/remove members, org settings) uses better-auth's
-        // built-in owner/admin/member roles. App-resource permissions (Orders/Products/...)
-        // are a separate concern, resolved from the existing `role` table via the
-        // `customRoleKey` member field below — see packages/api/src/trpc.ts's orgProcedure.
-        schema: {
-          member: {
-            additionalFields: {
-              customRoleKey: { type: "string", required: false },
-            },
-          },
-          invitation: {
-            additionalFields: {
-              customRoleKey: { type: "string", required: false },
-            },
-          },
-        },
-        sendInvitationEmail: async (data) => {
-          const acceptUrl = new URL("/accept-invitation", options.baseUrl);
-          acceptUrl.searchParams.set("id", data.id);
-          const roleLabel = (data.invitation as { customRoleKey?: string }).customRoleKey ?? data.role;
-
-          await sendEmail({
-            to: data.email,
-            subject: `You've been invited to join ${data.organization.name} on SellPilot`,
-            html: `<p>${data.inviter.user.name} invited you to join <strong>${data.organization.name}</strong> as ${roleLabel}.</p><p><a href="${acceptUrl.toString()}">Accept invitation</a></p>`,
-            text: `${data.inviter.user.name} invited you to join ${data.organization.name} as ${roleLabel}. Accept: ${acceptUrl.toString()}`,
-          });
-        },
-      }),
       ...(options.extraPlugins ?? []),
     ],
     socialProviders: {

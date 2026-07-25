@@ -29,7 +29,7 @@ import { Input } from "@acme/ui/input";
 
 import { authClient } from "~/auth/client";
 
-interface AuthNotice {
+export interface AuthNotice {
   tone: "success" | "error";
   message: string;
 }
@@ -63,7 +63,7 @@ function getFormString(formData: FormData, key: string) {
   return typeof value === "string" ? value : "";
 }
 
-async function postAuth<TResponse extends AuthResponse>(
+export async function postAuth<TResponse extends AuthResponse>(
   path: string,
   body: Record<string, unknown>,
 ) {
@@ -89,7 +89,7 @@ async function postAuth<TResponse extends AuthResponse>(
   return data;
 }
 
-function AuthAlert({ notice }: { notice?: AuthNotice | null }) {
+export function AuthAlert({ notice }: { notice?: AuthNotice | null }) {
   if (!notice) return null;
 
   const Icon = notice.tone === "success" ? CheckCircle2 : AlertCircle;

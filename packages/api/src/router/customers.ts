@@ -4,15 +4,15 @@ import { z } from "zod";
 import { desc, eq, and, count, sum } from "@acme/db";
 import { customer, order } from "@acme/db/schema";
 
-import { storeProcedure } from "../trpc";
+import { businessScopedProcedure } from "../trpc";
 
 export const customersRouter = {
-  list: storeProcedure.query(async ({ ctx }) => {
-    const organizationId = ctx.organizationId;
+  list: businessScopedProcedure.query(async ({ ctx }) => {
+    const businessId = ctx.businessId;
     const customers = await ctx.db
       .select()
       .from(customer)
-      .where(eq(customer.organizationId, organizationId))
+      .where(eq(customer.businessId, businessId))
       .orderBy(desc(customer.createdAt));
 
     // Aggregate order stats per customer
@@ -27,7 +27,7 @@ export const customersRouter = {
             totalSpent: sum(order.total),
           })
           .from(order)
-          .where(and(eq(order.organizationId, organizationId), eq(order.customerId, c.id)));
+          .where(and(eq(order.businessId, businessId), eq(order.customerId, c.id)));
 
         statsMap.set(c.id, {
           totalOrders: orderStats[0]?.totalOrders ?? 0,
@@ -43,15 +43,15 @@ export const customersRouter = {
     }));
   }),
 
-  getById: storeProcedure
+  getById: businessScopedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
-      const organizationId = ctx.organizationId;
+      const businessId = ctx.businessId;
 
       const [cust] = await ctx.db
         .select()
         .from(customer)
-        .where(and(eq(customer.id, input.id), eq(customer.organizationId, organizationId)))
+        .where(and(eq(customer.id, input.id), eq(customer.businessId, businessId)))
         .limit(1);
 
       if (!cust) return null;
@@ -63,13 +63,13 @@ export const customersRouter = {
           totalSpent: sum(order.total),
         })
         .from(order)
-        .where(and(eq(order.organizationId, organizationId), eq(order.customerId, input.id)));
+        .where(and(eq(order.businessId, businessId), eq(order.customerId, input.id)));
 
       // Get recent orders
       const recentOrders = await ctx.db
         .select()
         .from(order)
-        .where(and(eq(order.organizationId, organizationId), eq(order.customerId, input.id)))
+        .where(and(eq(order.businessId, businessId), eq(order.customerId, input.id)))
         .orderBy(desc(order.createdAt))
         .limit(10);
 

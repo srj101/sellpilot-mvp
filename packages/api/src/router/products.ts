@@ -6,7 +6,7 @@ import { product, productVariant } from "@acme/db/schema";
 
 import { deleteProductImageFromVectorDb, searchProductsByImage } from "../lib/chromadb";
 import { queueProductImageIndexing } from "../lib/queue";
-import { storeProcedure } from "../trpc";
+import { businessScopedProcedure } from "../trpc";
 
 const VariantInput = z.object({
   id: z.string().optional(),
@@ -30,15 +30,16 @@ const ProductInput = z.object({
   images: z.array(z.string()),
   options: z.array(z.object({ name: z.string(), values: z.array(z.string()) })),
   variants: z.array(VariantInput),
+  rating: z.number().int().min(1).max(5).optional(),
 });
 
 export const productsRouter = {
-  list: storeProcedure.query(async ({ ctx }) => {
-    const organizationId = ctx.organizationId;
+  list: businessScopedProcedure.query(async ({ ctx }) => {
+    const businessId = ctx.businessId;
     const products = await ctx.db
       .select()
       .from(product)
-      .where(eq(product.organizationId, organizationId))
+      .where(eq(product.businessId, businessId))
       .orderBy(desc(product.createdAt));
 
     const variants =
@@ -52,21 +53,22 @@ export const productsRouter = {
     return { products, variants };
   }),
 
-  create: storeProcedure.input(ProductInput).mutation(async ({ ctx, input }) => {
-    const userId = ctx.storeOwnerId;
-    const organizationId = ctx.organizationId;
+  create: businessScopedProcedure.input(ProductInput).mutation(async ({ ctx, input }) => {
+    const userId = ctx.businessOwnerId;
+    const businessId = ctx.businessId;
 
     const [newProduct] = await ctx.db
       .insert(product)
       .values({
         userId,
-        organizationId,
+        businessId,
         title: input.title,
         description: input.description,
         category: input.category,
         status: input.status,
         images: input.images,
         options: input.options,
+        rating: input.rating ?? null,
       })
       .returning();
 
@@ -93,7 +95,7 @@ export const productsRouter = {
       for (const variant of insertedVariants) {
         if (variant.imageUrl) {
           void queueProductImageIndexing({
-            organizationId,
+            businessId,
             productId: newProduct.id,
             variantId: variant.id,
             imageUrl: variant.imageUrl,
@@ -107,7 +109,7 @@ export const productsRouter = {
       const isVariantImage = input.variants.some((v) => v.imageUrl === imgUrl);
       if (!isVariantImage) {
         void queueProductImageIndexing({
-          organizationId,
+          businessId,
           productId: newProduct.id,
           imageUrl: imgUrl,
           productTitle: newProduct.title,
@@ -118,11 +120,11 @@ export const productsRouter = {
     return newProduct;
   }),
 
-  update: storeProcedure.input(ProductInput).mutation(async ({ ctx, input }) => {
+  update: businessScopedProcedure.input(ProductInput).mutation(async ({ ctx, input }) => {
     if (!input.id) {
       throw new Error("Missing product id");
     }
-    const organizationId = ctx.organizationId;
+    const businessId = ctx.businessId;
     const productId = input.id;
 
     const [updatedProduct] = await ctx.db
@@ -134,8 +136,9 @@ export const productsRouter = {
         status: input.status,
         images: input.images,
         options: input.options,
+        rating: input.rating ?? null,
       })
-      .where(and(eq(product.id, productId), eq(product.organizationId, organizationId)))
+      .where(and(eq(product.id, productId), eq(product.businessId, businessId)))
       .returning();
 
     if (!updatedProduct) {
@@ -178,7 +181,7 @@ export const productsRouter = {
 
         if (updated?.imageUrl) {
           void queueProductImageIndexing({
-            organizationId,
+            businessId,
             productId,
             variantId: updated.id,
             imageUrl: updated.imageUrl,
@@ -206,7 +209,7 @@ export const productsRouter = {
 
         if (inserted?.imageUrl) {
           void queueProductImageIndexing({
-            organizationId,
+            businessId,
             productId,
             variantId: inserted.id,
             imageUrl: inserted.imageUrl,
@@ -222,7 +225,7 @@ export const productsRouter = {
       const isVariantImage = input.variants.some((v) => v.imageUrl === imgUrl);
       if (!isVariantImage) {
         void queueProductImageIndexing({
-          organizationId,
+          businessId,
           productId,
           imageUrl: imgUrl,
           productTitle: updatedProduct.title,
@@ -233,12 +236,12 @@ export const productsRouter = {
     return updatedProduct;
   }),
 
-  delete: storeProcedure.input(z.object({ productId: z.string() })).mutation(async ({ ctx, input }) => {
-    const organizationId = ctx.organizationId;
+  delete: businessScopedProcedure.input(z.object({ productId: z.string() })).mutation(async ({ ctx, input }) => {
+    const businessId = ctx.businessId;
 
     const [deleted] = await ctx.db
       .delete(product)
-      .where(and(eq(product.id, input.productId), eq(product.organizationId, organizationId)))
+      .where(and(eq(product.id, input.productId), eq(product.businessId, businessId)))
       .returning();
 
     if (deleted) {
@@ -248,12 +251,12 @@ export const productsRouter = {
     return deleted ?? null;
   }),
 
-  testImageSearch: storeProcedure
+  testImageSearch: businessScopedProcedure
     .input(z.object({ imageUrl: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const organizationId = ctx.organizationId;
+      const businessId = ctx.businessId;
 
-      const matches = await searchProductsByImage({ organizationId, imageUrl: input.imageUrl, limit: 5 });
+      const matches = await searchProductsByImage({ businessId, imageUrl: input.imageUrl, limit: 5 });
       if (matches.length === 0) {
         return [];
       }
@@ -262,11 +265,66 @@ export const productsRouter = {
       const products = await ctx.db
         .select()
         .from(product)
-        .where(and(inArray(product.id, productIds), eq(product.organizationId, organizationId)));
+        .where(and(inArray(product.id, productIds), eq(product.businessId, businessId)));
 
       return matches.map((match) => ({
         ...match,
         product: products.find((p) => p.id === match.productId) ?? null,
       }));
+    }),
+
+  bulkCreate: businessScopedProcedure
+    .input(z.object({
+      products: z.array(z.object({
+        title: z.string().min(1),
+        category: z.string().optional(),
+        price: z.number().positive(),
+        discountPercent: z.number().min(0).max(100).optional(),
+        stockQty: z.number().int().min(0),
+        description: z.string().optional(),
+        rating: z.number().int().min(1).max(5).optional(),
+        imageUrl: z.string().optional(),
+      })).min(1).max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const businessId = ctx.businessId;
+      const userId = ctx.businessOwnerId;
+
+      // Note: A transaction is ideal here, but to avoid complexity we insert one by one
+      // In a real production scenario, use db.transaction
+      const results = [];
+      for (const p of input.products) {
+        const compareAtPrice = p.discountPercent 
+          ? p.price / (1 - p.discountPercent / 100) 
+          : undefined;
+
+        const [newProduct] = await ctx.db
+          .insert(product)
+          .values({
+            userId,
+            businessId,
+            title: p.title,
+            description: p.description,
+            category: p.category,
+            status: "active",
+            images: [],
+            options: [],
+            rating: p.rating ?? null,
+          })
+          .returning();
+
+        if (newProduct) {
+          await ctx.db.insert(productVariant).values({
+            productId: newProduct.id,
+            title: "Default",
+            price: p.price,
+            compareAtPrice: compareAtPrice ? Math.round(compareAtPrice) : null,
+            inventoryQuantity: p.stockQty,
+            imageUrl: p.imageUrl ?? null,
+          });
+          results.push(newProduct);
+        }
+      }
+      return { count: results.length };
     }),
 } satisfies TRPCRouterRecord;

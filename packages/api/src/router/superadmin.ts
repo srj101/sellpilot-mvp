@@ -2,7 +2,7 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod/v4";
 
 import { eq } from "@acme/db";
-import { member, organization, user } from "@acme/db/schema";
+import { businessMember, business, user } from "@acme/db/schema";
 
 import { superadminProcedure } from "../trpc";
 
@@ -38,31 +38,31 @@ export const superadminRouter = {
   }),
 
   /**
-   * List all stores (organizations) that a specific user belongs to.
-   * Returns the member's org role alongside the store details.
+   * List all stores (businesses) that a specific user belongs to.
+   * Returns the member's business role alongside the store details.
    */
   listStoresOfUser: superadminProcedure
     .input(z.object({ userId: z.string() }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db
         .select({
-          organizationId: member.organizationId,
-          memberRole: member.role,
-          customRoleKey: member.customRoleKey,
-          name: organization.name,
-          slug: organization.slug,
-          logo: organization.logo,
-          createdAt: organization.createdAt,
+          businessId: businessMember.businessId,
+          memberRole: businessMember.role,
+          customRoleKey: businessMember.customRoleKey,
+          name: business.name,
+          slug: business.slug,
+          logo: business.logo,
+          createdAt: business.createdAt,
         })
-        .from(member)
-        .innerJoin(organization, eq(member.organizationId, organization.id))
-        .where(eq(member.userId, input.userId));
+        .from(businessMember)
+        .innerJoin(business, eq(businessMember.businessId, business.id))
+        .where(eq(businessMember.userId, input.userId));
 
       return rows;
     }),
 
   /**
-   * Enter any store by its organizationId — no membership required.
+   * Enter any store by its businessId — no membership required.
    * Returns the slug so the superadmin can be redirected to
    * /{slug}/dashboard/* without needing to be a member.
    *
@@ -71,28 +71,28 @@ export const superadminRouter = {
    * a read-only impersonation context.
    */
   getStoreAccess: superadminProcedure
-    .input(z.object({ organizationId: z.string() }))
+    .input(z.object({ businessId: z.string() }))
     .query(async ({ ctx, input }) => {
       const [org] = await ctx.db
         .select({
-          id: organization.id,
-          name: organization.name,
-          slug: organization.slug,
-          logo: organization.logo,
-          createdAt: organization.createdAt,
+          id: business.id,
+          name: business.name,
+          slug: business.slug,
+          logo: business.logo,
+          createdAt: business.createdAt,
         })
-        .from(organization)
-        .where(eq(organization.id, input.organizationId))
+        .from(business)
+        .where(eq(business.id, input.businessId))
         .limit(1);
 
       if (!org) return null;
 
       // Fetch the owner of this store
       const [ownerRow] = await ctx.db
-        .select({ userId: member.userId, name: user.name, email: user.email })
-        .from(member)
-        .innerJoin(user, eq(member.userId, user.id))
-        .where(eq(member.organizationId, input.organizationId))
+        .select({ userId: businessMember.userId, name: user.name, email: user.email })
+        .from(businessMember)
+        .innerJoin(user, eq(businessMember.userId, user.id))
+        .where(eq(businessMember.businessId, input.businessId))
         .limit(1);
 
       return {

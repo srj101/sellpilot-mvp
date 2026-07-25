@@ -8,7 +8,7 @@ import { getToolContext } from "./context";
 
 export interface CreateOrderParams {
   userId: string;
-  organizationId: string;
+  businessId: string;
   threadId: string;
   channel: string;
   productId: string;
@@ -34,8 +34,8 @@ export interface CreateOrderResult {
 export interface OrderHelpers {
   createCustomerAndOrder(params: CreateOrderParams): Promise<CreateOrderResult>;
   /** Orders tied to the current conversation thread only — never other customers' orders. */
-  getOrdersForThread(organizationId: string, threadId: string): Promise<unknown[]>;
-  getCustomerByPhone(organizationId: string, phone: string): Promise<unknown>;
+  getOrdersForThread(businessId: string, threadId: string): Promise<unknown[]>;
+  getCustomerByPhone(businessId: string, phone: string): Promise<unknown>;
 }
 
 let helpers: OrderHelpers | null = null;
@@ -77,7 +77,7 @@ export const createOrderTool = new DynamicStructuredTool({
         district?: string;
         offerCode?: string;
       };
-    const { userId, organizationId, threadId, platform } = getToolContext();
+    const { userId, businessId, threadId, platform } = getToolContext();
 
     console.log("[Tool] createOrder", {
       productId,
@@ -85,12 +85,12 @@ export const createOrderTool = new DynamicStructuredTool({
       customerName,
       phone: phone.replace(/(\d{3})\d+(\d{2})/, "$1***$2"),
       userId,
-      organizationId,
+      businessId,
     });
 
     const result = await getHelpers().createCustomerAndOrder({
       userId,
-      organizationId,
+      businessId,
       threadId,
       channel: platform,
       productId,
@@ -113,9 +113,9 @@ export const trackOrderTool = new DynamicStructuredTool({
     "Look up the status of the order(s) placed by THIS customer in this conversation. Never returns other customers' orders — there is nothing to configure, just call it when the customer asks about their order status.",
   schema: z.object({}),
   func: async () => {
-    const { organizationId, threadId } = getToolContext();
-    console.log("[Tool] trackOrder", { organizationId, threadId });
-    const results = await getHelpers().getOrdersForThread(organizationId, threadId);
+    const { businessId, threadId } = getToolContext();
+    console.log("[Tool] trackOrder", { businessId, threadId });
+    const results = await getHelpers().getOrdersForThread(businessId, threadId);
     return JSON.stringify(results);
   },
 });
@@ -128,9 +128,9 @@ export const getCustomerByPhoneTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { phone } = input as { phone: string };
-    const { organizationId } = getToolContext();
-    console.log("[Tool] getCustomerByPhone", { organizationId, phone });
-    const result = await getHelpers().getCustomerByPhone(organizationId, phone);
+    const { businessId } = getToolContext();
+    console.log("[Tool] getCustomerByPhone", { businessId, phone });
+    const result = await getHelpers().getCustomerByPhone(businessId, phone);
     return JSON.stringify(result);
   },
 });

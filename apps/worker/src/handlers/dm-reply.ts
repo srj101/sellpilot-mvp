@@ -69,7 +69,7 @@ export function initLLMCacheConnection(redisUrl: string): void {
 
 // Dependency injection for conversation history
 export interface ConversationHistoryProvider {
-  getHistory(organizationId: string, threadId: string): Promise<ChatMessage[]>;
+  getHistory(businessId: string, threadId: string): Promise<ChatMessage[]>;
 }
 
 let historyProvider: ConversationHistoryProvider | null = null;
@@ -103,7 +103,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
     platform: data.platform,
     threadId: data.threadId,
     userId: data.userId,
-    organizationId: data.organizationId,
+    businessId: data.businessId,
   });
 
   // Check rate limit
@@ -130,7 +130,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
   let history: ChatMessage[] = [];
   if (historyProvider) {
     try {
-      history = await historyProvider.getHistory(data.organizationId, data.threadId);
+      history = await historyProvider.getHistory(data.businessId, data.threadId);
     } catch (err) {
       console.error("[DMReply] Failed to load history:", err);
     }
@@ -155,7 +155,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
     images: data.incomingMessage.imageUrls,
     context: {
       userId: data.userId,
-      organizationId: data.organizationId,
+      businessId: data.businessId,
       threadId: data.threadId,
       platform: data.platform,
       customerId: data.recipientId,
@@ -178,7 +178,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
       const cached = await llmCache.get(
         data.incomingMessage.text ?? "",
         history,
-        data.organizationId,
+        data.businessId,
         config.openaiModel
       );
       if (cached) {
@@ -203,7 +203,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
         await llmCache.set(
           data.incomingMessage.text ?? "",
           history,
-          data.organizationId,
+          data.businessId,
           config.openaiModel,
           responseText
         );

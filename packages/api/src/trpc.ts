@@ -13,7 +13,7 @@ import { z, ZodError } from "zod/v4";
 import type { Auth, Session } from "@acme/auth";
 import { and, eq } from "@acme/db";
 import { db } from "@acme/db/client";
-import { member, organization } from "@acme/db/schema";
+import { businessMember, business } from "@acme/db/schema";
 
 /**
  * 1. CONTEXT
@@ -141,103 +141,103 @@ export const protectedProcedure = t.procedure
  * Every table in this app is scoped by a userId that represents "the store" (e.g.
  * `order.userId`, `product.userId`). Historically that was always the logged-in user's
  * own id — one login, one store. Once a merchant can invite teammates (see
- * packages/auth's `organization` plugin), an invited member logs in with *their own*
+ * packages/auth's `business` plugin), an invited member logs in with *their own*
  * user id, which must still resolve to the *owner's* store for every query, or they'd
  * see an empty account.
  *
  * Resolution is authoritative from the URL, not from session state: every request under
- * /{storeSlug}/dashboard/* carries an `x-store-slug` header (injected by middleware.ts
+ * /{storeSlug}/dashboard/* carries an `x-business-slug` header (injected by middleware.ts
  * for server-rendered pages, and by trpc/react.tsx's link for client-fetched queries —
  * both derive it fresh from the current URL every time). That header is looked up
  * directly against real membership rows here. This deliberately does NOT trust
- * `session.activeOrganizationId` as the primary source — it's a side-effect field
+ * `session.activeBusinessId` as the primary source — it's a side-effect field
  * (see org.setActive) that a page might navigate away from before it's re-read, and
  * trusting it caused one store's data to render under another store's URL. It's kept
  * only as a fallback for the handful of routes with no store in the URL at all
  * (/onboarding/select-store, the bare /dashboard redirector).
  */
-export const orgProcedure = protectedProcedure.use(async ({ ctx, next }) => {
+export const businessProcedure = protectedProcedure.use(async ({ ctx, next }) => {
   const userId = ctx.session.user.id;
-  const requestedSlug = ctx.headers.get("x-store-slug");
+  const requestedSlug = ctx.headers.get("x-business-slug");
 
   const memberships = await ctx.db
-    .select({ organizationId: member.organizationId, role: member.role, customRoleKey: member.customRoleKey })
-    .from(member)
-    .where(eq(member.userId, userId));
+    .select({ businessId: businessMember.businessId, role: businessMember.role, customRoleKey: businessMember.customRoleKey })
+    .from(businessMember)
+    .where(eq(businessMember.userId, userId));
 
   let membership: (typeof memberships)[number] | undefined;
 
   if (requestedSlug) {
     const [org] = await ctx.db
-      .select({ id: organization.id })
-      .from(organization)
-      .where(eq(organization.slug, requestedSlug))
+      .select({ id: business.id })
+      .from(business)
+      .where(eq(business.slug, requestedSlug))
       .limit(1);
-    membership = org ? memberships.find((m) => m.organizationId === org.id) : undefined;
+    membership = org ? memberships.find((m) => m.businessId === org.id) : undefined;
     if (!membership) {
       // The URL names a real store, but this caller isn't a member of it — fail loudly
       // rather than silently falling back to a *different* store's data.
-      throw new TRPCError({ code: "FORBIDDEN", message: "You don't have access to this store." });
+      throw new TRPCError({ code: "FORBIDDEN", message: "You don't have access to this business." });
     }
   } else {
-    const activeOrganizationId = (ctx.session.session as { activeOrganizationId?: string | null }).activeOrganizationId;
+    const activeBusinessId = (ctx.session.session as { activeBusinessId?: string | null }).activeBusinessId;
     membership =
-      (activeOrganizationId ? memberships.find((m) => m.organizationId === activeOrganizationId) : undefined) ??
+      (activeBusinessId ? memberships.find((m) => m.businessId === activeBusinessId) : undefined) ??
       memberships[0];
   }
 
-  let storeOwnerId = userId;
+  let businessOwnerId = userId;
   let memberRole = "owner";
   let customRoleKey: string | null = null;
-  let organizationId: string | null = null;
+  let businessId: string | null = null;
 
   if (membership) {
-    organizationId = membership.organizationId;
+    businessId = membership.businessId;
     memberRole = membership.role;
     customRoleKey = membership.customRoleKey;
     if (membership.role !== "owner") {
       const [owner] = await ctx.db
-        .select({ userId: member.userId })
-        .from(member)
-        .where(and(eq(member.organizationId, membership.organizationId), eq(member.role, "owner")))
+        .select({ userId: businessMember.userId })
+        .from(businessMember)
+        .where(and(eq(businessMember.businessId, membership.businessId), eq(businessMember.role, "owner")))
         .limit(1);
-      storeOwnerId = owner?.userId ?? userId;
+      businessOwnerId = owner?.userId ?? userId;
     }
   }
 
   return next({
-    ctx: { ...ctx, storeOwnerId, memberRole, customRoleKey, organizationId },
+    ctx: { ...ctx, businessOwnerId, memberRole, customRoleKey, businessId },
   });
 });
 
 /**
  * Store-scoped procedure — for every business-data router (products, orders, customers,
- * inbox, integrations, ...). Every table these touch is keyed by `organizationId`, not
+ * inbox, integrations, ...). Every table these touch is keyed by `businessId`, not
  * `userId` — a single platform user can own more than one store, and `userId` alone can't
- * tell them apart (see orgProcedure's doc comment above). This narrows `ctx.organizationId`
+ * tell them apart (see businessProcedure's doc comment above). This narrows `ctx.businessId`
  * from `string | null` to `string`, since every route that reaches these routers is always
- * under /{storeSlug}/dashboard/*, so orgProcedure has already resolved a real store or
+ * under /{storeSlug}/dashboard/*, so businessProcedure has already resolved a real store or
  * thrown FORBIDDEN. Routes that can legitimately run with no store yet (invites, the store
- * picker) stay on the plain `orgProcedure`.
+ * picker) stay on the plain `businessProcedure`.
  */
-export const storeProcedure = orgProcedure.use(({ ctx, next }) => {
-  if (!ctx.organizationId) {
-    throw new TRPCError({ code: "FORBIDDEN", message: "No active store selected." });
+export const businessScopedProcedure = businessProcedure.use(({ ctx, next }) => {
+  if (!ctx.businessId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "No active business selected." });
   }
-  return next({ ctx: { ...ctx, organizationId: ctx.organizationId } });
+  return next({ ctx: { ...ctx, businessId: ctx.businessId } });
 });
 
 /**
- * Owner-only procedure — for actions only the store owner can perform:
+ * Owner-only procedure — for actions only the business owner can perform:
  * connecting/disconnecting integrations (Meta, WhatsApp, Instagram) and
  * deleting the store itself. Invited members, even with the "admin" custom
  * role, cannot do these.
  */
-export const ownerOnlyProcedure = storeProcedure.use(({ ctx, next }) => {
+export const ownerOnlyProcedure = businessScopedProcedure.use(({ ctx, next }) => {
   if (ctx.memberRole !== "owner") {
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: "Only the store owner can perform this action.",
+      message: "Only the business owner can perform this action.",
     });
   }
   return next({ ctx });
@@ -246,7 +246,7 @@ export const ownerOnlyProcedure = storeProcedure.use(({ ctx, next }) => {
 /**
  * Superadmin procedure — for the SellPilot platform owner / developer.
  * Assigned manually via DB: UPDATE \"user\" SET role = 'superadmin' WHERE email = '...';
- * Has no store/org restrictions — can view any user, any store, enter any dashboard.
+ * Has no business restrictions — can view any user, any store, enter any dashboard.
  */
 export const superadminProcedure = protectedProcedure.use(({ ctx, next }) => {
   const userRole = (ctx.session.user as { role?: string | null }).role;

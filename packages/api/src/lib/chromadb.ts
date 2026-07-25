@@ -91,7 +91,7 @@ export async function getOrCreateCollection() {
 }
 
 export async function addProductImageToVectorDb(params: {
-  organizationId: string;
+  businessId: string;
   productId: string;
   variantId?: string;
   imageUrl: string;
@@ -114,7 +114,7 @@ export async function addProductImageToVectorDb(params: {
         embeddings: [embedding],
         metadatas: [
           {
-            organizationId: params.organizationId,
+            businessId: params.businessId,
             productId: params.productId,
             variantId: params.variantId ?? "",
             imageUrl: params.imageUrl,
@@ -175,7 +175,7 @@ export interface ChromaSearchResult {
 }
 
 export async function searchProductsByImage(params: {
-  organizationId: string;
+  businessId: string;
   imageUrl: string;
   limit?: number;
 }): Promise<ChromaSearchResult[]> {
@@ -190,7 +190,7 @@ export async function searchProductsByImage(params: {
         queryEmbeddings: [embedding],
         nResults: params.limit ?? 5,
         where: {
-          organizationId: params.organizationId,
+          businessId: params.businessId,
         },
       }),
       2000,

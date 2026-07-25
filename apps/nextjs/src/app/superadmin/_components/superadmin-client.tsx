@@ -245,7 +245,7 @@ export function SuperadminClient({ initialUsers }: { initialUsers: UserRow[] }) 
               ) : (
                 <div className="space-y-2">
                   {(storesQuery.data ?? []).map((store) => (
-                    <Card key={store.organizationId} className="overflow-hidden">
+                    <Card key={store.businessId} className="overflow-hidden">
                       <CardContent className="flex items-center justify-between p-4">
                         <div className="flex items-center gap-3">
                           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">

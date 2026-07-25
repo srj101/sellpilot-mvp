@@ -3,7 +3,7 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { eq } from "@acme/db";
 import { customer, offer, order, pageView, product, productVariant } from "@acme/db/schema";
 
-import { storeProcedure } from "../trpc";
+import { businessScopedProcedure } from "../trpc";
 
 const DAY = 86_400_000;
 const WINDOW_DAYS = 30;
@@ -16,16 +16,16 @@ function trendPct(curr: number, prev: number) {
 }
 
 export const ecommerceRouter = {
-  getOverview: storeProcedure.query(async ({ ctx }) => {
-    const organizationId = ctx.organizationId;
+  getOverview: businessScopedProcedure.query(async ({ ctx }) => {
+    const businessId = ctx.businessId;
     const now = Date.now();
     const windowStart = now - WINDOW_DAYS * DAY;
     const prevStart = windowStart - WINDOW_DAYS * DAY;
 
     const [orders, views, customers, variants, offers] = await Promise.all([
-      ctx.db.select().from(order).where(eq(order.organizationId, organizationId)),
-      ctx.db.select().from(pageView).where(eq(pageView.organizationId, organizationId)),
-      ctx.db.select({ id: customer.id }).from(customer).where(eq(customer.organizationId, organizationId)),
+      ctx.db.select().from(order).where(eq(order.businessId, businessId)),
+      ctx.db.select().from(pageView).where(eq(pageView.businessId, businessId)),
+      ctx.db.select({ id: customer.id }).from(customer).where(eq(customer.businessId, businessId)),
       ctx.db
         .select({
           id: productVariant.id,
@@ -33,12 +33,12 @@ export const ecommerceRouter = {
           inventoryQuantity: productVariant.inventoryQuantity,
           productId: productVariant.productId,
           productTitle: product.title,
-          organizationId: product.organizationId,
+          businessId: product.businessId,
         })
         .from(productVariant)
         .innerJoin(product, eq(productVariant.productId, product.id))
-        .where(eq(product.organizationId, organizationId)),
-      ctx.db.select().from(offer).where(eq(offer.organizationId, organizationId)),
+        .where(eq(product.businessId, businessId)),
+      ctx.db.select().from(offer).where(eq(offer.businessId, businessId)),
     ]);
 
     const inWindow = (t: number, start: number, end: number) => t >= start && t < end;

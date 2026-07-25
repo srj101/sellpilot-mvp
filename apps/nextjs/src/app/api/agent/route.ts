@@ -19,7 +19,7 @@ import {
 
 import { auth } from "~/auth/server";
 import { env } from "~/env";
-import { resolveActiveOrganizationId } from "~/lib/resolve-active-org";
+import { resolveActiveBusinessId } from "~/lib/resolve-active-business";
 import { searchProductsByImage } from "@acme/api/chromadb";
 
 const calculateCouponDiscount = (couponRow: any, subtotal: number) => {
@@ -58,14 +58,14 @@ const buildOrderItems = (items: any[], variants: any[]) => {
   });
 };
 
-const findOrCreateCustomer = async (userId: string, organizationId: string, payload: any) => {
+const findOrCreateCustomer = async (userId: string, businessId: string, payload: any) => {
   let customerRow = null;
   if (payload.customerId) {
     const [foundCustomer] = await db
       .select()
       .from(customer)
       .where(
-        and(eq(customer.id, payload.customerId), eq(customer.organizationId, organizationId)),
+        and(eq(customer.id, payload.customerId), eq(customer.businessId, businessId)),
       );
     customerRow = foundCustomer ?? null;
   }
@@ -77,7 +77,7 @@ const findOrCreateCustomer = async (userId: string, organizationId: string, payl
           .from(customer)
           .where(
             and(
-              eq(customer.organizationId, organizationId),
+              eq(customer.businessId, businessId),
               eq(customer.email, payload.customer.email),
             ),
           )
@@ -89,7 +89,7 @@ const findOrCreateCustomer = async (userId: string, organizationId: string, payl
           .from(customer)
           .where(
             and(
-              eq(customer.organizationId, organizationId),
+              eq(customer.businessId, businessId),
               eq(customer.phone, payload.customer.phone),
             ),
           )
@@ -120,7 +120,7 @@ const findOrCreateCustomer = async (userId: string, organizationId: string, payl
     .insert(customer)
     .values({
       userId,
-      organizationId,
+      businessId,
       name: payload.customer.name,
       phone: payload.customer.phone ?? null,
       email: payload.customer.email ?? null,
@@ -135,11 +135,11 @@ const findOrCreateCustomer = async (userId: string, organizationId: string, payl
 
 const toolHandlers: Record<
   string,
-  (userId: string, organizationId: string, payload: any) => Promise<unknown>
+  (userId: string, businessId: string, payload: any) => Promise<unknown>
 > = {
-  async listProducts(userId, organizationId, payload) {
+  async listProducts(userId, businessId, payload) {
     const products = await db.query.product.findMany({
-      where: eq(product.organizationId, organizationId),
+      where: eq(product.businessId, businessId),
       orderBy: desc(product.createdAt),
     });
     if (!payload?.query) {
@@ -156,12 +156,12 @@ const toolHandlers: Record<
     });
   },
 
-  async getProduct(userId, organizationId, payload) {
+  async getProduct(userId, businessId, payload) {
     if (!payload?.productId) {
       throw new Error("productId is required");
     }
     const productRow = await db.query.product.findFirst({
-      where: and(eq(product.id, payload.productId), eq(product.organizationId, organizationId)),
+      where: and(eq(product.id, payload.productId), eq(product.businessId, businessId)),
     });
     if (!productRow) {
       return null;
@@ -172,16 +172,16 @@ const toolHandlers: Record<
     return { product: productRow, variants };
   },
 
-  async listOffers(userId, organizationId) {
+  async listOffers(userId, businessId) {
     return db.query.offer.findMany({
-      where: and(eq(offer.organizationId, organizationId), eq(offer.active, true)),
+      where: and(eq(offer.businessId, businessId), eq(offer.active, true)),
       orderBy: desc(offer.createdAt),
     });
   },
 
-  async listFaqs(userId, organizationId, payload) {
+  async listFaqs(userId, businessId, payload) {
     const faqs = await db.query.faq.findMany({
-      where: eq(faq.organizationId, organizationId),
+      where: eq(faq.businessId, businessId),
       orderBy: desc(faq.createdAt),
     });
     if (!payload?.tag) {
@@ -190,9 +190,9 @@ const toolHandlers: Record<
     return faqs.filter((row) => row.tags.includes(String(payload.tag)));
   },
 
-  async listPolicies(userId, organizationId, payload) {
+  async listPolicies(userId, businessId, payload) {
     const policies = await db.query.policy.findMany({
-      where: eq(policy.organizationId, organizationId),
+      where: eq(policy.businessId, businessId),
       orderBy: desc(policy.createdAt),
     });
     if (!payload?.type) {
@@ -201,20 +201,20 @@ const toolHandlers: Record<
     return policies.filter((row) => row.type === payload.type);
   },
 
-  async getShippingRates(userId, organizationId) {
+  async getShippingRates(userId, businessId) {
     return db.query.shippingRate.findMany({
-      where: eq(shippingRate.organizationId, organizationId),
+      where: eq(shippingRate.businessId, businessId),
       orderBy: desc(shippingRate.createdAt),
     });
   },
 
-  async getAgentSession(userId, organizationId, payload) {
+  async getAgentSession(userId, businessId, payload) {
     if (!payload?.threadId || !payload?.channel) {
       throw new Error("threadId and channel are required");
     }
     const existing = await db.query.agentSession.findFirst({
       where: and(
-        eq(agentSession.organizationId, organizationId),
+        eq(agentSession.businessId, businessId),
         eq(agentSession.threadId, payload.threadId),
       ),
     });
@@ -225,7 +225,7 @@ const toolHandlers: Record<
       .insert(agentSession)
       .values({
         userId,
-        organizationId,
+        businessId,
         channel: payload.channel,
         threadId: payload.threadId,
         senderId: payload.senderId ?? null,
@@ -236,7 +236,7 @@ const toolHandlers: Record<
     return created;
   },
 
-  async updateAgentSessionState(userId, organizationId, payload) {
+  async updateAgentSessionState(userId, businessId, payload) {
     if (!payload?.id || payload.state === undefined) {
       throw new Error("id and state are required");
     }
@@ -244,20 +244,20 @@ const toolHandlers: Record<
       .update(agentSession)
       .set({ state: payload.state, lastMessageAt: new Date() })
       .where(
-        and(eq(agentSession.id, payload.id), eq(agentSession.organizationId, organizationId)),
+        and(eq(agentSession.id, payload.id), eq(agentSession.businessId, businessId)),
       )
       .returning();
     return updated;
   },
 
-  async createOrder(userId, organizationId, payload) {
+  async createOrder(userId, businessId, payload) {
     const customerPayload = payload.customer;
     if (!customerPayload?.name) {
       throw new Error("Customer name is required");
     }
 
     // find or create customer using helper
-    const customerRow = await findOrCreateCustomer(userId, organizationId, {
+    const customerRow = await findOrCreateCustomer(userId, businessId, {
       customerId: payload.customerId,
       customer: customerPayload,
     });
@@ -290,7 +290,7 @@ const toolHandlers: Record<
       const shippingRateRow = payload.shippingDistrict
         ? await db.query.shippingRate.findFirst({
             where: and(
-              eq(shippingRate.organizationId, organizationId),
+              eq(shippingRate.businessId, businessId),
               eq(shippingRate.district, payload.shippingDistrict),
               eq(shippingRate.active, true),
             ),
@@ -298,7 +298,7 @@ const toolHandlers: Record<
         : null;
 
       const profile = await db.query.businessProfile.findFirst({
-        where: eq(businessProfile.organizationId, organizationId),
+        where: eq(businessProfile.businessId, businessId),
       });
 
       const shippingCost =
@@ -306,7 +306,7 @@ const toolHandlers: Record<
       const couponRow = payload.couponCode
         ? await db.query.offer.findFirst({
             where: and(
-              eq(offer.organizationId, organizationId),
+              eq(offer.businessId, businessId),
               eq(offer.code, payload.couponCode),
               eq(offer.active, true),
             ),
@@ -332,7 +332,7 @@ const toolHandlers: Record<
         .insert(order)
         .values({
           userId,
-          organizationId,
+          businessId,
           customerId: customerRow.id,
           orderNumber: `SP-${Date.now()}`,
           status: "pending",
@@ -379,12 +379,12 @@ const toolHandlers: Record<
     return await persistOrder();
   },
 
-  async imageSearch(userId, organizationId, payload) {
+  async imageSearch(userId, businessId, payload) {
     if (!payload?.imageUrl) {
       throw new Error("imageUrl is required");
     }
     const matches = await searchProductsByImage({
-      organizationId,
+      businessId,
       imageUrl: payload.imageUrl,
       limit: 5,
     });
@@ -396,7 +396,7 @@ const toolHandlers: Record<
           .select()
           .from(product)
           .where(
-            and(eq(product.organizationId, organizationId), inArray(product.id, productIds)),
+            and(eq(product.businessId, businessId), inArray(product.id, productIds)),
           )
       : [];
 
@@ -427,9 +427,9 @@ export async function POST(req: NextRequest) {
       );
     }
     try {
-      const activeOrganizationId = (session.session as { activeOrganizationId?: string | null }).activeOrganizationId;
-      const organizationId = await resolveActiveOrganizationId(session.user.id, activeOrganizationId);
-      const result = await handler(session.user.id, organizationId, body.params ?? {});
+      const activeBusinessId = (session.session as { activeBusinessId?: string | null }).activeBusinessId;
+      const businessId = await resolveActiveBusinessId(session.user.id, activeBusinessId);
+      const result = await handler(session.user.id, businessId, body.params ?? {});
       return NextResponse.json({ tool: body.tool, result });
     } catch (error: unknown) {
       return NextResponse.json(

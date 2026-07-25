@@ -24,6 +24,8 @@ interface AuthShellProps {
   title: string;
   description: string;
   children: React.ReactNode;
+  topRightHref?: string;
+  topRightLabel?: string;
 }
 
 const features = [
@@ -136,14 +138,22 @@ export function AuthShell({
   title,
   description,
   children,
+  topRightHref = "/demo",
+  topRightLabel = "Request Demo",
 }: AuthShellProps) {
   return (
     <main className="auth-mesh relative flex min-h-screen items-center justify-center overflow-hidden p-3 sm:p-6 lg:p-8">
       <div className="auth-grid pointer-events-none absolute inset-0" />
       <div className="auth-scan pointer-events-none absolute inset-x-0 top-0 h-px" />
 
-      {/* Theme toggle + home link, floating outside the card on mobile */}
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-2 sm:top-6 sm:right-6">
+      {/* Theme toggle + secondary CTA, floating outside the card on mobile */}
+      <div className="absolute top-4 right-4 z-10 flex items-center gap-3 sm:top-6 sm:right-6">
+        <Link
+          href={topRightHref}
+          className="bg-background/70 text-foreground/80 hover:text-foreground hover:border-primary/30 inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-medium backdrop-blur transition-colors"
+        >
+          {topRightLabel}
+        </Link>
         <ThemeToggle />
       </div>
 

@@ -8,7 +8,7 @@ import { ecommerceRouter } from "./router/ecommerce";
 import { inboxRouter } from "./router/inbox";
 import { integrationsRouter } from "./router/integrations";
 import { offersRouter } from "./router/offers";
-import { orgRouter } from "./router/org";
+import { businessRouter } from "./router/business";
 import { ordersRouter } from "./router/orders";
 import { postRouter } from "./router/post";
 import { productsRouter } from "./router/products";
@@ -32,7 +32,7 @@ export const appRouter = createTRPCRouter({
   customers: customersRouter,
   orders: ordersRouter,
   offers: offersRouter,
-  org: orgRouter,
+  business: businessRouter,
   roles: rolesRouter,
   settings: settingsRouter,
   superadmin: superadminRouter,

@@ -15,7 +15,7 @@ import {
   productVariant,
   shippingRate,
 } from "@acme/db/schema";
-import { storeProcedure } from "../trpc";
+import { businessScopedProcedure } from "../trpc";
 
 const CustomerInput = z.object({
   id: z.string().optional(),
@@ -50,7 +50,7 @@ const CreateOrderInput = z.object({
 const getCustomerForUser = async (
   ctx: any,
   userId: string,
-  organizationId: string,
+  businessId: string,
   customerData: z.infer<typeof CustomerInput>,
 ) => {
   const customerInput = {
@@ -67,7 +67,7 @@ const getCustomerForUser = async (
     const [updated] = await ctx.db
       .update(customer)
       .set(customerInput)
-      .where(and(eq(customer.id, customerData.id), eq(customer.organizationId, organizationId)))
+      .where(and(eq(customer.id, customerData.id), eq(customer.businessId, businessId)))
       .returning();
 
     if (updated) {
@@ -77,7 +77,7 @@ const getCustomerForUser = async (
 
   const existingByEmail = customerData.email
     ? await ctx.db.query.customer.findFirst({
-        where: and(eq(customer.organizationId, organizationId), eq(customer.email, customerData.email)),
+        where: and(eq(customer.businessId, businessId), eq(customer.email, customerData.email)),
       })
     : null;
 
@@ -92,7 +92,7 @@ const getCustomerForUser = async (
 
   const existingByPhone = customerData.phone
     ? await ctx.db.query.customer.findFirst({
-        where: and(eq(customer.organizationId, organizationId), eq(customer.phone, customerData.phone)),
+        where: and(eq(customer.businessId, businessId), eq(customer.phone, customerData.phone)),
       })
     : null;
 
@@ -107,17 +107,17 @@ const getCustomerForUser = async (
 
   const [inserted] = await ctx.db
     .insert(customer)
-    .values({ userId, organizationId, ...customerInput })
+    .values({ userId, businessId, ...customerInput })
     .returning();
 
   return inserted;
 };
 
-const computeShippingCost = async (ctx: any, organizationId: string, shippingDistrict?: string) => {
+const computeShippingCost = async (ctx: any, businessId: string, shippingDistrict?: string) => {
   if (shippingDistrict) {
     const shipping = await ctx.db.query.shippingRate.findFirst({
       where: and(
-        eq(shippingRate.organizationId, organizationId),
+        eq(shippingRate.businessId, businessId),
         eq(shippingRate.district, shippingDistrict),
         eq(shippingRate.active, true),
       ),
@@ -129,7 +129,7 @@ const computeShippingCost = async (ctx: any, organizationId: string, shippingDis
   }
 
   const profile = await ctx.db.query.businessProfile.findFirst({
-    where: eq(businessProfile.organizationId, organizationId),
+    where: eq(businessProfile.businessId, businessId),
   });
 
   return profile?.defaultShippingCost ?? 0;
@@ -161,13 +161,13 @@ function buildPaymentLink() {
 }
 
 export const agentRouter = {
-  getBusinessProfile: storeProcedure.query(async ({ ctx }) => {
+  getBusinessProfile: businessScopedProcedure.query(async ({ ctx }) => {
     return ctx.db.query.businessProfile.findFirst({
-      where: eq(businessProfile.organizationId, ctx.organizationId),
+      where: eq(businessProfile.businessId, ctx.businessId),
     });
   }),
 
-  upsertBusinessProfile: storeProcedure
+  upsertBusinessProfile: businessScopedProcedure
     .input(
       z.object({
         name: z.string().min(1),
@@ -182,7 +182,7 @@ export const agentRouter = {
     )
     .mutation(async ({ ctx, input }) => {
       const existing = await ctx.db.query.businessProfile.findFirst({
-        where: eq(businessProfile.organizationId, ctx.organizationId),
+        where: eq(businessProfile.businessId, ctx.businessId),
       });
 
       if (existing) {
@@ -196,16 +196,16 @@ export const agentRouter = {
 
       const [created] = await ctx.db
         .insert(businessProfile)
-        .values({ userId: ctx.storeOwnerId, organizationId: ctx.organizationId, ...input })
+        .values({ userId: ctx.businessOwnerId, businessId: ctx.businessId, ...input })
         .returning();
       return created;
     }),
 
-  listProducts: storeProcedure
+  listProducts: businessScopedProcedure
     .input(z.object({ query: z.string().optional() }))
     .query(async ({ ctx, input }) => {
       const products = await ctx.db.query.product.findMany({
-        where: eq(product.organizationId, ctx.organizationId),
+        where: eq(product.businessId, ctx.businessId),
         orderBy: desc(product.createdAt),
       });
 
@@ -221,11 +221,11 @@ export const agentRouter = {
       );
     }),
 
-  getProductById: storeProcedure
+  getProductById: businessScopedProcedure
     .input(z.object({ productId: z.string() }))
     .query(async ({ ctx, input }) => {
       const productRow = await ctx.db.query.product.findFirst({
-        where: and(eq(product.id, input.productId), eq(product.organizationId, ctx.organizationId)),
+        where: and(eq(product.id, input.productId), eq(product.businessId, ctx.businessId)),
       });
 
       if (!productRow) {
@@ -239,25 +239,25 @@ export const agentRouter = {
       return { product: productRow, variants };
     }),
 
-  listOffers: storeProcedure.query(({ ctx }) => {
+  listOffers: businessScopedProcedure.query(({ ctx }) => {
     return ctx.db.query.offer.findMany({
-      where: and(eq(offer.organizationId, ctx.organizationId), eq(offer.active, true)),
+      where: and(eq(offer.businessId, ctx.businessId), eq(offer.active, true)),
       orderBy: desc(offer.createdAt),
     });
   }),
 
-  listShippingRates: storeProcedure.query(({ ctx }) => {
+  listShippingRates: businessScopedProcedure.query(({ ctx }) => {
     return ctx.db.query.shippingRate.findMany({
-      where: eq(shippingRate.organizationId, ctx.organizationId),
+      where: eq(shippingRate.businessId, ctx.businessId),
       orderBy: desc(shippingRate.createdAt),
     });
   }),
 
-  listPolicies: storeProcedure
+  listPolicies: businessScopedProcedure
     .input(z.object({ type: z.string().optional() }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.query.policy.findMany({
-        where: and(eq(policy.organizationId, ctx.organizationId), eq(policy.active, true)),
+        where: and(eq(policy.businessId, ctx.businessId), eq(policy.active, true)),
         orderBy: desc(policy.createdAt),
       });
 
@@ -268,11 +268,11 @@ export const agentRouter = {
       return rows.filter((row) => row.type === input.type);
     }),
 
-  listFaqs: storeProcedure
+  listFaqs: businessScopedProcedure
     .input(z.object({ tag: z.string().optional() }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.query.faq.findMany({
-        where: eq(faq.organizationId, ctx.organizationId),
+        where: eq(faq.businessId, ctx.businessId),
         orderBy: desc(faq.createdAt),
       });
 
@@ -284,25 +284,25 @@ export const agentRouter = {
       return rows.filter((row) => row.tags.includes(searchTag));
     }),
 
-  createOrUpdateCustomer: storeProcedure
+  createOrUpdateCustomer: businessScopedProcedure
     .input(CustomerInput)
     .mutation(async ({ ctx, input }) => {
-      return getCustomerForUser(ctx, ctx.storeOwnerId, ctx.organizationId, input);
+      return getCustomerForUser(ctx, ctx.businessOwnerId, ctx.businessId, input);
     }),
 
-  createOrder: storeProcedure.input(CreateOrderInput).mutation(async ({ ctx, input }) => {
-      const userId = ctx.storeOwnerId;
-      const organizationId = ctx.organizationId;
+  createOrder: businessScopedProcedure.input(CreateOrderInput).mutation(async ({ ctx, input }) => {
+      const userId = ctx.businessOwnerId;
+      const businessId = ctx.businessId;
 
       let customerRow = null;
       if (input.customerId) {
         customerRow = await ctx.db.query.customer.findFirst({
-          where: and(eq(customer.id, input.customerId), eq(customer.organizationId, organizationId)),
+          where: and(eq(customer.id, input.customerId), eq(customer.businessId, businessId)),
         });
       }
 
       if (!customerRow && input.customer) {
-        customerRow = await getCustomerForUser(ctx, userId, organizationId, input.customer);
+        customerRow = await getCustomerForUser(ctx, userId, businessId, input.customer);
       }
 
       if (!customerRow) {
@@ -322,7 +322,7 @@ export const agentRouter = {
       const productIds = Array.from(new Set(variants.map((variant) => variant.productId)));
       const products = productIds.length
         ? await ctx.db.query.product.findMany({
-            where: and(inArray(product.id, productIds), eq(product.organizationId, organizationId)),
+            where: and(inArray(product.id, productIds), eq(product.businessId, businessId)),
           })
         : [];
 
@@ -353,11 +353,11 @@ export const agentRouter = {
       });
 
       const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
-      const shippingCost = await computeShippingCost(ctx, organizationId, input.shippingDistrict);
+      const shippingCost = await computeShippingCost(ctx, businessId, input.shippingDistrict);
 
       const coupon = input.couponCode
         ? await ctx.db.query.offer.findFirst({
-            where: and(eq(offer.organizationId, organizationId), eq(offer.code, input.couponCode), eq(offer.active, true)),
+            where: and(eq(offer.businessId, businessId), eq(offer.code, input.couponCode), eq(offer.active, true)),
           })
         : null;
 
@@ -369,7 +369,7 @@ export const agentRouter = {
         .insert(order)
         .values({
           userId,
-          organizationId,
+          businessId,
           customerId: customerRow.id,
           orderNumber: generateOrderNumber(),
           status: "pending",
@@ -412,10 +412,10 @@ export const agentRouter = {
       return createdOrder;
     }),
 
-  listOrders: storeProcedure
+  listOrders: businessScopedProcedure
     .input(z.object({ status: z.string().optional() }))
     .query(async ({ ctx, input }) => {
-      const baseFilter = and(eq(order.organizationId, ctx.organizationId));
+      const baseFilter = and(eq(order.businessId, ctx.businessId));
       const rows = await ctx.db.query.order.findMany({
         where: input.status ? and(baseFilter, eq(order.status, input.status)) : baseFilter,
         orderBy: desc(order.createdAt),
@@ -423,11 +423,11 @@ export const agentRouter = {
       return rows;
     }),
 
-  getOrderById: storeProcedure
+  getOrderById: businessScopedProcedure
     .input(z.object({ orderId: z.string() }))
     .query(async ({ ctx, input }) => {
       const orderRow = await ctx.db.query.order.findFirst({
-        where: and(eq(order.id, input.orderId), eq(order.organizationId, ctx.organizationId)),
+        where: and(eq(order.id, input.orderId), eq(order.businessId, ctx.businessId)),
       });
       if (!orderRow) {
         return null;
@@ -438,22 +438,22 @@ export const agentRouter = {
       return { ...orderRow, items };
     }),
 
-  updateOrderStatus: storeProcedure
+  updateOrderStatus: businessScopedProcedure
     .input(z.object({ orderId: z.string(), status: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const [updated] = await ctx.db
         .update(order)
         .set({ status: input.status })
-        .where(and(eq(order.id, input.orderId), eq(order.organizationId, ctx.organizationId)))
+        .where(and(eq(order.id, input.orderId), eq(order.businessId, ctx.businessId)))
         .returning();
       return updated;
     }),
 
-  getOrCreateAgentSession: storeProcedure
+  getOrCreateAgentSession: businessScopedProcedure
     .input(z.object({ channel: z.string(), threadId: z.string(), senderId: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
       const existing = await ctx.db.query.agentSession.findFirst({
-        where: and(eq(agentSession.organizationId, ctx.organizationId), eq(agentSession.threadId, input.threadId)),
+        where: and(eq(agentSession.businessId, ctx.businessId), eq(agentSession.threadId, input.threadId)),
       });
       if (existing) {
         return existing;
@@ -461,8 +461,8 @@ export const agentRouter = {
       const [created] = await ctx.db
         .insert(agentSession)
         .values({
-          userId: ctx.storeOwnerId,
-          organizationId: ctx.organizationId,
+          userId: ctx.businessOwnerId,
+          businessId: ctx.businessId,
           channel: input.channel,
           threadId: input.threadId,
           senderId: input.senderId ?? null,
@@ -473,24 +473,24 @@ export const agentRouter = {
       return created;
     }),
 
-  setAgentSessionState: storeProcedure
+  setAgentSessionState: businessScopedProcedure
     .input(z.object({ id: z.string(), state: z.any() }))
     .mutation(async ({ ctx, input }) => {
       const [updated] = await ctx.db
         .update(agentSession)
         .set({ state: input.state, lastMessageAt: new Date() })
-        .where(and(eq(agentSession.id, input.id), eq(agentSession.organizationId, ctx.organizationId)))
+        .where(and(eq(agentSession.id, input.id), eq(agentSession.businessId, ctx.businessId)))
         .returning();
       return updated;
     }),
 
-  clearAgentSession: storeProcedure
+  clearAgentSession: businessScopedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const [cleared] = await ctx.db
         .update(agentSession)
         .set({ state: {}, lastMessageAt: new Date() })
-        .where(and(eq(agentSession.id, input.id), eq(agentSession.organizationId, ctx.organizationId)))
+        .where(and(eq(agentSession.id, input.id), eq(agentSession.businessId, ctx.businessId)))
         .returning();
       return cleared;
     }),

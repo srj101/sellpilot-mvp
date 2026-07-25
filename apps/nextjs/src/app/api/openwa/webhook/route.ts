@@ -98,18 +98,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Derive the store (organizationId) from sessionId — session names are "org-{organizationId}"
+  // Derive the business (businessId) from sessionId — session names are "org-{businessId}"
   // (see integrations.ts's sessionName helper). The "user-" prefix is legacy: sessions created
   // before the org migration, kept here only so those old sessions don't just stop working.
-  let organizationId: string | null = null;
+  let businessId: string | null = null;
   let connection: any = null;
 
   if (sessionId.startsWith("org-")) {
-    organizationId = sessionId.slice("org-".length);
-    if (organizationId) {
+    businessId = sessionId.slice("org-".length);
+    if (businessId) {
       connection = await db.query.metaConnection.findFirst({
         where: and(
-          eq(metaConnection.organizationId, organizationId),
+          eq(metaConnection.businessId, businessId),
           eq(metaConnection.platform, "whatsapp")
         ),
       });
@@ -136,12 +136,12 @@ export async function POST(req: NextRequest) {
   }
 
   if (connection) {
-    organizationId = connection.organizationId;
+    businessId = connection.businessId;
   }
 
   const userId: string | null = connection?.userId ?? null;
 
-  if (!userId || !connection || !organizationId) {
+  if (!userId || !connection || !businessId) {
     console.log(
       "[OpenWA Webhook] Connection not found for session:",
       sessionId
@@ -258,7 +258,7 @@ export async function POST(req: NextRequest) {
       eventType: isOutbound ? "outbound" : "message",
       metaConnectionId: connection.id,
       userId,
-      organizationId,
+      businessId,
       platformAccountId: connection.platformAccountId,
       sourceId: data.id,
       rawPayload,
@@ -275,7 +275,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Trigger inbox updates
-  void triggerInboxBroadcast(organizationId);
+  void triggerInboxBroadcast(businessId);
 
   // Enqueue AI reply job for incoming messages
   if (!isOutbound) {
@@ -296,7 +296,7 @@ export async function POST(req: NextRequest) {
         platform: "whatsapp",
         connectionId: connection.id,
         userId,
-        organizationId,
+        businessId,
         recipientId: contactJid,
         threadId: `whatsapp:${contactPhone}`,
         incomingMessage: {

@@ -4,11 +4,11 @@ import { z } from "zod";
 import { desc, eq, and, inArray, createCustomerAndOrder, quoteOrder } from "@acme/db";
 import { order, orderItem } from "@acme/db/schema";
 
-import { storeProcedure } from "../trpc";
+import { businessScopedProcedure } from "../trpc";
 
 export const ordersRouter = {
   /** Live price/stock preview for the manual order form — same pricing logic the AI agent uses. */
-  quote: storeProcedure
+  quote: businessScopedProcedure
     .input(
       z.object({
         productId: z.string(),
@@ -19,7 +19,7 @@ export const ordersRouter = {
       }),
     )
     .query(async ({ ctx, input }) => {
-      return quoteOrder({ organizationId: ctx.organizationId, ...input });
+      return quoteOrder({ businessId: ctx.businessId, ...input });
     }),
 
   /**
@@ -27,7 +27,7 @@ export const ordersRouter = {
    * to place the order themselves. Reuses the exact same customer-upsert/pricing/inventory
    * logic as the AI's automatic checkout (createCustomerAndOrder), just triggered by a person.
    */
-  create: storeProcedure
+  create: businessScopedProcedure
     .input(
       z.object({
         threadId: z.string(),
@@ -43,15 +43,15 @@ export const ordersRouter = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      return createCustomerAndOrder({ userId: ctx.storeOwnerId, organizationId: ctx.organizationId, ...input });
+      return createCustomerAndOrder({ userId: ctx.businessOwnerId, businessId: ctx.businessId, ...input });
     }),
 
-  list: storeProcedure.query(async ({ ctx }) => {
-    const organizationId = ctx.organizationId;
+  list: businessScopedProcedure.query(async ({ ctx }) => {
+    const businessId = ctx.businessId;
     const orders = await ctx.db
       .select()
       .from(order)
-      .where(eq(order.organizationId, organizationId))
+      .where(eq(order.businessId, businessId))
       .orderBy(desc(order.createdAt));
 
     const items =
@@ -62,15 +62,15 @@ export const ordersRouter = {
     return { orders, items };
   }),
 
-  getById: storeProcedure
+  getById: businessScopedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
-      const organizationId = ctx.organizationId;
+      const businessId = ctx.businessId;
 
       const [ord] = await ctx.db
         .select()
         .from(order)
-        .where(and(eq(order.id, input.id), eq(order.organizationId, organizationId)))
+        .where(and(eq(order.id, input.id), eq(order.businessId, businessId)))
         .limit(1);
 
       if (!ord) return null;
@@ -83,7 +83,7 @@ export const ordersRouter = {
       return { ...ord, items };
     }),
 
-  updateStatus: storeProcedure
+  updateStatus: businessScopedProcedure
     .input(
       z.object({
         id: z.string(),
@@ -91,20 +91,20 @@ export const ordersRouter = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const organizationId = ctx.organizationId;
+      const businessId = ctx.businessId;
 
       await ctx.db
         .update(order)
         .set({ status: input.status })
-        .where(and(eq(order.id, input.id), eq(order.organizationId, organizationId)));
+        .where(and(eq(order.id, input.id), eq(order.businessId, businessId)));
 
       return { success: true };
     }),
 
-  delete: storeProcedure
+  delete: businessScopedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const organizationId = ctx.organizationId;
+      const businessId = ctx.businessId;
 
       // Delete order items first (cascade should handle, but be explicit)
       await ctx.db
@@ -113,7 +113,7 @@ export const ordersRouter = {
 
       await ctx.db
         .delete(order)
-        .where(and(eq(order.id, input.id), eq(order.organizationId, organizationId)));
+        .where(and(eq(order.id, input.id), eq(order.businessId, businessId)));
 
       return { success: true };
     }),

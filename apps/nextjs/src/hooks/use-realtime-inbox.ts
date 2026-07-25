@@ -81,7 +81,7 @@ export function useRealtimeInbox(options: UseRealtimeOptions = {}) {
     // Try WebSocket first
     const socket = io("/socket.io", {
       path: "/socket.io",
-      auth: { userId: window.__USER_ID__ },
+      auth: { userId: (window as any).__USER_ID__ },
       transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionAttempts: 5,

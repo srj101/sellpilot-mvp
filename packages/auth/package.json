@@ -6,6 +6,7 @@
     ".": "./src/index.ts",
     "./middleware": "./src/middleware.ts",
     "./client": "./src/client.ts",
+    "./email": "./src/email.ts",
     "./env": "./env.ts"
   },
   "license": "MIT",

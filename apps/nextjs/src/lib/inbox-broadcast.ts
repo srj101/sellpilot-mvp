@@ -11,23 +11,23 @@ type Subscriber = (data: InboxUpdate) => void;
 
 const subscribers = new Map<string, Set<Subscriber>>();
 
-export function subscribe(organizationId: string, callback: Subscriber): () => void {
-  if (!subscribers.has(organizationId)) {
-    subscribers.set(organizationId, new Set());
+export function subscribe(businessId: string, callback: Subscriber): () => void {
+  if (!subscribers.has(businessId)) {
+    subscribers.set(businessId, new Set());
   }
-  const subs = subscribers.get(organizationId)!;
+  const subs = subscribers.get(businessId)!;
   subs.add(callback);
 
   return () => {
     subs.delete(callback);
     if (subs.size === 0) {
-      subscribers.delete(organizationId);
+      subscribers.delete(businessId);
     }
   };
 }
 
-export function broadcast(organizationId: string, data: InboxUpdate): void {
-  const subs = subscribers.get(organizationId);
+export function broadcast(businessId: string, data: InboxUpdate): void {
+  const subs = subscribers.get(businessId);
   if (!subs || subs.size === 0) return;
 
   for (const callback of subs) {
@@ -39,7 +39,7 @@ export function broadcast(organizationId: string, data: InboxUpdate): void {
   }
 }
 
-export async function triggerInboxBroadcast(organizationId: string): Promise<void> {
+export async function triggerInboxBroadcast(businessId: string): Promise<void> {
   try {
     const [unreadEvents, latestEvent] = await Promise.all([
       db
@@ -50,7 +50,7 @@ export async function triggerInboxBroadcast(organizationId: string): Promise<voi
         .from(metaWebhookEvent)
         .where(
           and(
-            eq(metaWebhookEvent.organizationId, organizationId),
+            eq(metaWebhookEvent.businessId, businessId),
             eq(metaWebhookEvent.isRead, false),
             inArray(metaWebhookEvent.eventType, [
               "message",
@@ -66,7 +66,7 @@ export async function triggerInboxBroadcast(organizationId: string): Promise<voi
         .from(metaWebhookEvent)
         .where(
           and(
-            eq(metaWebhookEvent.organizationId, organizationId),
+            eq(metaWebhookEvent.businessId, businessId),
             inArray(metaWebhookEvent.eventType, [
               "message",
               "messages",
@@ -81,7 +81,7 @@ export async function triggerInboxBroadcast(organizationId: string): Promise<voi
     ]);
 
     const latestEventId = latestEvent[0]?.id ?? null;
-    broadcast(organizationId, {
+    broadcast(businessId, {
       unreadCount: unreadEvents.length,
       latestEventId,
     });
@@ -90,6 +90,6 @@ export async function triggerInboxBroadcast(organizationId: string): Promise<voi
   }
 }
 
-export function getSubscriberCount(organizationId: string): number {
-  return subscribers.get(organizationId)?.size ?? 0;
+export function getSubscriberCount(businessId: string): number {
+  return subscribers.get(businessId)?.size ?? 0;
 }

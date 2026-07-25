@@ -1,3 +1,0 @@
-ALTER TABLE "conversation_meta" ADD COLUMN "customer_id" text;--> statement-breakpoint
-ALTER TABLE "conversation_meta" ADD CONSTRAINT "conversation_meta_customer_id_customer_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customer"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "conversation_meta_customer_id_idx" ON "conversation_meta" USING btree ("customer_id");

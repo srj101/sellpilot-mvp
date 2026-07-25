@@ -1,12 +1,12 @@
 import { relations } from "drizzle-orm";
 import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
-import { user, organization } from "./auth-schema";
+import { user, business } from "./auth-schema";
 import { order } from "./agent-schema";
 
 /**
  * One row per page load on a customer-facing page (currently just /pay/[token]).
- * Scoped by organizationId (the store). `leftAt` is updated via a sendBeacon call on
+ * Scoped by businessId (the store). `leftAt` is updated via a sendBeacon call on
  * page unload to give a real (if approximate) session-duration signal; a row
  * with no follow-up beacon and no resulting order is a "bounce".
  */
@@ -19,9 +19,9 @@ export const pageView = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    organizationId: text("organization_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
+      .references(() => business.id, { onDelete: "cascade" }),
     orderId: text("order_id").references(() => order.id, { onDelete: "set null" }),
     sessionId: text("session_id").notNull(),
     path: text("path").notNull(),
@@ -34,7 +34,7 @@ export const pageView = pgTable(
     leftAt: timestamp("left_at"),
   },
   (table) => [
-    index("page_view_org_id_idx").on(table.organizationId),
+    index("page_view_org_id_idx").on(table.businessId),
     index("page_view_session_id_idx").on(table.sessionId),
     index("page_view_order_id_idx").on(table.orderId),
   ],

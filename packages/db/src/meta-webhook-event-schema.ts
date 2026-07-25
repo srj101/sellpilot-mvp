@@ -9,7 +9,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 
-import { user, organization } from "./auth-schema";
+import { user, business } from "./auth-schema";
 import { metaConnection } from "./meta-connection-schema";
 
 export const metaWebhookEvent = pgTable(
@@ -43,7 +43,7 @@ export const metaWebhookEvent = pgTable(
     userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
 
     /** Resolved store — the actual tenant-scoping key (a user can own more than one store). */
-    organizationId: text("organization_id").references(() => organization.id, { onDelete: "set null" }),
+    businessId: text("business_id").references(() => business.id, { onDelete: "set null" }),
 
     /** Platform-specific routing account identifier. */
     platformAccountId: text("platform_account_id").notNull(),
@@ -77,9 +77,9 @@ export const metaWebhookEvent = pgTable(
       table.platformAccountId,
     ),
     index("meta_webhook_event_user_id_idx").on(table.userId),
-    index("meta_webhook_event_org_id_idx").on(table.organizationId),
+    index("meta_webhook_event_org_id_idx").on(table.businessId),
     index("meta_webhook_event_connection_id_idx").on(table.metaConnectionId),
-    index("meta_webhook_event_thread_idx").on(table.organizationId, table.threadId),
+    index("meta_webhook_event_thread_idx").on(table.businessId, table.threadId),
   ],
 );
 

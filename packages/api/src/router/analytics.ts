@@ -4,7 +4,7 @@ import { z } from "zod/v4";
 import { eq, inArray } from "@acme/db";
 import { agentSession, customer, metaWebhookEvent, order, orderItem, pageView, product } from "@acme/db/schema";
 
-import { storeProcedure } from "../trpc";
+import { businessScopedProcedure } from "../trpc";
 
 const DAY = 86_400_000;
 
@@ -20,7 +20,7 @@ function formatDate(ms: number) {
 }
 
 export const analyticsRouter = {
-  getSummary: storeProcedure
+  getSummary: businessScopedProcedure
     .input(
       z.object({
         range: z.enum(["7d", "30d", "90d", "1y", "custom"]).default("30d"),
@@ -29,7 +29,7 @@ export const analyticsRouter = {
       }),
     )
     .query(async ({ ctx, input }) => {
-      const organizationId = ctx.organizationId;
+      const businessId = ctx.businessId;
       const now = Date.now();
 
       // Resolve the window either from a preset range or an explicit custom date pair.
@@ -51,29 +51,29 @@ export const analyticsRouter = {
       const prevEnd = windowStart;
 
       const [views, customers, categoryRows, orders, sessions, messageEvents] = await Promise.all([
-        ctx.db.select().from(pageView).where(eq(pageView.organizationId, organizationId)),
+        ctx.db.select().from(pageView).where(eq(pageView.businessId, businessId)),
         ctx.db
           .select({ country: customer.country, district: customer.district })
           .from(customer)
-          .where(eq(customer.organizationId, organizationId)),
+          .where(eq(customer.businessId, businessId)),
         ctx.db
           .select({ category: product.category, lineTotal: orderItem.lineTotal })
           .from(orderItem)
           .innerJoin(product, eq(orderItem.productId, product.id))
           .innerJoin(order, eq(orderItem.orderId, order.id))
-          .where(eq(order.organizationId, organizationId)),
+          .where(eq(order.businessId, businessId)),
         ctx.db
           .select({ id: order.id, createdAt: order.createdAt, total: order.total })
           .from(order)
-          .where(eq(order.organizationId, organizationId)),
+          .where(eq(order.businessId, businessId)),
         ctx.db
           .select({ createdAt: agentSession.createdAt })
           .from(agentSession)
-          .where(eq(agentSession.organizationId, organizationId)),
+          .where(eq(agentSession.businessId, businessId)),
         ctx.db
           .select({ eventType: metaWebhookEvent.eventType, receivedAt: metaWebhookEvent.receivedAt })
           .from(metaWebhookEvent)
-          .where(eq(metaWebhookEvent.organizationId, organizationId))
+          .where(eq(metaWebhookEvent.businessId, businessId))
           .orderBy(metaWebhookEvent.receivedAt)
           .limit(5000),
       ]);

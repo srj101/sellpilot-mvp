@@ -8,7 +8,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 
-import { user, organization } from "./auth-schema";
+import { user, business } from "./auth-schema";
 
 /**
  * Stores connections to Meta platform channels:
@@ -25,9 +25,9 @@ export const metaConnection = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    organizationId: text("organization_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
+      .references(() => business.id, { onDelete: "cascade" }),
 
     /** The channel type: "facebook_page" | "instagram" | "whatsapp" */
     platform: text("platform").notNull(),
@@ -89,8 +89,8 @@ export const metaConnection = pgTable(
       .notNull(),
   },
   (table) => [
-    index("meta_connection_org_id_idx").on(table.organizationId),
-    index("meta_connection_platform_idx").on(table.organizationId, table.platform),
+    index("meta_connection_org_id_idx").on(table.businessId),
+    index("meta_connection_platform_idx").on(table.businessId, table.platform),
     index("meta_connection_platform_account_id_idx").on(
       table.platformAccountId,
     ),
@@ -102,7 +102,7 @@ export const metaConnection = pgTable(
       table.whatsappPhoneNumberId,
     ),
     unique("meta_connection_org_platform_account").on(
-      table.organizationId,
+      table.businessId,
       table.platform,
       table.platformAccountId,
     ),

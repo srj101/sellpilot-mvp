@@ -16,34 +16,34 @@ import {
 import { sendMetaInboxReply } from "../lib/meta";
 import { buildInboxData } from "../lib/meta-inbox";
 import { resolveContactNames } from "../lib/resolve-contact-names";
-import { storeProcedure } from "../trpc";
+import { businessScopedProcedure } from "../trpc";
 
 const CLOSED_ORDER_STATUSES = ["delivered", "cancelled", "returned"];
 const STATUS_VALUES = ["open", "ticket", "resolved", "archived"] as const;
 
 export const inboxRouter = {
-  getInboxData: storeProcedure
+  getInboxData: businessScopedProcedure
     .input(z.object({ threadId: z.string().optional() }))
     .query(async ({ ctx, input }) => {
-      const organizationId = ctx.organizationId;
+      const businessId = ctx.businessId;
 
       const [events, connections, activeOrders, metas] = await Promise.all([
         ctx.db
           .select()
           .from(metaWebhookEvent)
-          .where(eq(metaWebhookEvent.organizationId, organizationId))
+          .where(eq(metaWebhookEvent.businessId, businessId))
           .orderBy(desc(metaWebhookEvent.receivedAt))
           .limit(300),
         ctx.db
           .select()
           .from(metaConnection)
-          .where(eq(metaConnection.organizationId, organizationId))
+          .where(eq(metaConnection.businessId, businessId))
           .orderBy(desc(metaConnection.connectedAt)),
         ctx.db
           .select({ threadId: order.threadId })
           .from(order)
-          .where(and(eq(order.organizationId, organizationId), notInArray(order.status, CLOSED_ORDER_STATUSES))),
-        ctx.db.select().from(conversationMeta).where(eq(conversationMeta.organizationId, organizationId)),
+          .where(and(eq(order.businessId, businessId), notInArray(order.status, CLOSED_ORDER_STATUSES))),
+        ctx.db.select().from(conversationMeta).where(eq(conversationMeta.businessId, businessId)),
       ]);
 
       const resolvedNames = await resolveContactNames(events, connections);
@@ -104,7 +104,7 @@ export const inboxRouter = {
       return { threads: data.threads, selectedThread, connections, markedRead };
     }),
 
-  sendReply: storeProcedure
+  sendReply: businessScopedProcedure
     .input(
       z.object({
         threadId: z.string(),
@@ -115,14 +115,14 @@ export const inboxRouter = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const organizationId = ctx.organizationId;
+      const businessId = ctx.businessId;
 
       const [connection] = await ctx.db
         .select()
         .from(metaConnection)
         .where(
           and(
-            eq(metaConnection.organizationId, organizationId),
+            eq(metaConnection.businessId, businessId),
             eq(metaConnection.platform, input.platform),
             eq(metaConnection.platformAccountId, input.accountId),
           ),
@@ -158,8 +158,8 @@ export const inboxRouter = {
               : "page",
         eventType: "outbound",
         metaConnectionId: connection.id,
-        userId: ctx.storeOwnerId,
-        organizationId,
+        userId: ctx.businessOwnerId,
+        businessId,
         platformAccountId: input.accountId,
         sourceId: sent.messageId ?? null,
         rawPayload: {
@@ -180,54 +180,54 @@ export const inboxRouter = {
       return { ok: true as const };
     }),
 
-  setStatus: storeProcedure
+  setStatus: businessScopedProcedure
     .input(z.object({ threadId: z.string(), status: z.enum(STATUS_VALUES) }))
     .mutation(async ({ ctx, input }) => {
       await ctx.db
         .insert(conversationMeta)
-        .values({ userId: ctx.storeOwnerId, organizationId: ctx.organizationId, threadId: input.threadId, status: input.status })
+        .values({ userId: ctx.businessOwnerId, businessId: ctx.businessId, threadId: input.threadId, status: input.status })
         .onConflictDoUpdate({
-          target: [conversationMeta.organizationId, conversationMeta.threadId],
+          target: [conversationMeta.businessId, conversationMeta.threadId],
           set: { status: input.status },
         });
       return { ok: true as const };
     }),
 
-  toggleStar: storeProcedure
+  toggleStar: businessScopedProcedure
     .input(z.object({ threadId: z.string(), starred: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       await ctx.db
         .insert(conversationMeta)
-        .values({ userId: ctx.storeOwnerId, organizationId: ctx.organizationId, threadId: input.threadId, starred: input.starred })
+        .values({ userId: ctx.businessOwnerId, businessId: ctx.businessId, threadId: input.threadId, starred: input.starred })
         .onConflictDoUpdate({
-          target: [conversationMeta.organizationId, conversationMeta.threadId],
+          target: [conversationMeta.businessId, conversationMeta.threadId],
           set: { starred: input.starred },
         });
       return { ok: true as const };
     }),
 
-  assignMember: storeProcedure
+  assignMember: businessScopedProcedure
     .input(z.object({ threadId: z.string(), memberId: z.string().nullable() }))
     .mutation(async ({ ctx, input }) => {
       await ctx.db
         .insert(conversationMeta)
-        .values({ userId: ctx.storeOwnerId, organizationId: ctx.organizationId, threadId: input.threadId, assignedMemberId: input.memberId })
+        .values({ userId: ctx.businessOwnerId, businessId: ctx.businessId, threadId: input.threadId, assignedMemberId: input.memberId })
         .onConflictDoUpdate({
-          target: [conversationMeta.organizationId, conversationMeta.threadId],
+          target: [conversationMeta.businessId, conversationMeta.threadId],
           set: { assignedMemberId: input.memberId },
         });
       return { ok: true as const };
     }),
 
-  getContactDetails: storeProcedure
+  getContactDetails: businessScopedProcedure
     .input(z.object({ customerId: z.string() }))
     .query(async ({ ctx, input }) => {
-      const organizationId = ctx.organizationId;
+      const businessId = ctx.businessId;
 
       const [cust] = await ctx.db
         .select()
         .from(customer)
-        .where(and(eq(customer.id, input.customerId), eq(customer.organizationId, organizationId)))
+        .where(and(eq(customer.id, input.customerId), eq(customer.businessId, businessId)))
         .limit(1);
       if (!cust) return null;
 
@@ -235,7 +235,7 @@ export const inboxRouter = {
         ctx.db
           .select()
           .from(order)
-          .where(and(eq(order.organizationId, organizationId), eq(order.customerId, cust.id)))
+          .where(and(eq(order.businessId, businessId), eq(order.customerId, cust.id)))
           .orderBy(desc(order.createdAt))
           .limit(10),
         ctx.db
@@ -248,43 +248,43 @@ export const inboxRouter = {
       return { customer: cust, recentOrders, tags: tagRows };
     }),
 
-  listTags: storeProcedure.query(async ({ ctx }) => {
-    return ctx.db.select().from(tag).where(eq(tag.organizationId, ctx.organizationId)).orderBy(tag.label);
+  listTags: businessScopedProcedure.query(async ({ ctx }) => {
+    return ctx.db.select().from(tag).where(eq(tag.businessId, ctx.businessId)).orderBy(tag.label);
   }),
 
-  createTag: storeProcedure
+  createTag: businessScopedProcedure
     .input(z.object({ label: z.string().min(1), color: z.string().default("slate") }))
     .mutation(async ({ ctx, input }) => {
       const [created] = await ctx.db
         .insert(tag)
-        .values({ userId: ctx.storeOwnerId, organizationId: ctx.organizationId, label: input.label, color: input.color })
+        .values({ userId: ctx.businessOwnerId, businessId: ctx.businessId, label: input.label, color: input.color })
         .onConflictDoNothing()
         .returning();
       if (created) return created;
       const [existing] = await ctx.db
         .select()
         .from(tag)
-        .where(and(eq(tag.organizationId, ctx.organizationId), eq(tag.label, input.label)))
+        .where(and(eq(tag.businessId, ctx.businessId), eq(tag.label, input.label)))
         .limit(1);
       return existing ?? null;
     }),
 
-  deleteTag: storeProcedure
+  deleteTag: businessScopedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      await ctx.db.delete(tag).where(and(eq(tag.id, input.id), eq(tag.organizationId, ctx.organizationId)));
+      await ctx.db.delete(tag).where(and(eq(tag.id, input.id), eq(tag.businessId, ctx.businessId)));
       return { ok: true as const };
     }),
 
-  tagCustomer: storeProcedure
+  tagCustomer: businessScopedProcedure
     .input(z.object({ customerId: z.string(), tagId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       // Verify both the customer and the tag actually belong to this store before linking them —
       // otherwise a caller could tag another store's customer using a tagId/customerId they
       // happen to know (both are plain UUIDs, not otherwise guessable, but defense in depth).
       const [[cust], [tagRow]] = await Promise.all([
-        ctx.db.select({ id: customer.id }).from(customer).where(and(eq(customer.id, input.customerId), eq(customer.organizationId, ctx.organizationId))).limit(1),
-        ctx.db.select({ id: tag.id }).from(tag).where(and(eq(tag.id, input.tagId), eq(tag.organizationId, ctx.organizationId))).limit(1),
+        ctx.db.select({ id: customer.id }).from(customer).where(and(eq(customer.id, input.customerId), eq(customer.businessId, ctx.businessId))).limit(1),
+        ctx.db.select({ id: tag.id }).from(tag).where(and(eq(tag.id, input.tagId), eq(tag.businessId, ctx.businessId))).limit(1),
       ]);
       if (!cust || !tagRow) {
         return { ok: false as const };
@@ -293,7 +293,7 @@ export const inboxRouter = {
       return { ok: true as const };
     }),
 
-  untagCustomer: storeProcedure
+  untagCustomer: businessScopedProcedure
     .input(z.object({ customerId: z.string(), tagId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       await ctx.db
@@ -302,24 +302,24 @@ export const inboxRouter = {
       return { ok: true as const };
     }),
 
-  listNotes: storeProcedure
+  listNotes: businessScopedProcedure
     .input(z.object({ customerId: z.string() }))
     .query(async ({ ctx, input }) => {
       return ctx.db
         .select()
         .from(customerNote)
-        .where(and(eq(customerNote.organizationId, ctx.organizationId), eq(customerNote.customerId, input.customerId)))
+        .where(and(eq(customerNote.businessId, ctx.businessId), eq(customerNote.customerId, input.customerId)))
         .orderBy(desc(customerNote.createdAt));
     }),
 
-  addNote: storeProcedure
+  addNote: businessScopedProcedure
     .input(z.object({ customerId: z.string(), body: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const [created] = await ctx.db
         .insert(customerNote)
         .values({
-          userId: ctx.storeOwnerId,
-          organizationId: ctx.organizationId,
+          userId: ctx.businessOwnerId,
+          businessId: ctx.businessId,
           customerId: input.customerId,
           authorLabel: ctx.session.user.name ?? "You",
           body: input.body,
@@ -328,7 +328,7 @@ export const inboxRouter = {
       return created;
     }),
 
-  generateSummary: storeProcedure
+  generateSummary: businessScopedProcedure
     .input(z.object({ threadId: z.string(), messages: z.array(z.object({ role: z.enum(["user", "assistant"]), text: z.string() })) }))
     .mutation(async ({ ctx, input }) => {
       if (input.messages.length === 0) {
@@ -372,9 +372,9 @@ export const inboxRouter = {
 
       await ctx.db
         .insert(conversationMeta)
-        .values({ userId: ctx.storeOwnerId, organizationId: ctx.organizationId, threadId: input.threadId, summary, summaryGeneratedAt: new Date() })
+        .values({ userId: ctx.businessOwnerId, businessId: ctx.businessId, threadId: input.threadId, summary, summaryGeneratedAt: new Date() })
         .onConflictDoUpdate({
-          target: [conversationMeta.organizationId, conversationMeta.threadId],
+          target: [conversationMeta.businessId, conversationMeta.threadId],
           set: { summary, summaryGeneratedAt: new Date() },
         });
 

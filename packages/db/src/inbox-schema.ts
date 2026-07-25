@@ -1,7 +1,7 @@
 import { relations } from "drizzle-orm";
 import { boolean, index, pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
 
-import { user, organization } from "./auth-schema";
+import { user, business } from "./auth-schema";
 import { customer } from "./agent-schema";
 
 /**
@@ -19,9 +19,9 @@ export const conversationMeta = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    organizationId: text("organization_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
+      .references(() => business.id, { onDelete: "cascade" }),
     threadId: text("thread_id").notNull(),
     /** open | ticket | resolved | archived */
     status: text("status").default("open").notNull(),
@@ -44,9 +44,9 @@ export const conversationMeta = pgTable(
       .notNull(),
   },
   (table) => [
-    index("conversation_meta_org_id_idx").on(table.organizationId),
+    index("conversation_meta_org_id_idx").on(table.businessId),
     index("conversation_meta_customer_id_idx").on(table.customerId),
-    unique("conversation_meta_org_thread_unique").on(table.organizationId, table.threadId),
+    unique("conversation_meta_org_thread_unique").on(table.businessId, table.threadId),
   ],
 );
 
@@ -64,17 +64,17 @@ export const tag = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    organizationId: text("organization_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
+      .references(() => business.id, { onDelete: "cascade" }),
     label: text("label").notNull(),
     /** Tailwind color token, e.g. "rose", "emerald" — mapped to classes in the UI. */
     color: text("color").default("slate").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    index("tag_org_id_idx").on(table.organizationId),
-    unique("tag_org_label_unique").on(table.organizationId, table.label),
+    index("tag_org_id_idx").on(table.businessId),
+    unique("tag_org_label_unique").on(table.businessId, table.label),
   ],
 );
 
@@ -112,9 +112,9 @@ export const customerNote = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    organizationId: text("organization_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
+      .references(() => business.id, { onDelete: "cascade" }),
     customerId: text("customer_id")
       .notNull()
       .references(() => customer.id, { onDelete: "cascade" }),
@@ -124,7 +124,7 @@ export const customerNote = pgTable(
   },
   (table) => [
     index("customer_note_customer_id_idx").on(table.customerId),
-    index("customer_note_org_id_idx").on(table.organizationId),
+    index("customer_note_org_id_idx").on(table.businessId),
   ],
 );
 

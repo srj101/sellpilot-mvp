@@ -19,26 +19,26 @@ import { product, productVariant } from "../product-schema";
 // id, not phone/email), so this is the only point a thread gains contact details/tags/notes.
 async function linkConversationToCustomer(
   userId: string,
-  organizationId: string,
+  businessId: string,
   threadId: string,
   customerId: string,
 ) {
   await db
     .insert(conversationMeta)
-    .values({ userId, organizationId, threadId, customerId })
+    .values({ userId, businessId, threadId, customerId })
     .onConflictDoUpdate({
-      target: [conversationMeta.organizationId, conversationMeta.threadId],
+      target: [conversationMeta.businessId, conversationMeta.threadId],
       set: { customerId },
     });
 }
 
 // Helper: get top selling products by quantity (limit)
-export async function getTopSellingProducts(organizationId: string, limit = 5) {
+export async function getTopSellingProducts(businessId: string, limit = 5) {
   // Get orders for the store
   const orderRows = await db
     .select()
     .from(order)
-    .where(eq(order.organizationId, organizationId));
+    .where(eq(order.businessId, businessId));
   const orderIds = orderRows.map((o) => o.id);
   if (orderIds.length === 0) return [];
 
@@ -85,11 +85,11 @@ export async function getTopSellingProducts(organizationId: string, limit = 5) {
 }
 
 // Get product by id
-export async function getProductById(organizationId: string, id: string) {
+export async function getProductById(businessId: string, id: string) {
   const [p] = await db
     .select()
     .from(product)
-    .where(and(eq(product.organizationId, organizationId), eq(product.id, id)));
+    .where(and(eq(product.businessId, businessId), eq(product.id, id)));
   if (!p) return null;
   const variants = await db
     .select()
@@ -99,24 +99,24 @@ export async function getProductById(organizationId: string, id: string) {
 }
 
 // List active products
-export async function listActiveProducts(organizationId: string, limit = 20) {
+export async function listActiveProducts(businessId: string, limit = 20) {
   return await db
     .select()
     .from(product)
-    .where(and(eq(product.organizationId, organizationId), eq(product.status, "active")))
+    .where(and(eq(product.businessId, businessId), eq(product.status, "active")))
     .limit(limit);
 }
 
 // Search products by keyword (simple)
 export async function searchProductsByKeyword(
-  organizationId: string,
+  businessId: string,
   keyword: string,
   limit = 10,
 ) {
   const rows = await db
     .select()
     .from(product)
-    .where(and(eq(product.organizationId, organizationId), eq(product.status, "active")));
+    .where(and(eq(product.businessId, businessId), eq(product.status, "active")));
   const normalized = keyword.trim().toLowerCase();
   const words = normalized.split(/\s+/).filter(Boolean);
   const matches = rows.filter((p) => {
@@ -167,35 +167,35 @@ function calculateDiscount(
 }
 
 // Shipping cost for a district, falling back to the business's default shipping cost.
-export async function getShippingCost(organizationId: string, district?: string) {
+export async function getShippingCost(businessId: string, district?: string) {
   if (district) {
     const [rate] = await db
       .select()
       .from(shippingRate)
       .where(
         and(
-          eq(shippingRate.organizationId, organizationId),
+          eq(shippingRate.businessId, businessId),
           eq(shippingRate.district, district),
           eq(shippingRate.active, true),
         ),
       );
     if (rate) return { cost: rate.cost, estimatedDays: rate.estimatedDays };
   }
-  const profile = await getBusinessProfile(organizationId);
+  const profile = await getBusinessProfile(businessId);
   return { cost: profile?.defaultShippingCost ?? 0, estimatedDays: null as number | null };
 }
 
 // Find or update a customer by phone instead of blindly inserting — repeat customers
-// would otherwise crash on the (organizationId, phone) unique constraint.
+// would otherwise crash on the (businessId, phone) unique constraint.
 async function upsertCustomerByPhone(
   userId: string,
-  organizationId: string,
+  businessId: string,
   data: { name: string; phone: string; address: string },
 ) {
   const [existing] = await db
     .select()
     .from(customer)
-    .where(and(eq(customer.organizationId, organizationId), eq(customer.phone, data.phone)));
+    .where(and(eq(customer.businessId, businessId), eq(customer.phone, data.phone)));
 
   if (existing) {
     const [updated] = await db
@@ -208,7 +208,7 @@ async function upsertCustomerByPhone(
 
   const [inserted] = await db
     .insert(customer)
-    .values({ userId, organizationId, name: data.name, phone: data.phone, address: data.address })
+    .values({ userId, businessId, name: data.name, phone: data.phone, address: data.address })
     .returning();
   return inserted;
 }
@@ -216,14 +216,14 @@ async function upsertCustomerByPhone(
 // Price a single line item: unit price, offer/compare-at price, shipping, and total.
 // Use this instead of having the model do price arithmetic itself.
 export async function quoteOrder(params: {
-  organizationId: string;
+  businessId: string;
   productId: string;
   variantId?: string;
   quantity: number;
   district?: string;
   offerCode?: string;
 }) {
-  const { organizationId, productId, variantId, quantity, district, offerCode } = params;
+  const { businessId, productId, variantId, quantity, district, offerCode } = params;
 
   const empty = {
     productTitle: "",
@@ -242,7 +242,7 @@ export async function quoteOrder(params: {
   const [p] = await db
     .select()
     .from(product)
-    .where(and(eq(product.organizationId, organizationId), eq(product.id, productId)));
+    .where(and(eq(product.businessId, businessId), eq(product.id, productId)));
   if (!p) return { ...empty, error: "Product not found" };
 
   const variants = await db
@@ -258,13 +258,13 @@ export async function quoteOrder(params: {
     ? await db
         .select()
         .from(offer)
-        .where(and(eq(offer.organizationId, organizationId), eq(offer.code, offerCode), eq(offer.active, true)))
+        .where(and(eq(offer.businessId, businessId), eq(offer.code, offerCode), eq(offer.active, true)))
     : [undefined];
   const discountAmount = calculateDiscount(coupon, subtotal);
 
-  const { cost: shippingCost, estimatedDays } = await getShippingCost(organizationId, district);
+  const { cost: shippingCost, estimatedDays } = await getShippingCost(businessId, district);
   const total = Math.max(0, subtotal + shippingCost - discountAmount);
-  const profile = await getBusinessProfile(organizationId);
+  const profile = await getBusinessProfile(businessId);
 
   return {
     productTitle: p.title,
@@ -284,7 +284,7 @@ export async function quoteOrder(params: {
 // Create a customer + order for a single product/variant line item.
 export async function createCustomerAndOrder(params: {
   userId: string;
-  organizationId: string;
+  businessId: string;
   threadId: string;
   channel: string;
   productId: string;
@@ -298,7 +298,7 @@ export async function createCustomerAndOrder(params: {
 }) {
   const {
     userId,
-    organizationId,
+    businessId,
     threadId,
     channel,
     productId,
@@ -314,7 +314,7 @@ export async function createCustomerAndOrder(params: {
   const [p] = await db
     .select()
     .from(product)
-    .where(and(eq(product.organizationId, organizationId), eq(product.id, productId)));
+    .where(and(eq(product.businessId, businessId), eq(product.id, productId)));
   if (!p) return { success: false, error: "Product not found" };
 
   const variants = await db
@@ -326,7 +326,7 @@ export async function createCustomerAndOrder(params: {
   if ((variant.inventoryQuantity ?? 0) < quantity)
     return { success: false, error: "Insufficient stock" };
 
-  const cust = await upsertCustomerByPhone(userId, organizationId, { name: customerName, phone, address });
+  const cust = await upsertCustomerByPhone(userId, businessId, { name: customerName, phone, address });
   if (!cust) return { success: false, error: "Unable to create customer" };
 
   const subtotal = variant.price * quantity;
@@ -334,10 +334,10 @@ export async function createCustomerAndOrder(params: {
     ? await db
         .select()
         .from(offer)
-        .where(and(eq(offer.organizationId, organizationId), eq(offer.code, offerCode), eq(offer.active, true)))
+        .where(and(eq(offer.businessId, businessId), eq(offer.code, offerCode), eq(offer.active, true)))
     : [undefined];
   const discountAmount = calculateDiscount(coupon, subtotal);
-  const { cost: shippingCost } = await getShippingCost(organizationId, district);
+  const { cost: shippingCost } = await getShippingCost(businessId, district);
   const total = Math.max(0, subtotal + shippingCost - discountAmount);
   const { paymentToken, paymentUrl } = buildPaymentLink();
 
@@ -345,7 +345,7 @@ export async function createCustomerAndOrder(params: {
     .insert(order)
     .values({
       userId,
-      organizationId,
+      businessId,
       customerId: cust.id,
       orderNumber: generateOrderNumber(),
       status: "pending",
@@ -383,7 +383,7 @@ export async function createCustomerAndOrder(params: {
     .set({ inventoryQuantity: (variant.inventoryQuantity ?? 0) - quantity })
     .where(eq(productVariant.id, variant.id));
 
-  await linkConversationToCustomer(userId, organizationId, threadId, cust.id);
+  await linkConversationToCustomer(userId, businessId, threadId, cust.id);
 
   return {
     success: true,
@@ -395,11 +395,11 @@ export async function createCustomerAndOrder(params: {
 }
 
 // Orders tied to the current conversation thread only — never other customers' orders.
-export async function getOrdersForThread(organizationId: string, threadId: string) {
+export async function getOrdersForThread(businessId: string, threadId: string) {
   const rows = await db
     .select()
     .from(order)
-    .where(and(eq(order.organizationId, organizationId), eq(order.threadId, threadId)))
+    .where(and(eq(order.businessId, businessId), eq(order.threadId, threadId)))
     .orderBy(desc(order.createdAt));
   if (rows.length === 0) return [];
 
@@ -419,35 +419,35 @@ export async function getOrdersForThread(organizationId: string, threadId: strin
 }
 
 // Get customer by phone
-export async function getCustomerByPhone(organizationId: string, phone: string) {
+export async function getCustomerByPhone(businessId: string, phone: string) {
   const [c] = await db
     .select()
     .from(customer)
-    .where(and(eq(customer.organizationId, organizationId), eq(customer.phone, phone)));
+    .where(and(eq(customer.businessId, businessId), eq(customer.phone, phone)));
   return c ?? null;
 }
 
 // Get business profile
-export async function getBusinessProfile(organizationId: string) {
+export async function getBusinessProfile(businessId: string) {
   const [b] = await db
     .select()
     .from(businessProfile)
-    .where(eq(businessProfile.organizationId, organizationId));
+    .where(eq(businessProfile.businessId, businessId));
   return b ?? null;
 }
 
 // Get offer by code
-export async function getOfferByCode(organizationId: string, code: string) {
+export async function getOfferByCode(businessId: string, code: string) {
   const [o] = await db
     .select()
     .from(offer)
-    .where(and(eq(offer.organizationId, organizationId), eq(offer.code, code)));
+    .where(and(eq(offer.businessId, businessId), eq(offer.code, code)));
   return o ?? null;
 }
 
 // Get FAQ by query (simple)
-export async function getFAQMatches(organizationId: string, query: string, limit = 5) {
-  const rows = await db.select().from(faq).where(eq(faq.organizationId, organizationId));
+export async function getFAQMatches(businessId: string, query: string, limit = 5) {
+  const rows = await db.select().from(faq).where(eq(faq.businessId, businessId));
   const q = query.trim().toLowerCase();
   const matches = rows.filter(
     (r) =>
@@ -458,7 +458,7 @@ export async function getFAQMatches(organizationId: string, query: string, limit
 }
 
 // Get low stock products
-export async function getLowStockProducts(organizationId: string, threshold = 5) {
+export async function getLowStockProducts(businessId: string, threshold = 5) {
   const variants = await db.select().from(productVariant);
   const products = await db.select().from(product);
   const prodById = new Map(products.map((p) => [p.id, p]));
@@ -466,21 +466,21 @@ export async function getLowStockProducts(organizationId: string, threshold = 5)
     .filter((v) => (v.inventoryQuantity ?? 0) < threshold)
     .filter((v) => {
       const p = prodById.get(v.productId);
-      return !!p && p.organizationId === organizationId;
+      return !!p && p.businessId === businessId;
     });
   return low.slice(0, 100);
 }
 
 // Get products by category/tag (assumes product.metadata or tags)
 export async function getProductsByTag(
-  organizationId: string,
+  businessId: string,
   tag: string,
   limit = 10,
 ) {
   const rows = await db
     .select()
     .from(product)
-    .where(and(eq(product.organizationId, organizationId), eq(product.status, "active")));
+    .where(and(eq(product.businessId, businessId), eq(product.status, "active")));
   const matches = rows.filter((p) =>
     ((p as any).metadata?.tags ?? []).includes(tag),
   );
@@ -509,7 +509,7 @@ function extractMessageText(rawPayload: Record<string, unknown>): string | null 
 // Recent conversation turns for a single thread, oldest first — used to give
 // the AI agent short-term memory across messages in the same conversation.
 export async function getConversationHistory(
-  organizationId: string,
+  businessId: string,
   threadId: string,
   limit = 20,
 ): Promise<{ role: "user" | "assistant"; content: string }[]> {
@@ -518,7 +518,7 @@ export async function getConversationHistory(
     .from(metaWebhookEvent)
     .where(
       and(
-        eq(metaWebhookEvent.organizationId, organizationId),
+        eq(metaWebhookEvent.businessId, businessId),
         eq(metaWebhookEvent.threadId, threadId),
       ),
     )
@@ -541,7 +541,7 @@ export async function getConversationHistory(
 // Log an AI-generated reply so future turns in this thread have it as history.
 export async function logOutboundMessage(params: {
   userId: string;
-  organizationId: string;
+  businessId: string;
   threadId: string;
   platform: string;
   platformAccountId: string;
@@ -549,7 +549,7 @@ export async function logOutboundMessage(params: {
   messageId?: string;
   text: string;
 }): Promise<void> {
-  const { userId, organizationId, threadId, platform, platformAccountId, recipientId, messageId, text } = params;
+  const { userId, businessId, threadId, platform, platformAccountId, recipientId, messageId, text } = params;
 
   await db.insert(metaWebhookEvent).values({
     dedupeKey: `outbound:aireply:${platform}:${threadId}:${Date.now()}:${crypto.randomUUID()}`,
@@ -557,7 +557,7 @@ export async function logOutboundMessage(params: {
     object: "page",
     eventType: "outbound",
     userId,
-    organizationId,
+    businessId,
     platformAccountId,
     threadId,
     sourceId: messageId ?? null,

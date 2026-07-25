@@ -9,10 +9,10 @@ import { useTRPC } from "~/trpc/react";
 
 export function AcceptInvitationCard({
   invitationId,
-  organizationName,
+  businessName,
 }: {
   invitationId: string;
-  organizationName: string;
+  businessName: string;
 }) {
   const trpc = useTRPC();
   const acceptInvitation = useMutation(trpc.roles.acceptInvitation.mutationOptions());
@@ -26,12 +26,12 @@ export function AcceptInvitationCard({
           { invitationId },
           {
             onSuccess: (data) => {
-              toast.success(`You've joined ${organizationName}`);
+              toast.success(`You've joined ${businessName}`);
               // Hard navigation (not router.push) so the new membership/active-org
-              // state is picked up fresh, matching the store-switch pattern used
+              // state is picked up fresh, matching the business-switch pattern used
               // in onboarding — the client query cache doesn't auto-scope by tenant.
-              window.location.href = data.organizationSlug
-                ? `/${data.organizationSlug}/dashboard`
+              window.location.href = data.businessSlug
+                ? `/${data.businessSlug}/dashboard`
                 : "/dashboard";
             },
             onError: (err) => toast.error(err.message),
@@ -40,7 +40,7 @@ export function AcceptInvitationCard({
       }
     >
       <CheckCircle2 className="h-4 w-4" />
-      {acceptInvitation.isPending ? "Joining..." : `Accept & join ${organizationName}`}
+      {acceptInvitation.isPending ? "Joining..." : `Accept & join ${businessName}`}
     </Button>
   );
 }

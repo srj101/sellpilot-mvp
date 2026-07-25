@@ -3,23 +3,23 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { and, desc, eq, inArray } from "@acme/db";
 import { customer, metaWebhookEvent, offer, order, orderItem, product } from "@acme/db/schema";
 
-import { storeProcedure } from "../trpc";
+import { businessScopedProcedure } from "../trpc";
 
 export const dashboardRouter = {
-  getOverview: storeProcedure.query(async ({ ctx }) => {
-    const organizationId = ctx.organizationId;
+  getOverview: businessScopedProcedure.query(async ({ ctx }) => {
+    const businessId = ctx.businessId;
 
     const [orders, products, customers, offers, recentEvents] = await Promise.all([
-      ctx.db.select().from(order).where(eq(order.organizationId, organizationId)).orderBy(desc(order.createdAt)),
-      ctx.db.select().from(product).where(eq(product.organizationId, organizationId)),
-      ctx.db.select().from(customer).where(eq(customer.organizationId, organizationId)),
-      ctx.db.select().from(offer).where(eq(offer.organizationId, organizationId)),
+      ctx.db.select().from(order).where(eq(order.businessId, businessId)).orderBy(desc(order.createdAt)),
+      ctx.db.select().from(product).where(eq(product.businessId, businessId)),
+      ctx.db.select().from(customer).where(eq(customer.businessId, businessId)),
+      ctx.db.select().from(offer).where(eq(offer.businessId, businessId)),
       ctx.db
         .select()
         .from(metaWebhookEvent)
         .where(
           and(
-            eq(metaWebhookEvent.organizationId, organizationId),
+            eq(metaWebhookEvent.businessId, businessId),
             inArray(metaWebhookEvent.eventType, ["message", "messages", "outbound"]),
           ),
         )

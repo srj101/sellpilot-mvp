@@ -24,13 +24,13 @@ import {
   startSession,
   stopSession,
 } from "../lib/openwa";
-import { ownerOnlyProcedure, storeProcedure } from "../trpc";
+import { ownerOnlyProcedure, businessScopedProcedure } from "../trpc";
 
 /** OpenWA session names are external WhatsApp Web session identifiers, so this must be
- * keyed by store (organizationId), not platform userId — a user owning two stores would
+ * keyed by store (businessId), not platform userId — a user owning two stores would
  * otherwise have both stores share (and fight over) the same WhatsApp Web session. */
-function sessionName(organizationId: string) {
-  return `org-${organizationId}`;
+function sessionName(businessId: string) {
+  return `org-${businessId}`;
 }
 
 async function cleanupExistingSession(name: string) {
@@ -57,9 +57,9 @@ async function cleanupExistingSession(name: string) {
   }
 }
 
-async function getOpenWASessionIdForOrg(db: typeof Db, organizationId: string) {
+async function getOpenWASessionIdForOrg(db: typeof Db, businessId: string) {
   const connection = await db.query.metaConnection.findFirst({
-    where: and(eq(metaConnection.organizationId, organizationId), eq(metaConnection.platform, "whatsapp")),
+    where: and(eq(metaConnection.businessId, businessId), eq(metaConnection.platform, "whatsapp")),
     columns: { metadata: true },
   });
 
@@ -75,7 +75,7 @@ async function persistWhatsAppSignup(
   db: typeof Db,
   input: {
     userId: string;
-    organizationId: string;
+    businessId: string;
     code: string;
     redirectUri: string;
     wabaId?: string;
@@ -143,7 +143,7 @@ async function persistWhatsAppSignup(
       .from(metaConnection)
       .where(
         and(
-          eq(metaConnection.organizationId, input.organizationId),
+          eq(metaConnection.businessId, input.businessId),
           eq(metaConnection.platform, "whatsapp"),
           inArray(metaConnection.platformAccountId, lookupIds),
         ),
@@ -185,7 +185,7 @@ async function persistWhatsAppSignup(
     } else {
       await db.insert(metaConnection).values({
         userId: input.userId,
-        organizationId: input.organizationId,
+        businessId: input.businessId,
         platform: "whatsapp",
         platformAccountId: phoneNumberId ?? wabaId,
         ...values,
@@ -197,7 +197,7 @@ async function persistWhatsAppSignup(
 }
 
 export const integrationsRouter = {
-  list: storeProcedure.query(async ({ ctx }) => {
+  list: businessScopedProcedure.query(async ({ ctx }) => {
     return ctx.db
       .select({
         id: metaConnection.id,
@@ -209,7 +209,7 @@ export const integrationsRouter = {
         accessToken: metaConnection.accessToken,
       })
       .from(metaConnection)
-      .where(eq(metaConnection.organizationId, ctx.organizationId));
+      .where(eq(metaConnection.businessId, ctx.businessId));
   }),
 
   disconnectChannel: ownerOnlyProcedure
@@ -220,7 +220,7 @@ export const integrationsRouter = {
         .where(
           and(
             eq(metaConnection.id, input.connectionId),
-            eq(metaConnection.organizationId, ctx.organizationId),
+            eq(metaConnection.businessId, ctx.businessId),
           ),
         )
         .returning({ id: metaConnection.id });
@@ -247,8 +247,8 @@ export const integrationsRouter = {
     .mutation(async ({ ctx, input }) => {
       try {
         return await persistWhatsAppSignup(ctx.db, {
-          userId: ctx.storeOwnerId,
-          organizationId: ctx.organizationId,
+          userId: ctx.businessOwnerId,
+          businessId: ctx.businessId,
           code: input.code,
           redirectUri: input.redirectUri,
           wabaId: input.wabaId,
@@ -264,7 +264,7 @@ export const integrationsRouter = {
     }),
 
   startOpenWASession: ownerOnlyProcedure.mutation(async ({ ctx }) => {
-    const name = sessionName(ctx.organizationId);
+    const name = sessionName(ctx.businessId);
 
     try {
       await cleanupExistingSession(name);
@@ -290,7 +290,7 @@ export const integrationsRouter = {
   }),
 
   fetchOpenWAQr: ownerOnlyProcedure.mutation(async ({ ctx }) => {
-    const name = sessionName(ctx.organizationId);
+    const name = sessionName(ctx.businessId);
     try {
       const qr = await getQrCode(name);
       return { ok: true as const, qrCode: qr.qrCode, status: qr.status };
@@ -304,7 +304,7 @@ export const integrationsRouter = {
   }),
 
   checkOpenWAStatus: ownerOnlyProcedure.mutation(async ({ ctx }) => {
-    const name = sessionName(ctx.organizationId);
+    const name = sessionName(ctx.businessId);
     try {
       const s = await getSessionStatus(name);
       return { ok: true as const, status: s.status, phone: s.phone, pushName: s.pushName };
@@ -315,7 +315,7 @@ export const integrationsRouter = {
   }),
 
   saveOpenWAConnection: ownerOnlyProcedure.mutation(async ({ ctx }) => {
-    const name = sessionName(ctx.organizationId);
+    const name = sessionName(ctx.businessId);
 
     try {
       const s = await getSessionStatus(name);
@@ -328,7 +328,7 @@ export const integrationsRouter = {
 
       const existing = await ctx.db.query.metaConnection.findFirst({
         where: and(
-          eq(metaConnection.organizationId, ctx.organizationId),
+          eq(metaConnection.businessId, ctx.businessId),
           eq(metaConnection.platform, "whatsapp"),
         ),
       });
@@ -349,8 +349,8 @@ export const integrationsRouter = {
           .where(eq(metaConnection.id, existing.id));
       } else {
         await ctx.db.insert(metaConnection).values({
-          userId: ctx.storeOwnerId,
-          organizationId: ctx.organizationId,
+          userId: ctx.businessOwnerId,
+          businessId: ctx.businessId,
           platform: "whatsapp",
           platformAccountId: phone,
           platformAccountName: displayName,
@@ -384,8 +384,8 @@ export const integrationsRouter = {
   }),
 
   disconnectOpenWA: ownerOnlyProcedure.mutation(async ({ ctx }) => {
-    const name = sessionName(ctx.organizationId);
-    const storedSessionId = await getOpenWASessionIdForOrg(ctx.db, ctx.organizationId);
+    const name = sessionName(ctx.businessId);
+    const storedSessionId = await getOpenWASessionIdForOrg(ctx.db, ctx.businessId);
 
     try {
       if (storedSessionId) {
@@ -434,7 +434,7 @@ export const integrationsRouter = {
         .delete(metaConnection)
         .where(
           and(
-            eq(metaConnection.organizationId, ctx.organizationId),
+            eq(metaConnection.businessId, ctx.businessId),
             eq(metaConnection.platform, "whatsapp"),
           ),
         );

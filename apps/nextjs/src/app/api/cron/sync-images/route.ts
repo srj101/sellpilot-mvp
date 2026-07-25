@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
 
     interface IndexJob {
       id: string;
-      organizationId: string;
+      businessId: string;
       productId: string;
       variantId?: string;
       imageUrl: string;
@@ -37,14 +37,14 @@ export async function GET(req: NextRequest) {
     for (const variant of allVariants) {
       if (!variant.imageUrl) continue;
 
-      // Find the product to get organizationId and title
+      // Find the product to get businessId and title
       const prod = allProducts.find((p) => p.id === variant.productId);
       if (!prod) continue;
 
       const chromaId = `variant:${variant.id}`;
       potentialJobs.push({
         id: chromaId,
-        organizationId: prod.organizationId,
+        businessId: prod.businessId,
         productId: prod.id,
         variantId: variant.id,
         imageUrl: variant.imageUrl,
@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
         const chromaId = `product:${prod.id}:${base64Url}`;
         potentialJobs.push({
           id: chromaId,
-          organizationId: prod.organizationId,
+          businessId: prod.businessId,
           productId: prod.id,
           imageUrl: imgUrl,
           productTitle: prod.title,
@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
     // Queue missing jobs
     for (const job of missingJobs) {
       queueProductImageIndexing({
-        organizationId: job.organizationId,
+        businessId: job.businessId,
         productId: job.productId,
         variantId: job.variantId,
         imageUrl: job.imageUrl,

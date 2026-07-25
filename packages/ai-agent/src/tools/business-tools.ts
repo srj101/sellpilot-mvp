@@ -8,9 +8,9 @@ import { getToolContext } from "./context";
 
 // Type for business helpers (injected at runtime)
 export interface BusinessHelpers {
-  getBusinessProfile(organizationId: string): Promise<unknown>;
-  getOfferByCode(organizationId: string, code: string): Promise<unknown>;
-  getFAQMatches(organizationId: string, query: string, limit?: number): Promise<unknown[]>;
+  getBusinessProfile(businessId: string): Promise<unknown>;
+  getOfferByCode(businessId: string, code: string): Promise<unknown>;
+  getFAQMatches(businessId: string, query: string, limit?: number): Promise<unknown[]>;
 }
 
 let helpers: BusinessHelpers | null = null;
@@ -31,9 +31,9 @@ export const getBusinessProfileTool = new DynamicStructuredTool({
   description: "Get the store's business profile (name, description, currency, support contact). Call this at the start of a new conversation to greet the customer using the real store name.",
   schema: z.object({}),
   func: async () => {
-    const { organizationId } = getToolContext();
-    console.log("[Tool] getBusinessProfile", { organizationId });
-    const result = await getHelpers().getBusinessProfile(organizationId);
+    const { businessId } = getToolContext();
+    console.log("[Tool] getBusinessProfile", { businessId });
+    const result = await getHelpers().getBusinessProfile(businessId);
     return JSON.stringify(result);
   },
 });
@@ -46,9 +46,9 @@ export const getOfferByCodeTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { code } = input as { code: string };
-    const { organizationId } = getToolContext();
-    console.log("[Tool] getOfferByCode", { organizationId, code });
-    const result = await getHelpers().getOfferByCode(organizationId, code);
+    const { businessId } = getToolContext();
+    console.log("[Tool] getOfferByCode", { businessId, code });
+    const result = await getHelpers().getOfferByCode(businessId, code);
     return JSON.stringify(result);
   },
 });
@@ -62,9 +62,9 @@ export const getFAQMatchesTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { query, limit } = input as { query: string; limit?: number };
-    const { organizationId } = getToolContext();
-    console.log("[Tool] getFAQMatches", { organizationId, query, limit });
-    const results = await getHelpers().getFAQMatches(organizationId, query, limit ?? 5);
+    const { businessId } = getToolContext();
+    console.log("[Tool] getFAQMatches", { businessId, query, limit });
+    const results = await getHelpers().getFAQMatches(businessId, query, limit ?? 5);
     return JSON.stringify(results);
   },
 });

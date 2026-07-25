@@ -9,17 +9,17 @@ import { getToolContext } from "./context";
 // Type for the aiHelpers module (injected at runtime)
 export interface AIHelpers {
   searchProductsByKeyword(
-    organizationId: string,
+    businessId: string,
     keyword: string,
     limit?: number
   ): Promise<unknown[]>;
-  getProductById(organizationId: string, productId: string): Promise<unknown>;
+  getProductById(businessId: string, productId: string): Promise<unknown>;
   checkProductStock(productId: string): Promise<{ stock: number; variants: unknown[] }>;
-  getTopSellingProducts(organizationId: string, limit?: number): Promise<unknown[]>;
-  listActiveProducts(organizationId: string, limit?: number): Promise<unknown[]>;
+  getTopSellingProducts(businessId: string, limit?: number): Promise<unknown[]>;
+  listActiveProducts(businessId: string, limit?: number): Promise<unknown[]>;
   getProductVariants(productId: string): Promise<unknown[]>;
-  getProductsByTag(organizationId: string, tag: string, limit?: number): Promise<unknown[]>;
-  getLowStockProducts(organizationId: string, threshold?: number): Promise<unknown[]>;
+  getProductsByTag(businessId: string, tag: string, limit?: number): Promise<unknown[]>;
+  getLowStockProducts(businessId: string, threshold?: number): Promise<unknown[]>;
 }
 
 let helpers: AIHelpers | null = null;
@@ -49,9 +49,9 @@ export const searchProductsTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { keyword } = input as { keyword: string };
-    const { organizationId } = getToolContext();
-    console.log("[Tool] searchProducts", { keyword, organizationId });
-    const results = await getHelpers().searchProductsByKeyword(organizationId, keyword, 10);
+    const { businessId } = getToolContext();
+    console.log("[Tool] searchProducts", { keyword, businessId });
+    const results = await getHelpers().searchProductsByKeyword(businessId, keyword, 10);
     return JSON.stringify(results);
   },
 });
@@ -64,9 +64,9 @@ export const getProductTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { id } = input as { id: string };
-    const { organizationId } = getToolContext();
-    console.log("[Tool] getProduct", { id, organizationId });
-    const result = await getHelpers().getProductById(organizationId, id);
+    const { businessId } = getToolContext();
+    console.log("[Tool] getProduct", { id, businessId });
+    const result = await getHelpers().getProductById(businessId, id);
     return JSON.stringify(result);
   },
 });
@@ -93,9 +93,9 @@ export const getTopSellingProductsTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { limit } = input as { limit?: number };
-    const { organizationId } = getToolContext();
-    console.log("[Tool] getTopSellingProducts", { organizationId, limit });
-    const results = await getHelpers().getTopSellingProducts(organizationId, limit ?? 5);
+    const { businessId } = getToolContext();
+    console.log("[Tool] getTopSellingProducts", { businessId, limit });
+    const results = await getHelpers().getTopSellingProducts(businessId, limit ?? 5);
     return JSON.stringify(results);
   },
 });
@@ -108,9 +108,9 @@ export const listActiveProductsTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { limit } = input as { limit?: number };
-    const { organizationId } = getToolContext();
-    console.log("[Tool] listActiveProducts", { organizationId, limit });
-    const results = await getHelpers().listActiveProducts(organizationId, limit ?? 20);
+    const { businessId } = getToolContext();
+    console.log("[Tool] listActiveProducts", { businessId, limit });
+    const results = await getHelpers().listActiveProducts(businessId, limit ?? 20);
     return JSON.stringify(results);
   },
 });
@@ -138,9 +138,9 @@ export const getProductsByTagTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { tag, limit } = input as { tag: string; limit?: number };
-    const { organizationId } = getToolContext();
-    console.log("[Tool] getProductsByTag", { organizationId, tag, limit });
-    const results = await getHelpers().getProductsByTag(organizationId, tag, limit ?? 10);
+    const { businessId } = getToolContext();
+    console.log("[Tool] getProductsByTag", { businessId, tag, limit });
+    const results = await getHelpers().getProductsByTag(businessId, tag, limit ?? 10);
     return JSON.stringify(results);
   },
 });
@@ -153,9 +153,9 @@ export const getLowStockProductsTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { threshold } = input as { threshold?: number };
-    const { organizationId } = getToolContext();
-    console.log("[Tool] getLowStockProducts", { organizationId, threshold });
-    const results = await getHelpers().getLowStockProducts(organizationId, threshold ?? 5);
+    const { businessId } = getToolContext();
+    console.log("[Tool] getLowStockProducts", { businessId, threshold });
+    const results = await getHelpers().getLowStockProducts(businessId, threshold ?? 5);
     return JSON.stringify(results);
   },
 });

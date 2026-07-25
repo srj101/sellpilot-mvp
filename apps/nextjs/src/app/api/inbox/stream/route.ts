@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { and, desc, eq, inArray, sql } from "@acme/db";
 import { db } from "@acme/db/client";
-import { member, metaWebhookEvent, organization } from "@acme/db/schema";
+import { metaWebhookEvent, businessMember, business } from "@acme/db/schema";
 
 import { getSession } from "~/auth/server";
 import { subscribe } from "~/lib/inbox-broadcast";
@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Optimized query - use COUNT and LIMIT 1 instead of fetching all records
-async function getUnreadDetails(organizationId: string) {
+async function getUnreadDetails(businessId: string) {
   const [unreadResult, latestResult] = await Promise.all([
     // Count unread messages
     db
@@ -19,7 +19,7 @@ async function getUnreadDetails(organizationId: string) {
       .from(metaWebhookEvent)
       .where(
         and(
-          eq(metaWebhookEvent.organizationId, organizationId),
+          eq(metaWebhookEvent.businessId, businessId),
           eq(metaWebhookEvent.isRead, false),
           inArray(metaWebhookEvent.eventType, [
             "message",
@@ -35,7 +35,7 @@ async function getUnreadDetails(organizationId: string) {
       .from(metaWebhookEvent)
       .where(
         and(
-          eq(metaWebhookEvent.organizationId, organizationId),
+          eq(metaWebhookEvent.businessId, businessId),
           inArray(metaWebhookEvent.eventType, [
             "message",
             "messages",
@@ -62,39 +62,39 @@ export async function GET(req: NextRequest) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const storeSlug = req.nextUrl.searchParams.get("storeSlug");
-  if (!storeSlug) {
-    return new Response("Missing storeSlug", { status: 400 });
+  const businessSlug = req.nextUrl.searchParams.get("businessSlug");
+  if (!businessSlug) {
+    return new Response("Missing businessSlug", { status: 400 });
   }
 
-  const [org] = await db.select({ id: organization.id }).from(organization).where(eq(organization.slug, storeSlug)).limit(1);
+  const [org] = await db.select({ id: business.id }).from(business).where(eq(business.slug, businessSlug)).limit(1);
   if (!org) {
     return new Response("Store not found", { status: 404 });
   }
 
   const [membership] = await db
-    .select({ id: member.id })
-    .from(member)
-    .where(and(eq(member.organizationId, org.id), eq(member.userId, session.user.id)))
+    .select({ id: businessMember.id })
+    .from(businessMember)
+    .where(and(eq(businessMember.businessId, org.id), eq(businessMember.userId, session.user.id)))
     .limit(1);
   if (!membership) {
     return new Response("Forbidden", { status: 403 });
   }
 
-  const organizationId = org.id;
+  const businessId = org.id;
   const encoder = new TextEncoder();
 
   // Create stream
   const customStream = new ReadableStream({
     async start(controller) {
       // Send initial data immediately
-      const initialData = await getUnreadDetails(organizationId);
+      const initialData = await getUnreadDetails(businessId);
       controller.enqueue(
         encoder.encode(`data: ${JSON.stringify(initialData)}\n\n`),
       );
 
       // Subscribe to real-time events
-      const unsubscribe = subscribe(organizationId, (data) => {
+      const unsubscribe = subscribe(businessId, (data) => {
         try {
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify(data)}\n\n`),

@@ -1,15 +1,15 @@
 import { relations } from "drizzle-orm";
 import { boolean, index, pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
 
-import { user, organization } from "./auth-schema";
+import { user, business } from "./auth-schema";
 
 /**
  * Roles table - defines app-resource permission templates for a business/tenant.
- * Scoped by organizationId (the store). Kept in its own file (not auth-schema.ts)
+ * Scoped by businessId (the store). Kept in its own file (not auth-schema.ts)
  * because `pnpm -F @acme/auth generate` regenerates that file wholesale from the
  * better-auth plugin config and would silently delete this table.
  *
- * This is deliberately separate from better-auth's own organization "member.role"
+ * This is deliberately separate from better-auth's own business "member.role"
  * (owner/admin/member, which governs org management) — this table governs access to
  * this app's own resources (Orders/Products/Customers/...) and is referenced by
  * member.customRoleKey. See packages/api/src/trpc.ts's orgProcedure.
@@ -21,9 +21,9 @@ export const role = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    organizationId: text("organization_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
+      .references(() => business.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     key: text("key").notNull(),
     description: text("description"),
@@ -36,8 +36,8 @@ export const role = pgTable(
       .notNull(),
   },
   (table) => [
-    index("role_org_id_idx").on(table.organizationId),
-    unique("role_org_key_unique").on(table.organizationId, table.key),
+    index("role_org_id_idx").on(table.businessId),
+    unique("role_org_key_unique").on(table.businessId, table.key),
   ],
 );
 
