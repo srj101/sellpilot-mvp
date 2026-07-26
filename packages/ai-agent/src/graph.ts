@@ -181,9 +181,32 @@ export class SalesAgentGraph {
       }
 
       // Count LLM calls and extract tool calls
+      let totalPromptTokens = 0;
+      let totalCompletionTokens = 0;
+      let totalTokens = 0;
+
       for (const msg of finalMessages) {
         if (msg instanceof AIMessage) {
           llmCalls++;
+          
+          if (msg.usage_metadata) {
+            totalPromptTokens += msg.usage_metadata.input_tokens ?? 0;
+            totalCompletionTokens += msg.usage_metadata.output_tokens ?? 0;
+            totalTokens += msg.usage_metadata.total_tokens ?? 0;
+          } else if (msg.response_metadata) {
+            const meta = msg.response_metadata as any;
+            const tokenUsage = meta.tokenUsage || meta.llmOutput?.tokenUsage || meta.estimatedTokenUsage;
+            
+            if (tokenUsage) {
+              totalPromptTokens += tokenUsage.promptTokens ?? tokenUsage.prompt_tokens ?? 0;
+              totalCompletionTokens += tokenUsage.completionTokens ?? tokenUsage.completion_tokens ?? 0;
+              totalTokens += tokenUsage.totalTokens ?? tokenUsage.total_tokens ?? 0;
+            } else {
+              // Debug log if we still can't find it
+              console.log("[SalesAgent] Could not find token usage in AIMessage metadata:", JSON.stringify(meta));
+            }
+          }
+
           if (msg.tool_calls) {
             for (const tc of msg.tool_calls) {
               toolCalls.push({
@@ -221,6 +244,11 @@ export class SalesAgentGraph {
         toolCalls,
         processingTime,
         llmCalls,
+        tokensUsed: {
+          prompt: totalPromptTokens,
+          completion: totalCompletionTokens,
+          total: totalTokens,
+        },
       };
     } catch (error) {
       this.logError("Agent execution failed", error);
@@ -415,10 +443,31 @@ Never use markdown formatting.`),
           .join("\n");
       }
 
+      let tokensUsed = undefined;
+      if ("usage_metadata" in response && response.usage_metadata) {
+        const meta = response.usage_metadata as any;
+        tokensUsed = {
+          prompt: meta.input_tokens ?? 0,
+          completion: meta.output_tokens ?? 0,
+          total: meta.total_tokens ?? 0,
+        };
+      } else if ("response_metadata" in response && response.response_metadata) {
+        const meta = response.response_metadata as any;
+        const usage = meta.tokenUsage || meta.llmOutput?.tokenUsage || meta.estimatedTokenUsage;
+        if (usage) {
+          tokensUsed = {
+            prompt: usage.promptTokens ?? usage.prompt_tokens ?? 0,
+            completion: usage.completionTokens ?? usage.completion_tokens ?? 0,
+            total: usage.totalTokens ?? usage.total_tokens ?? 0,
+          };
+        }
+      }
+
       return {
         response: content ? stripMarkdown(content) : FALLBACK_RESPONSES.error,
         processingTime: Date.now() - startTime,
         llmCalls: 1,
+        tokensUsed,
       };
     } catch (error) {
       console.error("[SimpleChatAgent] Error:", error);

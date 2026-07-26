@@ -15,6 +15,8 @@ import {
 } from "@acme/ai-agent";
 import { initLLMCache, getLLMCache, type LLMCache } from "@acme/realtime";
 
+import { checkAiTokenAvailability, incrementAiToken } from "../lib/ai-tokens.js";
+
 import { loadConfig } from "../config.js";
 import { RateLimiter } from "../middleware/rate-limiter.js";
 import { CircuitBreaker } from "../middleware/circuit-breaker.js";
@@ -115,6 +117,15 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
     return;
   }
 
+  // Check AI token availability for this business subscription
+  const hasTokens = await checkAiTokenAvailability(data.businessId);
+  if (!hasTokens) {
+    console.warn(`[DMReply] Business ${data.businessId} has exhausted their AI tokens.`);
+    // Optionally we could send a fallback message here notifying the customer, 
+    // but typically it just falls back to human-only mode quietly.
+    return;
+  }
+
   // Build connection for messaging
   const connection: PlatformConnection = {
     id: data.connectionId,
@@ -173,6 +184,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
   try {
     // Check LLM cache first (keyed by message + history hash + store)
     let responseText: string;
+    let tokensUsed = 0;
 
     if (llmCache?.isConnected()) {
       const cached = await llmCache.get(
@@ -198,6 +210,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
         });
 
         responseText = response.response;
+        tokensUsed = response.tokensUsed?.total ?? 0;
 
         // Cache the response
         await llmCache.set(
@@ -221,10 +234,12 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
         return agent.run(agentInput);
       });
       responseText = response.response;
+      tokensUsed = response.tokensUsed?.total ?? 0;
     }
 
     console.log(`[DMReply] Job ${job.id} generated response:`, {
       text: responseText.slice(0, 300),
+      tokensUsed,
     });
 
     // Send the response
@@ -236,6 +251,12 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
 
     if (result.success) {
       console.log(`[DMReply] Reply sent: ${result.messageId}`);
+
+      if (tokensUsed > 0) {
+        await incrementAiToken(data.businessId, tokensUsed).catch(err => {
+          console.error(`[DMReply] Failed to increment tokens for ${data.businessId}:`, err);
+        });
+      }
 
       // Log the outbound message
       if (outboundLogger) {
