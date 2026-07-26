@@ -23,12 +23,13 @@ import type {
   AgentConfig,
   AgentInput,
   AgentOutput,
+  BusinessProfileSnapshot,
   ChatMessage,
   ToolCallLog,
   ConversationContext,
 } from "./types";
-import { SALES_AGENT_SYSTEM_PROMPT, FALLBACK_RESPONSES } from "./prompts";
-import { getAllTools, setConnectionContext, setToolContext } from "./tools/index";
+import { buildSalesAgentSystemPrompt, FALLBACK_RESPONSES } from "./prompts";
+import { getAllTools, getBusinessHelpers, setConnectionContext, setToolContext } from "./tools/index";
 import { stripMarkdown } from "./sanitize";
 
 // ============================================
@@ -138,7 +139,7 @@ export class SalesAgentGraph {
     setToolContext(input.context);
 
     // Build initial messages
-    const messages = this.buildMessages(input);
+    const messages = await this.buildMessages(input);
 
     this.log("Running agent", {
       userId: input.context.userId,
@@ -272,7 +273,7 @@ export class SalesAgentGraph {
     setToolContext(input.context);
 
     // Build initial messages
-    const messages = this.buildMessages(input);
+    const messages = await this.buildMessages(input);
 
     this.log("Running agent (streaming)", {
       userId: input.context.userId,
@@ -324,11 +325,23 @@ export class SalesAgentGraph {
     }
   }
 
-  private buildMessages(input: AgentInput): BaseMessage[] {
+  private async buildMessages(input: AgentInput): Promise<BaseMessage[]> {
     const messages: BaseMessage[] = [];
 
+    // Fetched fresh per request rather than cached — a business can change its AI Agent
+    // settings (persona name, tone, language) at any time, and the next message should
+    // reflect that immediately, not whatever was true when the process started. A failed
+    // fetch degrades to the generic prompt (buildSalesAgentSystemPrompt(null)) rather than
+    // failing the whole conversation over a profile lookup.
+    let profile: BusinessProfileSnapshot | null = null;
+    try {
+      profile = await getBusinessHelpers().getBusinessProfile(input.context.businessId);
+    } catch (err) {
+      console.error("[SalesAgentGraph] Failed to fetch business profile for prompt:", err);
+    }
+
     // System prompt with user context
-    const systemPrompt = `${SALES_AGENT_SYSTEM_PROMPT}
+    const systemPrompt = `${buildSalesAgentSystemPrompt(profile)}
 
 Platform: ${input.context.platform}
 ${input.context.customerName ? `Customer name: ${input.context.customerName}` : ""}`;

@@ -40,6 +40,20 @@ export const businessProfile = pgTable(
     defaultShippingCost: integer("default_shipping_cost").default(0).notNull(),
     supportEmail: text("support_email"),
     supportPhone: text("support_phone"),
+    /**
+     * AI agent persona/behavior settings (spec §5.2 Settings > AI Agent tab). All nullable
+     * or defaulted so an owner who never opens that tab still gets sane behavior — null
+     * agentName falls back to the store name, "auto" language keeps the existing
+     * detect-and-mirror behavior.
+     */
+    agentName: text("agent_name"),
+    /** "friendly" | "professional" | "playful" | "formal" */
+    conversationTone: text("conversation_tone").default("friendly").notNull(),
+    /** "auto" | "bangla" | "english" — overrides the agent's per-message language detection */
+    preferredLanguage: text("preferred_language").default("auto").notNull(),
+    /** Minutes of inactivity before the abandoned-conversation follow-up fires (spec
+     * FR-AGT-13's "configurable delay, default 30 min") */
+    abandonedFollowupMinutes: integer("abandoned_followup_minutes").default(30).notNull(),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     /** Set once the onboarding wizard reaches its final "trial started" screen — null means
      * the business exists but the wizard was abandoned partway (see business.enterBySlug). */
@@ -76,6 +90,15 @@ export const offer = pgTable(
     /** For percentage: 10 = 10%. For fixed: whole taka, same convention as order.total (see D2). */
     value: integer("value").notNull(),
     minSubtotal: integer("min_subtotal").default(0).notNull(),
+    /**
+     * When both combo fields are set, this offer is a paired-product combo discount (e.g.
+     * "Panjabi + Pajama, ৳100 off") rather than a customer-typed coupon code — it applies
+     * automatically when both products are in the same order, no code needed. Nullable so
+     * every existing/ordinary coupon (code + minSubtotal) is unaffected. Order doesn't
+     * matter: a combo matches whichever product is A or B in either order.
+     */
+    comboProductAId: text("combo_product_a_id").references(() => product.id, { onDelete: "cascade" }),
+    comboProductBId: text("combo_product_b_id").references(() => product.id, { onDelete: "cascade" }),
     startDate: timestamp("start_date").defaultNow().notNull(),
     endDate: timestamp("end_date"),
     active: boolean("active").default(true).notNull(),
@@ -85,7 +108,11 @@ export const offer = pgTable(
       .$onUpdate(() => new Date())
       .notNull(),
   },
-  (table) => [index("offer_org_id_idx").on(table.businessId)],
+  (table) => [
+    index("offer_org_id_idx").on(table.businessId),
+    index("offer_combo_product_a_idx").on(table.comboProductAId),
+    index("offer_combo_product_b_idx").on(table.comboProductBId),
+  ],
 );
 
 /**
@@ -510,6 +537,10 @@ export const agentSession = pgTable(
       .default({})
       .notNull(),
     lastMessageAt: timestamp("last_message_at").defaultNow().notNull(),
+    /** Set once the abandoned-conversation follow-up sweep has messaged this session —
+     * a single nudge per session (spec FR-AGT-13), not a repeating ladder, so this just
+     * needs to exist, not count anything. */
+    followUpSentAt: timestamp("follow_up_sent_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

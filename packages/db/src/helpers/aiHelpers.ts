@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
 
 import {
   businessProfile,
@@ -166,6 +166,78 @@ function calculateDiscount(
   return Math.floor((subtotal * coupon.value) / 100);
 }
 
+/** `active` alone used to be the only gate on a coupon — an offer past its `endDate` (or
+ * before its `startDate`) but still flagged `active` would keep discounting real orders
+ * forever. Both checkout paths below only ever load a coupon through this. */
+function liveOfferWhere(businessId: string, code: string, now: Date) {
+  return and(
+    eq(offer.businessId, businessId),
+    eq(offer.code, code),
+    eq(offer.active, true),
+    lte(offer.startDate, now),
+    or(isNull(offer.endDate), gte(offer.endDate, now)),
+  );
+}
+
+/** Matches a live combo offer for an exact product pair, in either order — a combo set up
+ * as (A: panjabi, B: pajama) must still match when the order happens to list them the
+ * other way round. Same active/date-range gate as liveOfferWhere, just keyed by product
+ * pair instead of a typed code. */
+function liveComboOfferWhere(businessId: string, productIdA: string, productIdB: string, now: Date) {
+  return and(
+    eq(offer.businessId, businessId),
+    eq(offer.active, true),
+    lte(offer.startDate, now),
+    or(isNull(offer.endDate), gte(offer.endDate, now)),
+    or(
+      and(eq(offer.comboProductAId, productIdA), eq(offer.comboProductBId, productIdB)),
+      and(eq(offer.comboProductAId, productIdB), eq(offer.comboProductBId, productIdA)),
+    ),
+  );
+}
+
+/**
+ * Live combo offers involving this product — powers the AI's proactive "pair this with X
+ * for ৳100 off" suggestion (spec §4.3's upselling example). Returns the partner product's
+ * name so the agent doesn't need a second tool call just to know what to suggest.
+ */
+export async function getComboOffersForProduct(businessId: string, productId: string) {
+  const now = new Date();
+  const rows = await db
+    .select()
+    .from(offer)
+    .where(
+      and(
+        eq(offer.businessId, businessId),
+        eq(offer.active, true),
+        lte(offer.startDate, now),
+        or(isNull(offer.endDate), gte(offer.endDate, now)),
+        or(eq(offer.comboProductAId, productId), eq(offer.comboProductBId, productId)),
+      ),
+    );
+  if (rows.length === 0) return [];
+
+  const partnerIds = rows
+    .map((r) => (r.comboProductAId === productId ? r.comboProductBId : r.comboProductAId))
+    .filter((id): id is string => Boolean(id));
+  const partners = partnerIds.length
+    ? await db.select({ id: product.id, title: product.title }).from(product).where(inArray(product.id, partnerIds))
+    : [];
+  const partnerById = new Map(partners.map((p) => [p.id, p.title]));
+
+  return rows.map((r) => {
+    const partnerId = r.comboProductAId === productId ? r.comboProductBId : r.comboProductAId;
+    return {
+      offerId: r.id,
+      title: r.title,
+      type: r.type,
+      value: r.value,
+      partnerProductId: partnerId,
+      partnerProductName: partnerId ? (partnerById.get(partnerId) ?? null) : null,
+    };
+  });
+}
+
 // Shipping cost for a district, falling back to the business's default shipping cost.
 export async function getShippingCost(businessId: string, district?: string) {
   if (district) {
@@ -213,8 +285,26 @@ async function upsertCustomerByPhone(
   return inserted;
 }
 
-// Price a single line item: unit price, offer/compare-at price, shipping, and total.
-// Use this instead of having the model do price arithmetic itself.
+/** Shared by quoteOrder and createCustomerAndOrder for both the main item and the
+ * optional combo partner — avoids fetching/validating a product+variant four separate
+ * ways across the two functions. */
+async function resolveProductVariant(businessId: string, productId: string, variantId?: string) {
+  const [p] = await db
+    .select()
+    .from(product)
+    .where(and(eq(product.businessId, businessId), eq(product.id, productId)));
+  if (!p) return { error: "Product not found" as const, product: null, variant: null };
+
+  const variants = await db.select().from(productVariant).where(eq(productVariant.productId, p.id));
+  const variant = variantId ? variants.find((v) => v.id === variantId) : variants[0];
+  if (!variant) return { error: "Variant not found" as const, product: p, variant: null };
+
+  return { error: null, product: p, variant };
+}
+
+// Price a line item, optionally paired with a second combo product — unit price(s),
+// offer/compare-at price, combo discount, shipping, and total. Use this instead of having
+// the model do price arithmetic itself.
 export async function quoteOrder(params: {
   businessId: string;
   productId: string;
@@ -222,8 +312,14 @@ export async function quoteOrder(params: {
   quantity: number;
   district?: string;
   offerCode?: string;
+  /** Second product to price alongside the first, e.g. a combo/bundle suggestion the
+   * customer agreed to. If a live combo offer matches this exact pair, its discount is
+   * applied instead of offerCode — a combo and a typed coupon never stack. */
+  comboProductId?: string;
+  comboVariantId?: string;
+  comboQuantity?: number;
 }) {
-  const { businessId, productId, variantId, quantity, district, offerCode } = params;
+  const { businessId, productId, variantId, quantity, district, offerCode, comboProductId, comboVariantId, comboQuantity } = params;
 
   const empty = {
     productTitle: "",
@@ -231,6 +327,9 @@ export async function quoteOrder(params: {
     unitPrice: 0,
     compareAtPrice: null as number | null,
     quantity,
+    comboProductTitle: null as string | null,
+    comboUnitPrice: null as number | null,
+    comboQuantity: null as number | null,
     subtotal: 0,
     discountAmount: 0,
     shippingCost: 0,
@@ -239,28 +338,29 @@ export async function quoteOrder(params: {
     currency: "USD",
   };
 
-  const [p] = await db
-    .select()
-    .from(product)
-    .where(and(eq(product.businessId, businessId), eq(product.id, productId)));
-  if (!p) return { ...empty, error: "Product not found" };
+  const main = await resolveProductVariant(businessId, productId, variantId);
+  if (main.error) return { ...empty, productTitle: main.product?.title ?? "", error: main.error };
+  const { product: p, variant } = main;
 
-  const variants = await db
-    .select()
-    .from(productVariant)
-    .where(eq(productVariant.productId, p.id));
-  const variant = variantId ? variants.find((v) => v.id === variantId) : variants[0];
-  if (!variant) return { ...empty, productTitle: p.title, error: "Variant not found" };
+  let combo: Awaited<ReturnType<typeof resolveProductVariant>> | null = null;
+  if (comboProductId) {
+    combo = await resolveProductVariant(businessId, comboProductId, comboVariantId);
+    if (combo.error) return { ...empty, productTitle: p.title, error: `Combo product: ${combo.error}` };
+  }
 
-  const subtotal = variant.price * quantity;
+  const mainSubtotal = variant.price * quantity;
+  const comboQty = comboQuantity ?? 1;
+  const comboSubtotal = combo?.variant ? combo.variant.price * comboQty : 0;
+  const subtotal = mainSubtotal + comboSubtotal;
 
-  const [coupon] = offerCode
-    ? await db
-        .select()
-        .from(offer)
-        .where(and(eq(offer.businessId, businessId), eq(offer.code, offerCode), eq(offer.active, true)))
-    : [undefined];
-  const discountAmount = calculateDiscount(coupon, subtotal);
+  let discountAmount = 0;
+  if (combo?.variant) {
+    const [comboOffer] = await db.select().from(offer).where(liveComboOfferWhere(businessId, productId, comboProductId!, new Date()));
+    discountAmount = calculateDiscount(comboOffer, subtotal);
+  } else if (offerCode) {
+    const [coupon] = await db.select().from(offer).where(liveOfferWhere(businessId, offerCode, new Date()));
+    discountAmount = calculateDiscount(coupon, subtotal);
+  }
 
   const { cost: shippingCost, estimatedDays } = await getShippingCost(businessId, district);
   const total = Math.max(0, subtotal + shippingCost - discountAmount);
@@ -272,6 +372,9 @@ export async function quoteOrder(params: {
     unitPrice: variant.price,
     compareAtPrice: variant.compareAtPrice ?? null,
     quantity,
+    comboProductTitle: combo?.product?.title ?? null,
+    comboUnitPrice: combo?.variant?.price ?? null,
+    comboQuantity: combo?.variant ? comboQty : null,
     subtotal,
     discountAmount,
     shippingCost,
@@ -281,7 +384,7 @@ export async function quoteOrder(params: {
   };
 }
 
-// Create a customer + order for a single product/variant line item.
+// Create a customer + order, optionally with a second combo product as a paired line item.
 export async function createCustomerAndOrder(params: {
   userId: string;
   businessId: string;
@@ -295,6 +398,11 @@ export async function createCustomerAndOrder(params: {
   address: string;
   district?: string;
   offerCode?: string;
+  /** Second product the customer agreed to add — e.g. accepting a combo suggestion. If a
+   * live combo offer matches this exact pair, its discount applies instead of offerCode. */
+  comboProductId?: string;
+  comboVariantId?: string;
+  comboQuantity?: number;
 }) {
   const {
     userId,
@@ -309,34 +417,42 @@ export async function createCustomerAndOrder(params: {
     address,
     district,
     offerCode,
+    comboProductId,
+    comboVariantId,
+    comboQuantity,
   } = params;
 
-  const [p] = await db
-    .select()
-    .from(product)
-    .where(and(eq(product.businessId, businessId), eq(product.id, productId)));
-  if (!p) return { success: false, error: "Product not found" };
-
-  const variants = await db
-    .select()
-    .from(productVariant)
-    .where(eq(productVariant.productId, p.id));
-  const variant = variantId ? variants.find((v) => v.id === variantId) : variants[0];
-  if (!variant) return { success: false, error: "No variant" };
+  const main = await resolveProductVariant(businessId, productId, variantId);
+  if (main.error) return { success: false, error: main.error };
+  const { product: p, variant } = main;
   if ((variant.inventoryQuantity ?? 0) < quantity)
     return { success: false, error: "Insufficient stock" };
+
+  let combo: Awaited<ReturnType<typeof resolveProductVariant>> | null = null;
+  const comboQty = comboQuantity ?? 1;
+  if (comboProductId) {
+    combo = await resolveProductVariant(businessId, comboProductId, comboVariantId);
+    if (combo.error) return { success: false, error: `Combo product: ${combo.error}` };
+    if ((combo.variant.inventoryQuantity ?? 0) < comboQty)
+      return { success: false, error: "Insufficient stock for combo product" };
+  }
 
   const cust = await upsertCustomerByPhone(userId, businessId, { name: customerName, phone, address });
   if (!cust) return { success: false, error: "Unable to create customer" };
 
-  const subtotal = variant.price * quantity;
-  const [coupon] = offerCode
-    ? await db
-        .select()
-        .from(offer)
-        .where(and(eq(offer.businessId, businessId), eq(offer.code, offerCode), eq(offer.active, true)))
-    : [undefined];
-  const discountAmount = calculateDiscount(coupon, subtotal);
+  const mainSubtotal = variant.price * quantity;
+  const comboSubtotal = combo?.variant ? combo.variant.price * comboQty : 0;
+  const subtotal = mainSubtotal + comboSubtotal;
+
+  let discountAmount = 0;
+  if (combo?.variant) {
+    const [comboOffer] = await db.select().from(offer).where(liveComboOfferWhere(businessId, productId, comboProductId!, new Date()));
+    discountAmount = calculateDiscount(comboOffer, subtotal);
+  } else if (offerCode) {
+    const [coupon] = await db.select().from(offer).where(liveOfferWhere(businessId, offerCode, new Date()));
+    discountAmount = calculateDiscount(coupon, subtotal);
+  }
+
   const { cost: shippingCost } = await getShippingCost(businessId, district);
   const total = Math.max(0, subtotal + shippingCost - discountAmount);
   const { paymentToken, paymentUrl } = buildPaymentLink();
@@ -357,7 +473,7 @@ export async function createCustomerAndOrder(params: {
       customerPhone: phone,
       shippingAddress: address,
       shippingDistrict: district ?? null,
-      couponCode: offerCode ?? null,
+      couponCode: combo?.variant ? null : (offerCode ?? null),
       channel,
       threadId,
       paymentToken,
@@ -382,6 +498,25 @@ export async function createCustomerAndOrder(params: {
     .update(productVariant)
     .set({ inventoryQuantity: (variant.inventoryQuantity ?? 0) - quantity })
     .where(eq(productVariant.id, variant.id));
+
+  if (combo?.variant && combo.product) {
+    await db.insert(orderItem).values({
+      orderId: created.id,
+      productId: comboProductId,
+      variantId: combo.variant.id,
+      name: combo.product.title,
+      variantTitle: combo.variant.title,
+      qty: comboQty,
+      unitPrice: combo.variant.price,
+      lineTotal: combo.variant.price * comboQty,
+      imageUrl: combo.variant.imageUrl,
+    });
+
+    await db
+      .update(productVariant)
+      .set({ inventoryQuantity: (combo.variant.inventoryQuantity ?? 0) - comboQty })
+      .where(eq(productVariant.id, combo.variant.id));
+  }
 
   await linkConversationToCustomer(userId, businessId, threadId, cust.id);
 
@@ -436,13 +571,35 @@ export async function getBusinessProfile(businessId: string) {
   return b ?? null;
 }
 
+/**
+ * Whether a staff member has taken this specific thread over from the AI (FR-AGT-15).
+ * Called by the worker right before generating a reply — not just at webhook-receipt time
+ * — since a takeover can happen while a reply job is already queued; checking again here
+ * closes that race instead of letting an in-flight AI reply slip out after a human already
+ * jumped in. No conversationMeta row at all means it's never been touched, i.e. still "ai".
+ */
+export async function getConversationHandlingMode(businessId: string, threadId: string): Promise<"ai" | "human"> {
+  const [meta] = await db
+    .select({ handlingMode: conversationMeta.handlingMode })
+    .from(conversationMeta)
+    .where(and(eq(conversationMeta.businessId, businessId), eq(conversationMeta.threadId, threadId)));
+  return meta?.handlingMode === "human" ? "human" : "ai";
+}
+
 // Get offer by code
 export async function getOfferByCode(businessId: string, code: string) {
   const [o] = await db
     .select()
     .from(offer)
     .where(and(eq(offer.businessId, businessId), eq(offer.code, code)));
-  return o ?? null;
+  if (!o) return null;
+
+  // Computed here, not left to the model to work out from raw start/end dates — the AI
+  // tool result is the only thing standing between an expired offer and the agent telling
+  // a customer it's still live (checkout itself is gated separately via liveOfferWhere).
+  const now = new Date();
+  const isCurrentlyValid = o.active && o.startDate <= now && (!o.endDate || o.endDate >= now);
+  return { ...o, isCurrentlyValid };
 }
 
 // Get FAQ by query (simple)
@@ -585,6 +742,7 @@ export const aiHelpers = {
   getCustomerByPhone,
   getBusinessProfile,
   getOfferByCode,
+  getComboOffersForProduct,
   getFAQMatches,
   getLowStockProducts,
   getProductsByTag,
@@ -592,4 +750,5 @@ export const aiHelpers = {
   logOutboundMessage,
   quoteOrder,
   getShippingCost,
+  getConversationHandlingMode,
 };

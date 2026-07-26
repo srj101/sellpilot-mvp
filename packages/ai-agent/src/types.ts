@@ -50,6 +50,28 @@ export interface ConnectionContext {
   connectionId: string;
 }
 
+/**
+ * Structurally matches (a subset of) the `businessProfile` DB row — kept as a local
+ * interface rather than importing @acme/db, since this package is deliberately
+ * DB-agnostic and only ever receives data through the injected helpers (see
+ * tools/business-tools.ts's BusinessHelpers). Used to build a per-business system prompt
+ * instead of the generic, identical-for-every-store prompt this used to be.
+ */
+export interface BusinessProfileSnapshot {
+  name: string;
+  description?: string | null;
+  industry?: string | null;
+  currency?: string | null;
+  supportEmail?: string | null;
+  supportPhone?: string | null;
+  /** Custom persona name for the AI to use instead of "the AI sales assistant" */
+  agentName?: string | null;
+  /** "friendly" | "professional" | "playful" | "formal" */
+  conversationTone?: string | null;
+  /** "auto" | "bangla" | "english" */
+  preferredLanguage?: string | null;
+}
+
 // ============================================
 // Messages
 // ============================================

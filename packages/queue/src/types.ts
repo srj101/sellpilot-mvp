@@ -154,12 +154,18 @@ export type SubscriptionRenewalJob = Record<string, never>;
  * "trial ended" notification email. Self-reschedules daily. */
 export type TrialExpirySweepJob = Record<string, never>;
 
+/** No payload — sweeps agentSession rows quiet past the abandoned-conversation threshold
+ * (see apps/worker/src/handlers/conversation-followup.ts). Self-reschedules every 5
+ * minutes, not daily, since it's catching a 30-minute delay, not a daily billing cycle. */
+export type ConversationFollowUpJob = Record<string, never>;
+
 export type QueueJobMap = {
   "meta-dm-reply": MetaDMReplyJob;
   "meta-comment-reply": MetaCommentReplyJob;
   "product-image-index": ProductImageIndexJob;
   "subscription-renewal": SubscriptionRenewalJob;
   "trial-expiry-sweep": TrialExpirySweepJob;
+  "conversation-followup": ConversationFollowUpJob;
 };
 
 export type QueueJobName = keyof QueueJobMap;

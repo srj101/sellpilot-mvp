@@ -6,8 +6,10 @@ export {
   handleDMReply,
   setHistoryProvider,
   setOutboundLogger,
+  setHandlingModeProvider,
   type ConversationHistoryProvider,
   type OutboundLogger,
+  type HandlingModeProvider,
 } from "./dm-reply.js";
 
 export {

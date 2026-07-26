@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
-import { Archive, MoreHorizontal, Star, CheckCircle2 } from "lucide-react";
+import { Archive, MoreHorizontal, Star, CheckCircle2, Headset, Bot } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
 import {
@@ -52,15 +52,19 @@ export function ThreadHeaderActions({
   threadId,
   status,
   starred,
+  handlingMode,
 }: {
   threadId: string;
   status: string;
   starred: boolean;
+  handlingMode: string;
 }) {
   const trpc = useTRPC();
   const router = useRouter();
   const setStatus = useMutation(trpc.inbox.setStatus.mutationOptions());
   const toggleStar = useMutation(trpc.inbox.toggleStar.mutationOptions());
+  const setHandlingMode = useMutation(trpc.inbox.setHandlingMode.mutationOptions());
+  const isHuman = handlingMode === "human";
 
   function updateStatus(next: string) {
     setStatus.mutate({ threadId, status: next as "open" | "ticket" | "resolved" | "archived" }, { onSuccess: () => router.refresh() });
@@ -68,6 +72,24 @@ export function ThreadHeaderActions({
 
   return (
     <div className="flex items-center gap-1.5">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className={cn("h-8 gap-1.5", isHuman && "border-primary/40 bg-primary/10 text-primary")}
+        disabled={setHandlingMode.isPending}
+        onClick={() =>
+          setHandlingMode.mutate(
+            { threadId, handlingMode: isHuman ? "ai" : "human" },
+            { onSuccess: () => router.refresh() },
+          )
+        }
+        title={isHuman ? "Hand this conversation back to the AI" : "Take over this conversation from the AI"}
+      >
+        {isHuman ? <Headset className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
+        {isHuman ? "You're handling this" : "Take over"}
+      </Button>
+
       <IconButton
         label={starred ? "Unstar conversation" : "Star conversation"}
         active={starred}

@@ -2,9 +2,93 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod";
 
 import { desc, eq, and, inArray, createCustomerAndOrder, quoteOrder } from "@acme/db";
-import { order, orderItem, transaction } from "@acme/db/schema";
+import type { db as Db } from "@acme/db/client";
+import { metaConnection, metaWebhookEvent, order, orderItem, transaction } from "@acme/db/schema";
 
+import { sendMetaInboxReply } from "../lib/meta";
 import { businessScopedProcedure } from "../trpc";
+
+const ORDER_STATUSES = ["pending", "confirmed", "paid", "shipped", "delivered", "cancelled", "returned"] as const;
+type OrderStatus = (typeof ORDER_STATUSES)[number];
+
+const STATUS_MESSAGE: Partial<Record<OrderStatus, (orderNumber: string) => string>> = {
+  shipped: (n) => `Good news! Your order #${n} has been shipped and is on its way to you.`,
+  delivered: (n) => `Your order #${n} has been delivered. Thank you for shopping with us!`,
+  cancelled: (n) => `Your order #${n} has been cancelled. Reply here if you have any questions.`,
+  returned: (n) => `We've received your return for order #${n}. We'll be in touch about next steps.`,
+};
+
+/**
+ * Best-effort notification back into the original chat thread when an order's
+ * fulfillment status changes — mirrors inbox.sendReply's exact send + logging pattern so
+ * the message shows up in that thread's history too. Failures are swallowed (logged only):
+ * a messaging hiccup must never fail the status update itself, and a manually-created
+ * order (channel "manual", no real thread) has nowhere to send to in the first place.
+ */
+async function notifyCustomerOfStatus(
+  db: typeof Db,
+  businessId: string,
+  orderRow: { channel: string | null; threadId: string | null; orderNumber: string },
+  status: OrderStatus,
+): Promise<void> {
+  const build = STATUS_MESSAGE[status];
+  if (!build) return;
+  if (!orderRow.channel || !orderRow.threadId) return;
+  if (orderRow.channel !== "facebook_page" && orderRow.channel !== "instagram" && orderRow.channel !== "whatsapp") return;
+
+  const platform = orderRow.channel;
+  const separatorIndex = orderRow.threadId.indexOf(":");
+  const recipientId = separatorIndex >= 0 ? orderRow.threadId.slice(separatorIndex + 1) : null;
+  if (!recipientId) return;
+
+  try {
+    const [connection] = await db
+      .select()
+      .from(metaConnection)
+      .where(and(eq(metaConnection.businessId, businessId), eq(metaConnection.platform, platform)))
+      .limit(1);
+    if (!connection) return;
+
+    const accessToken = connection.accessToken ?? connection.facebookPageAccessToken ?? connection.whatsappAccessToken;
+    if (!accessToken) return;
+
+    const text = build(orderRow.orderNumber);
+    const sent = await sendMetaInboxReply({
+      platform,
+      accessToken,
+      accountId: platform === "instagram" ? (connection.facebookPageId ?? connection.platformAccountId) : connection.platformAccountId,
+      recipientId,
+      text,
+    });
+
+    await db.insert(metaWebhookEvent).values({
+      dedupeKey: `order-status:${orderRow.threadId}:${status}:${Date.now()}:${crypto.randomUUID()}`,
+      platform,
+      object: platform === "instagram" ? "instagram" : "page",
+      eventType: "outbound",
+      metaConnectionId: connection.id,
+      userId: connection.userId,
+      businessId,
+      platformAccountId: connection.platformAccountId,
+      sourceId: sent.messageId ?? null,
+      rawPayload: {
+        direction: "outbound",
+        threadKey: orderRow.threadId,
+        recipientId,
+        accountId: connection.platformAccountId,
+        platform,
+        text,
+        response: sent.raw,
+      },
+      headers: {},
+      status: "sent",
+      sentBy: "system",
+      processedAt: new Date(),
+    });
+  } catch (err) {
+    console.error(`[orders.updateStatus] Failed to notify customer for order ${orderRow.orderNumber}:`, err);
+  }
+}
 
 export const ordersRouter = {
   /** Live price/stock preview for the manual order form — same pricing logic the AI agent uses. */
@@ -87,16 +171,18 @@ export const ordersRouter = {
     .input(
       z.object({
         id: z.string(),
-        status: z.string(),
+        status: z.enum(ORDER_STATUSES),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const businessId = ctx.businessId;
 
-      await ctx.db
+      const [updated] = await ctx.db
         .update(order)
         .set({ status: input.status })
-        .where(and(eq(order.id, input.id), eq(order.businessId, businessId)));
+        .where(and(eq(order.id, input.id), eq(order.businessId, businessId)))
+        .returning({ channel: order.channel, threadId: order.threadId, orderNumber: order.orderNumber });
+      if (!updated) return { success: false };
 
       // COD money is only actually collected at the doorstep — flip the ledger entry from
       // "pending" to "success" once delivery is confirmed, so the Payments page's Pending
@@ -113,6 +199,10 @@ export const ordersRouter = {
           .set({ status: "failed" })
           .where(and(eq(transaction.orderId, input.id), eq(transaction.method, "cod"), eq(transaction.status, "pending")));
       }
+
+      // Fire-and-forget from the caller's perspective — awaited here so failures are
+      // caught by the try/catch inside, but never throws past this point.
+      await notifyCustomerOfStatus(ctx.db, businessId, updated, input.status);
 
       return { success: true };
     }),

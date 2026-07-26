@@ -10,6 +10,7 @@
     "./calendar": "./src/calendar.tsx",
     "./card": "./src/card.tsx",
     "./collapsible": "./src/collapsible.tsx",
+    "./dialog": "./src/dialog.tsx",
     "./dropdown-menu": "./src/dropdown-menu.tsx",
     "./field": "./src/field.tsx",
     "./input": "./src/input.tsx",

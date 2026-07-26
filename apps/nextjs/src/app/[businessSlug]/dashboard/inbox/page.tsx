@@ -156,7 +156,12 @@ export default async function InboxPage(props: {
                     </p>
                     <AssignAgentButton threadId={selectedThread.id} assignedMemberId={selectedThread.assignedMemberId} />
                   </div>
-                  <ThreadHeaderActions threadId={selectedThread.id} status={selectedThread.status} starred={selectedThread.starred} />
+                  <ThreadHeaderActions
+                    threadId={selectedThread.id}
+                    status={selectedThread.status}
+                    starred={selectedThread.starred}
+                    handlingMode={selectedThread.handlingMode}
+                  />
                 </div>
 
                 <div className="flex-1 space-y-4 overflow-y-auto p-6">

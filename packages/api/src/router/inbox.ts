@@ -76,6 +76,7 @@ export const inboxRouter = {
         thread.starred = meta?.starred ?? false;
         thread.customerId = meta?.customerId ?? null;
         thread.assignedMemberId = meta?.assignedMemberId ?? null;
+        thread.handlingMode = meta?.handlingMode ?? "ai";
         thread.tags = thread.customerId ? (tagsByCustomerId.get(thread.customerId) ?? []) : [];
       }
 
@@ -177,6 +178,17 @@ export const inboxRouter = {
         processedAt: new Date(),
       });
 
+      // A manual reply implies the staff member is now handling this thread, even if they
+      // never clicked the explicit "Take over" button — otherwise the AI could still reply
+      // to the customer's next message right alongside them.
+      await ctx.db
+        .insert(conversationMeta)
+        .values({ userId: ctx.businessOwnerId, businessId, threadId: input.threadId, handlingMode: "human" })
+        .onConflictDoUpdate({
+          target: [conversationMeta.businessId, conversationMeta.threadId],
+          set: { handlingMode: "human" },
+        });
+
       return { ok: true as const };
     }),
 
@@ -215,6 +227,21 @@ export const inboxRouter = {
         .onConflictDoUpdate({
           target: [conversationMeta.businessId, conversationMeta.threadId],
           set: { assignedMemberId: input.memberId },
+        });
+      return { ok: true as const };
+    }),
+
+  /** Take a thread over from the AI, or hand it back (spec FR-AGT-15). While "human", the
+   * DM-reply worker skips generating an AI reply entirely — see dm-reply.ts. */
+  setHandlingMode: businessScopedProcedure
+    .input(z.object({ threadId: z.string(), handlingMode: z.enum(["ai", "human"]) }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db
+        .insert(conversationMeta)
+        .values({ userId: ctx.businessOwnerId, businessId: ctx.businessId, threadId: input.threadId, handlingMode: input.handlingMode })
+        .onConflictDoUpdate({
+          target: [conversationMeta.businessId, conversationMeta.threadId],
+          set: { handlingMode: input.handlingMode },
         });
       return { ok: true as const };
     }),

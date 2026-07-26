@@ -76,7 +76,7 @@ export function InvoiceDetailClient({ invoice }: { invoice: InvoiceDetail }) {
     window.print();
   };
 
-  const handleStatusChange = async (newStatus: string) => {
+  const handleStatusChange = async (newStatus: "pending" | "confirmed" | "paid" | "shipped" | "delivered" | "cancelled" | "returned") => {
     setIsUpdating(true);
     try {
       await updateStatusMutation.mutateAsync({
@@ -127,7 +127,7 @@ export function InvoiceDetailClient({ invoice }: { invoice: InvoiceDetail }) {
             <select
               value={status}
               disabled={isUpdating}
-              onChange={(e) => handleStatusChange(e.target.value)}
+              onChange={(e) => handleStatusChange(e.target.value as "pending" | "confirmed" | "paid" | "shipped" | "delivered" | "cancelled" | "returned")}
               className="text-xs font-semibold bg-transparent border-none outline-none text-foreground cursor-pointer"
             >
               <option value="pending">Pending</option>
@@ -135,6 +135,7 @@ export function InvoiceDetailClient({ invoice }: { invoice: InvoiceDetail }) {
               <option value="shipped">Shipped</option>
               <option value="delivered">Delivered</option>
               <option value="cancelled">Cancelled</option>
+              <option value="returned">Returned</option>
             </select>
           </div>
 

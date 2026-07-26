@@ -27,6 +27,12 @@ export const conversationMeta = pgTable(
     status: text("status").default("open").notNull(),
     starred: boolean("starred").default(false).notNull(),
     /**
+     * "ai" | "human" — spec FR-AGT-15's takeover flag. While "human", the DM-reply worker
+     * skips auto-generating a reply entirely (see apps/worker/src/handlers/dm-reply.ts) so
+     * a staff member's manual reply is never raced by an AI response to the same message.
+     */
+    handlingMode: text("handling_mode").default("ai").notNull(),
+    /**
      * Linked CRM customer record, if one exists yet. A thread only gets a customer once
      * an order has been placed on it (AI or manual) — threads/customers aren't otherwise
      * connected, since conversations are keyed by platform contact id, not phone/email.

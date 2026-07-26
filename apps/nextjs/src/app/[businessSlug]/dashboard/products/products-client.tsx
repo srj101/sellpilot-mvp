@@ -1,30 +1,54 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import Link from "next/link";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import Papa from "papaparse";
 import {
   AlertCircle,
   Archive,
   ArrowUpRight,
   Edit,
   Eye,
+  FileDown,
   ImageIcon,
+  Loader2,
+  Lock,
   Plus,
-  Search,
   Sparkles,
   Trash2,
   Upload,
+  UploadCloud,
   X,
 } from "lucide-react";
 
 import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
 import { Input } from "@acme/ui/input";
-import { Separator } from "@acme/ui/separator";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@acme/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@acme/ui/dialog";
+import { toast } from "@acme/ui/toast";
+import { cn } from "@acme/ui";
 
 import { useTRPC } from "~/trpc/react";
 import { ProductForm } from "./product-form";
+
+interface BulkRow {
+  title: string;
+  category?: string;
+  price: number;
+  discountPercent?: number;
+  stockQty: number;
+  description?: string;
+  rating?: number;
+  imageUrl?: string;
+}
+
+function pickField(row: Record<string, string>, ...keys: string[]) {
+  for (const k of keys) {
+    if (row[k] !== undefined && row[k] !== "") return row[k];
+  }
+  return undefined;
+}
 
 interface ProductsClientProps {
   initialProducts?: any[];
@@ -38,12 +62,25 @@ export function ProductsClient({
   const trpc = useTRPC();
   const deleteProductMutation = useMutation(trpc.products.delete.mutationOptions());
   const testImageSearchMutation = useMutation(trpc.products.testImageSearch.mutationOptions());
+  const bulkCreateMutation = useMutation(trpc.products.bulkCreate.mutationOptions());
+  const { data: usage } = useQuery(trpc.products.getUsage.queryOptions());
+  const atLimit = usage?.remaining === 0;
   const [products, setProducts] = useState<any[]>(initialProducts ?? []);
   const [variants, setVariants] = useState<any[]>(initialVariants ?? []);
   const [view, setView] = useState<"list" | "create" | "edit" | "sandbox">(
     "list",
   );
   const [editingProduct, setEditingProduct] = useState<any>(null);
+
+  // CSV bulk import state
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [csvRows, setCsvRows] = useState<BulkRow[]>([]);
+  const [csvSkipped, setCsvSkipped] = useState(0);
+  const [csvFileName, setCsvFileName] = useState<string | null>(null);
+  const [csvError, setCsvError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importSummary, setImportSummary] = useState<{ imported: number; skipped: number } | null>(null);
 
   // Search Sandbox state
   const [sandboxImageUrl, setSandboxImageUrl] = useState("");
@@ -94,6 +131,107 @@ export function ProductsClient({
       }
     }
   };
+
+  function openImportDialog() {
+    setCsvRows([]);
+    setCsvSkipped(0);
+    setCsvFileName(null);
+    setCsvError(null);
+    setImportSummary(null);
+    setIsImportOpen(true);
+  }
+
+  function parseCsv(file: File) {
+    setCsvError(null);
+    setImportSummary(null);
+    setCsvFileName(file.name);
+    Papa.parse<Record<string, string>>(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const rows: BulkRow[] = [];
+        let skipped = 0;
+        for (const row of results.data) {
+          const title = pickField(row, "title", "Title", "name", "Name")?.trim();
+          const priceRaw = pickField(row, "price", "Price");
+          const price = Number(priceRaw);
+          if (!title || !priceRaw || Number.isNaN(price) || price <= 0) {
+            skipped++;
+            continue;
+          }
+          const discountRaw = pickField(row, "discountPercent", "Discount%", "discount");
+          const ratingRaw = pickField(row, "rating", "Rating");
+          rows.push({
+            title,
+            category: pickField(row, "category", "Category"),
+            price,
+            discountPercent: discountRaw ? Number(discountRaw) : undefined,
+            stockQty: Number(pickField(row, "stockQty", "Stock Qty", "stock") ?? 0) || 0,
+            description: pickField(row, "description", "Description"),
+            rating: ratingRaw ? Number(ratingRaw) : undefined,
+            imageUrl: pickField(row, "imageUrl", "Image", "image"),
+          });
+        }
+
+        if (rows.length > 500) {
+          setCsvError(`This file has ${rows.length} valid rows — the limit is 500 per import. Please split it into multiple files.`);
+          setCsvRows([]);
+          setCsvSkipped(0);
+          return;
+        }
+        if (rows.length === 0) {
+          setCsvError("No valid rows found — make sure each row has a title and a price.");
+        }
+        setCsvRows(rows);
+        setCsvSkipped(skipped);
+      },
+      error: (err) => setCsvError(err.message),
+    });
+  }
+
+  function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) parseCsv(file);
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) parseCsv(file);
+  }
+
+  function downloadTemplate() {
+    const header = "title,category,price,discountPercent,stockQty,description,rating,imageUrl\n";
+    const sample = "Ceramic Flower Vase,Decor,450,10,20,Hand-finished ceramic vase,,https://example.com/vase.jpg\n";
+    const blob = new Blob([header + sample], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "sellpilot-products-template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleImport() {
+    if (csvRows.length === 0) return;
+    setIsImporting(true);
+    setCsvError(null);
+    try {
+      const result = await bulkCreateMutation.mutateAsync({ products: csvRows });
+      if (result.skipped > 0) {
+        setImportSummary({ imported: result.imported, skipped: result.skipped });
+      } else {
+        toast.success(`Imported ${result.imported} product${result.imported === 1 ? "" : "s"}`);
+        window.location.reload();
+      }
+    } catch (err) {
+      setCsvError(err instanceof Error ? err.message : "Import failed — please try again.");
+    } finally {
+      setIsImporting(false);
+    }
+  }
 
   const handleSandboxSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -162,6 +300,24 @@ export function ProductsClient({
           <p className="mt-1 text-sm text-muted-foreground">Manage your product catalog and variations</p>
         </div>
         <div className="flex items-center gap-2">
+          {usage && (
+            <div
+              title={`${usage.used} of ${usage.limit} products used on ${usage.planName}`}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium tabular-nums",
+                atLimit ? "border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-400" : "text-muted-foreground",
+              )}
+            >
+              {atLimit && <Lock className="h-3 w-3 shrink-0" />}
+              <span>{usage.used}/{usage.limit}</span>
+              <div className="hidden h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-muted sm:block">
+                <div
+                  className={cn("h-full rounded-full transition-all", atLimit ? "bg-amber-500" : "bg-primary")}
+                  style={{ width: `${Math.min(100, Math.round((usage.used / usage.limit) * 100))}%` }}
+                />
+              </div>
+            </div>
+          )}
           <Button
             variant={view === "sandbox" ? "default" : "outline"}
             size="sm"
@@ -171,10 +327,23 @@ export function ProductsClient({
             <Eye className="h-4 w-4" />
             {view === "sandbox" ? "Back to Products" : "Vector Sandbox"}
           </Button>
-          <Button size="sm" onClick={() => setView("create")} className="h-8 gap-1.5 text-xs">
-            <Plus className="h-4 w-4" />
-            Add Product
+          <Button variant="outline" size="sm" onClick={openImportDialog} className="h-8 gap-1.5 text-xs">
+            <UploadCloud className="h-4 w-4" />
+            Import CSV
           </Button>
+          {atLimit ? (
+            <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
+              <Link href="/dashboard/pricing">
+                <Lock className="h-4 w-4" />
+                Upgrade
+              </Link>
+            </Button>
+          ) : (
+            <Button size="sm" onClick={() => setView("create")} className="h-8 gap-1.5 text-xs">
+              <Plus className="h-4 w-4" />
+              Add Product
+            </Button>
+          )}
         </div>
       </div>
 
@@ -442,6 +611,139 @@ export function ProductsClient({
           </div>
         </div>
       )}
+
+      {/* CSV Bulk Import Dialog */}
+      <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
+        <DialogContent className="flex max-h-[90dvh] flex-col p-0 sm:max-w-2xl">
+          <DialogHeader className="px-6 pt-6 pb-4 sm:px-8 sm:pt-8">
+            <DialogTitle className="text-xl">Import Products from CSV</DialogTitle>
+            <DialogDescription>
+              Bulk-add products from a spreadsheet. Colour/size variants aren't supported via CSV yet — use Manual Entry for those.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pb-6 sm:px-8">
+            {usage && (
+              <div className={cn(
+                "flex items-center justify-between rounded-lg border px-3 py-2 text-xs",
+                atLimit ? "border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-400" : "text-muted-foreground",
+              )}>
+                <span>{usage.used} of {usage.limit} products used on {usage.planName}</span>
+                <span className="font-semibold">{usage.remaining} remaining</span>
+              </div>
+            )}
+
+            <div
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              className={cn(
+                "rounded-xl border-2 border-dashed p-8 bg-muted/20 flex flex-col items-center justify-center text-center gap-3 transition-colors",
+                isDragging && "border-primary bg-primary/5",
+              )}
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <UploadCloud className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="font-semibold">Drop your CSV here</h3>
+                <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+                  Or click below to browse. Image URLs must be publicly reachable.
+                </p>
+              </div>
+              <div className="flex gap-2.5 pt-1">
+                <Button type="button" variant="outline" size="sm" onClick={downloadTemplate} className="gap-1.5">
+                  <FileDown className="h-3.5 w-3.5" />
+                  Template
+                </Button>
+                <label className="cursor-pointer">
+                  <span className="inline-flex items-center rounded-md bg-secondary px-3 py-1.5 text-xs font-medium hover:bg-secondary/80 transition-colors">
+                    Browse Files
+                  </span>
+                  <input type="file" accept=".csv" className="sr-only" onChange={handleFileInput} />
+                </label>
+              </div>
+              {csvFileName && <p className="text-xs text-muted-foreground">Loaded: {csvFileName}</p>}
+            </div>
+
+            {csvError && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {csvError}
+              </div>
+            )}
+
+            {importSummary && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400">
+                <p className="flex items-center gap-2 font-medium">
+                  <Lock className="h-4 w-4 shrink-0" />
+                  Imported {importSummary.imported} product{importSummary.imported === 1 ? "" : "s"}
+                </p>
+                <p className="mt-1 text-xs">
+                  {importSummary.skipped} row{importSummary.skipped > 1 ? "s were" : " was"} skipped — you've reached your plan's product limit.{" "}
+                  <Link href="/dashboard/pricing" className="font-medium underline underline-offset-2">Upgrade</Link> to import the rest.
+                </p>
+              </div>
+            )}
+
+            {csvRows.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  {csvRows.length} valid row{csvRows.length > 1 ? "s" : ""}
+                  {csvSkipped > 0 ? ` — ${csvSkipped} skipped (missing title/price)` : ""}
+                </p>
+                {usage && csvRows.length > usage.remaining && (
+                  <p className="flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400">
+                    <Lock className="h-3.5 w-3.5 shrink-0 translate-y-0.5" />
+                    <span>
+                      Your {usage.planName} plan allows {usage.limit} products and you have {usage.remaining} slot{usage.remaining === 1 ? "" : "s"} left.
+                      Only the first {usage.remaining} of {csvRows.length} rows will be imported (in file order) — the rest will be skipped.{" "}
+                      <Link href="/dashboard/pricing" className="font-medium underline underline-offset-2">Upgrade</Link> to import all of them.
+                    </span>
+                  </p>
+                )}
+                <div className="overflow-x-auto rounded-lg border max-h-64 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/50 text-left text-xs font-medium text-muted-foreground sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2">Title</th>
+                        <th className="px-3 py-2">Category</th>
+                        <th className="px-3 py-2">Price</th>
+                        <th className="px-3 py-2">Stock</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {csvRows.map((r, i) => (
+                        <tr key={i} className={cn("border-t", usage && i >= usage.remaining && "opacity-40")}>
+                          <td className="px-3 py-2">{r.title}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{r.category ?? "—"}</td>
+                          <td className="px-3 py-2">{r.price}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{r.stockQty}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {csvRows.length > 0 && (
+            <div className="shrink-0 border-t px-6 py-4 sm:px-8 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsImportOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleImport} disabled={isImporting || usage?.remaining === 0} className="gap-1.5">
+                {isImporting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {(() => {
+                  const importCount = usage ? Math.min(csvRows.length, usage.remaining) : csvRows.length;
+                  return `Import ${importCount} Product${importCount === 1 ? "" : "s"}`;
+                })()}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

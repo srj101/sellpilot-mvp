@@ -19,6 +19,10 @@ export interface CreateOrderParams {
   address: string;
   district?: string;
   offerCode?: string;
+  /** Second product the customer agreed to add — e.g. accepting a combo suggestion. */
+  comboProductId?: string;
+  comboVariantId?: string;
+  comboQuantity?: number;
 }
 
 export interface CreateOrderResult {
@@ -54,7 +58,7 @@ function getHelpers(): OrderHelpers {
 export const createOrderTool = new DynamicStructuredTool({
   name: "createOrder",
   description:
-    "Create a customer order. Only call this after the customer has confirmed the price breakdown (regular price, offer price if any, shipping cost, total) and all order details.",
+    "Create a customer order. Only call this after the customer has confirmed the price breakdown (regular price, offer price if any, shipping cost, total) and all order details. If the customer agreed to add a combo/bundle product (from getComboOffersForProduct), pass it as comboProductId — the same value used in the quoteOrder call that produced the confirmed total — so the order actually reflects both items and the combo discount.",
   schema: z.object({
     productId: z.string().describe("Product ID"),
     variantId: z.string().optional().describe("Specific variant ID, if the customer chose one"),
@@ -64,9 +68,12 @@ export const createOrderTool = new DynamicStructuredTool({
     address: z.string().describe("Delivery address"),
     district: z.string().optional().describe("Delivery district/city, used to look up the shipping cost"),
     offerCode: z.string().optional().describe("Discount/offer code the customer provided"),
+    comboProductId: z.string().optional().describe("A second product the customer agreed to add as a combo"),
+    comboVariantId: z.string().optional().describe("Specific variant ID for the combo product, if the customer chose one"),
+    comboQuantity: z.number().optional().describe("Quantity of the combo product, defaults to 1"),
   }),
   func: async (input: unknown) => {
-    const { productId, variantId, quantity, customerName, phone, address, district, offerCode } =
+    const { productId, variantId, quantity, customerName, phone, address, district, offerCode, comboProductId, comboVariantId, comboQuantity } =
       input as {
         productId: string;
         variantId?: string;
@@ -76,6 +83,9 @@ export const createOrderTool = new DynamicStructuredTool({
         address: string;
         district?: string;
         offerCode?: string;
+        comboProductId?: string;
+        comboVariantId?: string;
+        comboQuantity?: number;
       };
     const { userId, businessId, threadId, platform } = getToolContext();
 
@@ -86,6 +96,7 @@ export const createOrderTool = new DynamicStructuredTool({
       phone: phone.replace(/(\d{3})\d+(\d{2})/, "$1***$2"),
       userId,
       businessId,
+      comboProductId,
     });
 
     const result = await getHelpers().createCustomerAndOrder({
@@ -101,6 +112,9 @@ export const createOrderTool = new DynamicStructuredTool({
       address,
       district,
       offerCode,
+      comboProductId,
+      comboVariantId,
+      comboQuantity,
     });
 
     return JSON.stringify(result);

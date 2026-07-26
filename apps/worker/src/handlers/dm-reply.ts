@@ -95,6 +95,17 @@ export function setOutboundLogger(logger: OutboundLogger): void {
   outboundLogger = logger;
 }
 
+// Dependency injection for the human-takeover check (FR-AGT-15)
+export interface HandlingModeProvider {
+  getHandlingMode(businessId: string, threadId: string): Promise<"ai" | "human">;
+}
+
+let handlingModeProvider: HandlingModeProvider | null = null;
+
+export function setHandlingModeProvider(provider: HandlingModeProvider): void {
+  handlingModeProvider = provider;
+}
+
 /**
  * Handle a DM reply job
  */
@@ -115,6 +126,21 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
   if (!rateLimit.allowed) {
     console.warn(`[DMReply] Rate limited for ${rateLimitKey}`);
     return;
+  }
+
+  // A staff member may have taken this thread over after this job was already enqueued —
+  // checked here, right before generating a reply, not just at webhook-receipt time, so
+  // that race can't slip an AI reply out after a human already jumped in.
+  if (handlingModeProvider) {
+    try {
+      const mode = await handlingModeProvider.getHandlingMode(data.businessId, data.threadId);
+      if (mode === "human") {
+        console.log(`[DMReply] Thread ${data.threadId} is human-handled, skipping AI reply`);
+        return;
+      }
+    } catch (err) {
+      console.error("[DMReply] Failed to check handling mode, proceeding as AI-handled:", err);
+    }
   }
 
   // Check AI token availability for this business subscription

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Percent,
   Tag,
@@ -12,19 +12,22 @@ import {
   Plus,
   Edit2,
   Trash2,
-  X,
   Save,
+  Sparkles,
+  BadgePercent,
 } from "lucide-react";
 
 import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
 import { Input } from "@acme/ui/input";
 import { Label } from "@acme/ui/label";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@acme/ui/card";
+import { Card, CardContent } from "@acme/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@acme/ui/dialog";
+import { toast } from "@acme/ui/toast";
 import { cn } from "@acme/ui";
 import { useTRPC } from "~/trpc/react";
 
-type Offer = {
+interface Offer {
   id: string;
   title: string;
   code: string | null;
@@ -36,7 +39,12 @@ type Offer = {
   endDate: Date | string | null;
   active: boolean;
   createdAt: Date | string;
-};
+  comboProductAId?: string | null;
+  comboProductBId?: string | null;
+}
+
+const fieldClass =
+  "flex h-9 w-full rounded-md border bg-muted/40 px-3 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
 
 function formatCurrency(amount: number) {
   return `৳${amount.toLocaleString()}`;
@@ -50,8 +58,84 @@ function formatDate(date: Date | string) {
   });
 }
 
-function copyToClipboard(text: string) {
-  void navigator.clipboard.writeText(text);
+function isOfferLive(o: Pick<Offer, "active" | "endDate">) {
+  return o.active && (!o.endDate || new Date(o.endDate) > new Date());
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{children}</p>;
+}
+
+/** Two-click inline confirm instead of a blocking browser confirm() — reverts on its own
+ * after a few seconds so a stray second click elsewhere can't leave it armed forever. */
+function DeleteButton({ onConfirm, pending }: { onConfirm: () => void; pending: boolean }) {
+  const [armed, setArmed] = useState(false);
+
+  if (armed) {
+    return (
+      <Button
+        size="sm"
+        variant="destructive"
+        className="h-8 gap-1 px-2 text-xs"
+        disabled={pending}
+        onClick={() => {
+          setArmed(false);
+          onConfirm();
+        }}
+        onBlur={() => setArmed(false)}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+        Confirm?
+      </Button>
+    );
+  }
+
+  return (
+    <Button
+      size="icon"
+      variant="ghost"
+      className="h-8 w-8 text-muted-foreground hover:bg-rose-500/5 hover:text-rose-500"
+      onClick={() => {
+        setArmed(true);
+        setTimeout(() => setArmed(false), 4000);
+      }}
+    >
+      <Trash2 className="h-4 w-4" />
+    </Button>
+  );
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: number;
+  tone: "neutral" | "positive" | "negative";
+}) {
+  return (
+    <Card>
+      <CardContent className="flex items-center justify-between py-5">
+        <div className="space-y-1.5">
+          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
+          <p className="text-2xl font-bold tabular-nums tracking-tight text-foreground">{value}</p>
+        </div>
+        <div
+          className={cn(
+            "flex h-10 w-10 items-center justify-center rounded-xl",
+            tone === "positive" && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+            tone === "negative" && "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+            tone === "neutral" && "bg-primary/10 text-primary",
+          )}
+        >
+          <Icon className="h-5 w-5" />
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
@@ -59,12 +143,15 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
   const createMutation = useMutation(trpc.offers.create.mutationOptions());
   const updateMutation = useMutation(trpc.offers.update.mutationOptions());
   const deleteMutation = useMutation(trpc.offers.delete.mutationOptions());
+  const { data: productsData } = useQuery(trpc.products.list.queryOptions());
+  const products = useMemo(() => productsData?.products ?? [], [productsData]);
+  const productNameById = useMemo(() => new Map(products.map((p) => [p.id, p.title])), [products]);
 
   const [offers, setOffers] = useState<Offer[]>(initialOffers);
   const [filter, setFilter] = useState<"all" | "active" | "expired">("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Form modal state
+  // Form dialog state
   const [isOpen, setIsOpen] = useState(false);
   const [editingOffer, setEditingOffer] = useState<Offer | null>(null);
 
@@ -77,29 +164,27 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
   const [minSubtotal, setMinSubtotal] = useState(0);
   const [endDate, setEndDate] = useState("");
   const [active, setActive] = useState(true);
+  const [isCombo, setIsCombo] = useState(false);
+  const [comboProductAId, setComboProductAId] = useState("");
+  const [comboProductBId, setComboProductBId] = useState("");
 
   const filtered = useMemo(() => {
-    const now = new Date();
     return offers.filter((o) => {
-      const isAct = o.active && (!o.endDate || new Date(o.endDate) > now);
-      if (filter === "active") return isAct;
-      if (filter === "expired") return !isAct;
+      if (filter === "active") return isOfferLive(o);
+      if (filter === "expired") return !isOfferLive(o);
       return true;
     });
   }, [offers, filter]);
 
   const stats = useMemo(() => {
-    const now = new Date();
-    const activeCount = offers.filter(
-      (o) => o.active && (!o.endDate || new Date(o.endDate) > now),
-    ).length;
-    const expiredCount = offers.length - activeCount;
-    return { total: offers.length, active: activeCount, expired: expiredCount };
+    const activeCount = offers.filter(isOfferLive).length;
+    return { total: offers.length, active: activeCount, expired: offers.length - activeCount };
   }, [offers]);
 
   const handleCopy = (couponCode: string, id: string) => {
-    copyToClipboard(couponCode);
+    void navigator.clipboard.writeText(couponCode);
     setCopiedId(id);
+    toast.success("Coupon code copied");
     setTimeout(() => setCopiedId(null), 2000);
   };
 
@@ -113,6 +198,9 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
     setMinSubtotal(0);
     setEndDate("");
     setActive(true);
+    setIsCombo(false);
+    setComboProductAId("");
+    setComboProductBId("");
     setIsOpen(true);
   };
 
@@ -126,14 +214,30 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
     setMinSubtotal(o.minSubtotal);
     setEndDate(o.endDate ? new Date(o.endDate).toISOString().slice(0, 16) : "");
     setActive(o.active);
+    setIsCombo(Boolean(o.comboProductAId && o.comboProductBId));
+    setComboProductAId(o.comboProductAId ?? "");
+    setComboProductBId(o.comboProductBId ?? "");
     setIsOpen(true);
   };
 
+  const isSaving = createMutation.isPending || updateMutation.isPending;
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isCombo && (!comboProductAId || !comboProductBId)) {
+      toast.error("Pick both products for a combo offer.");
+      return;
+    }
+    if (isCombo && comboProductAId === comboProductBId) {
+      toast.error("Combo products must be two different products.");
+      return;
+    }
+    const comboFields = {
+      comboProductAId: isCombo ? comboProductAId : null,
+      comboProductBId: isCombo ? comboProductBId : null,
+    };
     try {
       if (editingOffer) {
-        // Update
         const updated = await updateMutation.mutateAsync({
           id: editingOffer.id,
           title,
@@ -144,10 +248,11 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
           minSubtotal,
           endDate: endDate ? new Date(endDate) : null,
           active,
+          ...comboFields,
         });
         setOffers(offers.map((o) => (o.id === editingOffer.id ? (updated as unknown as Offer) : o)));
+        toast.success("Offer updated");
       } else {
-        // Create
         const created = await createMutation.mutateAsync({
           title,
           code: code || null,
@@ -157,23 +262,24 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
           minSubtotal,
           endDate: endDate ? new Date(endDate) : null,
           active,
+          ...comboFields,
         });
         setOffers([created as unknown as Offer, ...offers]);
+        toast.success("Offer created");
       }
       setIsOpen(false);
     } catch (err) {
-      alert("Failed to save offer");
+      toast.error(err instanceof Error ? err.message : "Failed to save offer");
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm("Are you sure you want to delete this offer?")) {
-      try {
-        await deleteMutation.mutateAsync({ id });
-        setOffers(offers.filter((o) => o.id !== id));
-      } catch (err) {
-        alert("Failed to delete offer");
-      }
+    try {
+      await deleteMutation.mutateAsync({ id });
+      setOffers(offers.filter((o) => o.id !== id));
+      toast.success("Offer deleted");
+    } catch {
+      toast.error("Failed to delete offer");
     }
   };
 
@@ -184,34 +290,19 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Offers</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Manage discount codes and promotional offers.
+            Manage discount codes and combo/bundle deals.
           </p>
         </div>
-        <Button onClick={openCreateModal} size="sm" className="rounded-lg shadow-sm gap-1">
+        <Button onClick={openCreateModal} size="sm" className="rounded-lg shadow-sm gap-1.5">
           <Plus className="h-4 w-4" /> Create Offer
         </Button>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        {[
-          { label: "Total Offers", value: stats.total, color: "from-violet-500/10 to-violet-600/5 dark:from-violet-500/20 dark:to-violet-600/10", text: "text-violet-600 dark:text-violet-400" },
-          { label: "Active", value: stats.active, color: "from-emerald-500/10 to-emerald-600/5 dark:from-emerald-500/20 dark:to-emerald-600/10", text: "text-emerald-600 dark:text-emerald-400" },
-          { label: "Expired", value: stats.expired, color: "from-rose-500/10 to-rose-600/5 dark:from-rose-500/20 dark:to-rose-600/10", text: "text-rose-600 dark:text-rose-400" },
-        ].map((s) => (
-          <Card
-            key={s.label}
-            className={cn(
-              "rounded-2xl border bg-gradient-to-br p-4 shadow-sm",
-              s.color,
-            )}
-          >
-            <p className="text-xs font-medium text-muted-foreground">{s.label}</p>
-            <p className={cn("mt-1 text-2xl font-bold tabular-nums", s.text)}>
-              {s.value}
-            </p>
-          </Card>
-        ))}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard icon={BadgePercent} label="Total Offers" value={stats.total} tone="neutral" />
+        <StatCard icon={CheckCircle2} label="Active" value={stats.active} tone="positive" />
+        <StatCard icon={XCircle} label="Expired" value={stats.expired} tone="negative" />
       </div>
 
       {/* Filters */}
@@ -234,16 +325,23 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed py-16">
           <Percent className="h-12 w-12 text-muted-foreground/40" />
           <p className="mt-4 text-lg font-medium text-muted-foreground">
-            No offers found
+            {offers.length === 0 ? "No offers yet" : "No offers match this filter"}
           </p>
+          {offers.length === 0 && (
+            <Button onClick={openCreateModal} size="sm" className="mt-4 gap-1.5">
+              <Plus className="h-4 w-4" /> Create your first offer
+            </Button>
+          )}
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((o) => {
-            const now = new Date();
-            const isActive = o.active && (!o.endDate || new Date(o.endDate) > now);
+            const isCombo = Boolean(o.comboProductAId && o.comboProductBId);
+            const isActive = isOfferLive(o);
             const discountLabel =
               o.type === "percentage" ? `${o.value}% OFF` : `${formatCurrency(o.value)} OFF`;
+            const comboLabelA = o.comboProductAId ? (productNameById.get(o.comboProductAId) ?? "Product A") : "Product A";
+            const comboLabelB = o.comboProductBId ? (productNameById.get(o.comboProductBId) ?? "Product B") : "Product B";
 
             return (
               <Card
@@ -258,12 +356,16 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
                     <div
                       className={cn(
                         "inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-bold",
-                        o.type === "percentage"
-                          ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
-                          : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+                        isCombo
+                          ? "bg-primary/10 text-primary"
+                          : o.type === "percentage"
+                            ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
+                            : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
                       )}
                     >
-                      {o.type === "percentage" ? (
+                      {isCombo ? (
+                        <Sparkles className="h-4 w-4" />
+                      ) : o.type === "percentage" ? (
                         <Percent className="h-4 w-4" />
                       ) : (
                         <Tag className="h-4 w-4" />
@@ -290,23 +392,32 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
                     </p>
                   )}
 
-                  {o.code && (
-                    <div className="mt-3 flex items-center gap-2">
-                      <code className="flex-1 rounded-lg border border-dashed bg-muted/50 px-3 py-1.5 text-center text-xs font-mono font-bold tracking-widest text-foreground">
-                        {o.code}
-                      </code>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleCopy(o.code!, o.id)}
-                        className="shrink-0"
-                      >
-                        <Copy className="h-4 w-4" />
-                        <span className="ml-1 text-xs">
-                          {copiedId === o.id ? "Copied!" : "Copy"}
-                        </span>
-                      </Button>
+                  {isCombo ? (
+                    <div className="mt-3 flex items-center gap-1.5 rounded-lg border border-dashed border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary">
+                      <Sparkles className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">
+                        {comboLabelA} + {comboLabelB}
+                      </span>
                     </div>
+                  ) : (
+                    o.code && (
+                      <div className="mt-3 flex items-center gap-2">
+                        <code className="flex-1 rounded-lg border border-dashed bg-muted/50 px-3 py-1.5 text-center text-xs font-mono font-bold tracking-widest text-foreground">
+                          {o.code}
+                        </code>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCopy(o.code ?? "", o.id)}
+                          className="shrink-0"
+                        >
+                          <Copy className="h-4 w-4" />
+                          <span className="ml-1 text-xs">
+                            {copiedId === o.id ? "Copied!" : "Copy"}
+                          </span>
+                        </Button>
+                      </div>
+                    )
                   )}
 
                   <div className="mt-4 space-y-1 text-xs text-muted-foreground">
@@ -325,9 +436,7 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
                   <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => openEditModal(o)}>
                     <Edit2 className="h-4 w-4" />
                   </Button>
-                  <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-rose-500 hover:bg-rose-500/5" onClick={() => handleDelete(o.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <DeleteButton pending={deleteMutation.isPending} onConfirm={() => handleDelete(o.id)} />
                 </div>
               </Card>
             );
@@ -335,23 +444,25 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
         </div>
       )}
 
-      {/* Form Modal overlay */}
-      {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <Card className="w-full max-w-lg shadow-2xl relative">
-            <button
-              onClick={() => setIsOpen(false)}
-              className="absolute right-4 top-4 text-muted-foreground hover:text-foreground p-1 rounded-full hover:bg-muted"
-            >
-              <X className="h-4 w-4" />
-            </button>
-            <form onSubmit={handleSave}>
-              <CardHeader>
-                <CardTitle>{editingOffer ? "Edit Offer" : "Create Offer"}</CardTitle>
-                <CardDescription>Configure promotional code details</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Title */}
+      {/* Create/Edit Dialog */}
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        {/* p-0 + manual per-section padding (instead of scrollBody) so the header and the
+            footer stay pinned and only the middle field area scrolls — the footer lives
+            inside the <form> for onSubmit, which DialogContent can't see past to keep it
+            out of a single all-children scroll wrapper. */}
+        <DialogContent className="flex max-h-[90dvh] flex-col p-0 sm:max-w-2xl">
+          <DialogHeader className="px-6 pt-6 pb-4 sm:px-8 sm:pt-8">
+            <DialogTitle className="text-xl">{editingOffer ? "Edit Offer" : "Create Offer"}</DialogTitle>
+            <DialogDescription>
+              {editingOffer ? "Update this offer's details." : "Set up a discount code or an automatic combo deal."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSave} className="flex min-h-0 flex-1 flex-col">
+            <div className="scrollbar-thin min-h-0 flex-1 space-y-8 overflow-y-auto px-6 pb-2 sm:px-8">
+            <div className="space-y-4">
+              <SectionLabel>Details</SectionLabel>
+              <div className="space-y-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="offer-title">Offer Title</Label>
                   <Input
@@ -360,11 +471,120 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="e.g. Eid Campaign Discount"
-                    className="rounded-lg"
                   />
                 </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="offer-desc">Description</Label>
+                  <textarea
+                    id="offer-desc"
+                    rows={3}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Brief description of terms..."
+                    className={cn(fieldClass, "h-auto resize-none py-2.5")}
+                  />
+                </div>
+              </div>
+            </div>
 
-                {/* Coupon Code */}
+            <div className="space-y-4">
+              <SectionLabel>Discount</SectionLabel>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="offer-type">Discount Type</Label>
+                  <select
+                    id="offer-type"
+                    value={type}
+                    onChange={(e) => setType(e.target.value as "percentage" | "fixed")}
+                    className={fieldClass}
+                  >
+                    <option value="percentage">Percentage (%)</option>
+                    <option value="fixed">Fixed (৳)</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="offer-value">Discount Value</Label>
+                  <Input
+                    id="offer-value"
+                    type="number"
+                    required
+                    min={1}
+                    value={value}
+                    onChange={(e) => setValue(Number(e.target.value))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="offer-min">Min. Subtotal (৳)</Label>
+                  <Input
+                    id="offer-min"
+                    type="number"
+                    min={0}
+                    value={minSubtotal}
+                    onChange={(e) => setMinSubtotal(Number(e.target.value))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <SectionLabel>How It's Claimed</SectionLabel>
+              <div className={cn("space-y-3 rounded-xl border p-4 transition-colors", isCombo && "border-primary/30 bg-primary/5")}>
+                <div className="flex items-start gap-2.5">
+                  <input
+                    id="offer-combo"
+                    type="checkbox"
+                    checked={isCombo}
+                    onChange={(e) => {
+                      setIsCombo(e.target.checked);
+                      if (e.target.checked) setCode("");
+                    }}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <div className="space-y-0.5">
+                    <Label htmlFor="offer-combo" className="flex items-center gap-1.5 text-foreground">
+                      <Sparkles className="h-3.5 w-3.5 text-primary" />
+                      Combo offer
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Applies automatically when both products are bought together — no code needed.
+                    </p>
+                  </div>
+                </div>
+                {isCombo && (
+                  <div className="grid grid-cols-1 gap-4 pt-1 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="offer-combo-a">Product A</Label>
+                      <select
+                        id="offer-combo-a"
+                        value={comboProductAId}
+                        onChange={(e) => setComboProductAId(e.target.value)}
+                        className={fieldClass}
+                      >
+                        <option value="">Select a product...</option>
+                        {products.map((p) => (
+                          <option key={p.id} value={p.id}>{p.title}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="offer-combo-b">Product B</Label>
+                      <select
+                        id="offer-combo-b"
+                        value={comboProductBId}
+                        onChange={(e) => setComboProductBId(e.target.value)}
+                        className={fieldClass}
+                      >
+                        <option value="">Select a product...</option>
+                        {products.map((p) => (
+                          <option key={p.id} value={p.id}>{p.title}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {!isCombo && (
                 <div className="space-y-1.5">
                   <Label htmlFor="offer-code">Coupon Code (Optional)</Label>
                   <Input
@@ -372,65 +592,16 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
                     value={code}
                     onChange={(e) => setCode(e.target.value.toUpperCase())}
                     placeholder="e.g. EID500"
-                    className="rounded-lg font-mono tracking-wider"
+                    className="font-mono tracking-wider"
                   />
+                  <p className="text-xs text-muted-foreground">Leave blank for a discount that applies automatically at checkout.</p>
                 </div>
+              )}
+            </div>
 
-                {/* Description */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="offer-desc">Description</Label>
-                  <Input
-                    id="offer-desc"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Brief description of terms..."
-                    className="rounded-lg"
-                  />
-                </div>
-
-                {/* Type & Value */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="offer-type">Discount Type</Label>
-                    <select
-                      id="offer-type"
-                      value={type}
-                      onChange={(e) => setType(e.target.value as "percentage" | "fixed")}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <option value="percentage">Percentage OFF (%)</option>
-                      <option value="fixed">Fixed BDT OFF (৳)</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="offer-value">Discount Value</Label>
-                    <Input
-                      id="offer-value"
-                      type="number"
-                      required
-                      min={1}
-                      value={value}
-                      onChange={(e) => setValue(Number(e.target.value))}
-                      className="rounded-lg"
-                    />
-                  </div>
-                </div>
-
-                {/* Min Subtotal */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="offer-min">Minimum Subtotal Required (৳)</Label>
-                  <Input
-                    id="offer-min"
-                    type="number"
-                    min={0}
-                    value={minSubtotal}
-                    onChange={(e) => setMinSubtotal(Number(e.target.value))}
-                    className="rounded-lg"
-                  />
-                </div>
-
-                {/* End Date */}
+            <div className="space-y-4">
+              <SectionLabel>Availability</SectionLabel>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-end">
                 <div className="space-y-1.5">
                   <Label htmlFor="offer-end">Expiry Date (Optional)</Label>
                   <Input
@@ -438,12 +609,9 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
                     type="datetime-local"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="rounded-lg"
                   />
                 </div>
-
-                {/* Active Toggle */}
-                <div className="flex items-center gap-2 pt-2">
+                <div className="flex items-center gap-2.5 rounded-lg border p-3 sm:h-9 sm:border-0 sm:p-0">
                   <input
                     id="offer-active"
                     type="checkbox"
@@ -451,22 +619,24 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
                     onChange={(e) => setActive(e.target.checked)}
                     className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                   />
-                  <Label htmlFor="offer-active">Offer is Active and claimable</Label>
+                  <Label htmlFor="offer-active">Offer is active and claimable</Label>
                 </div>
-              </CardContent>
-              <CardFooter className="border-t pt-4 flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setIsOpen(false)} className="rounded-lg">
-                  Cancel
-                </Button>
-                <Button type="submit" className="rounded-lg gap-1.5">
-                  <Save className="h-4 w-4" />
-                  {editingOffer ? "Update Offer" : "Create Offer"}
-                </Button>
-              </CardFooter>
-            </form>
-          </Card>
-        </div>
-      )}
+              </div>
+            </div>
+            </div>
+
+            <DialogFooter className="shrink-0 border-t px-6 py-5 sm:px-8">
+              <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" className="gap-1.5" disabled={isSaving}>
+                <Save className="h-4 w-4" />
+                {isSaving ? "Saving..." : editingOffer ? "Update Offer" : "Create Offer"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

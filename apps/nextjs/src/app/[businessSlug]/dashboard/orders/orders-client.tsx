@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { useMutation } from "@tanstack/react-query";
 import {
   Package,
   Search,
@@ -13,12 +15,18 @@ import {
   CreditCard,
   RotateCcw,
   MessageSquare,
+  Loader2,
 } from "lucide-react";
 
 import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
 import { Input } from "@acme/ui/input";
+import { toast } from "@acme/ui/toast";
 import { cn } from "@acme/ui";
+import { useTRPC } from "~/trpc/react";
+
+const UPDATABLE_STATUSES = ["pending", "confirmed", "paid", "shipped", "delivered", "cancelled", "returned"] as const;
+const NOTIFIES_CUSTOMER = new Set(["shipped", "delivered", "cancelled", "returned"]);
 
 type Order = {
   id: string;
@@ -95,9 +103,31 @@ export function OrdersClient({
   initialOrders: Order[];
   initialItems: OrderItem[];
 }) {
+  const router = useRouter();
+  const trpc = useTRPC();
+  const updateStatusMutation = useMutation(trpc.orders.updateStatus.mutationOptions());
+  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+
+  async function handleStatusChange(orderId: string, newStatus: (typeof UPDATABLE_STATUSES)[number], channel: string | null) {
+    setUpdatingOrderId(orderId);
+    try {
+      await updateStatusMutation.mutateAsync({ id: orderId, status: newStatus });
+      const canNotify = channel === "facebook_page" || channel === "instagram" || channel === "whatsapp";
+      toast.success(
+        NOTIFIES_CUSTOMER.has(newStatus) && canNotify
+          ? `Order marked ${newStatus} — customer notified`
+          : `Order marked ${newStatus}`,
+      );
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update order status");
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  }
 
   const itemsByOrder = useMemo(() => {
     const map = new Map<string, OrderItem[]>();
@@ -271,6 +301,32 @@ export function OrdersClient({
                 {/* Expanded Detail */}
                 {isExpanded && (
                   <div className="border-t bg-muted/20 px-4 py-4">
+                    {/* Fulfillment status */}
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          Update Status
+                        </span>
+                        {updatingOrderId === o.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                      </div>
+                      <select
+                        value={o.status}
+                        disabled={updatingOrderId === o.id}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => handleStatusChange(o.id, e.target.value as (typeof UPDATABLE_STATUSES)[number], o.channel)}
+                        className="rounded-lg border bg-background px-3 py-1.5 text-xs font-semibold capitalize outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {UPDATABLE_STATUSES.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {(o.channel === "facebook_page" || o.channel === "instagram" || o.channel === "whatsapp") && (
+                      <p className="mb-4 text-xs text-muted-foreground">
+                        Changing to Shipped, Delivered, Cancelled, or Returned sends the customer a message on {channelLabel(o.channel)}.
+                      </p>
+                    )}
+
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       {/* Customer Info */}
                       <div className="space-y-1.5">

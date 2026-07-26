@@ -20,10 +20,13 @@ import {
   handleCommentReply,
   setHistoryProvider,
   setOutboundLogger,
+  setHandlingModeProvider,
 } from "./handlers/index.js";
 import { runSubscriptionRenewal, runTrialExpirySweep } from "./handlers/subscription-renewal.js";
+import { runConversationFollowUp } from "./handlers/conversation-followup.js";
 
 const DAY_MS = 86_400_000;
+const FIVE_MIN_MS = 5 * 60_000;
 
 const config = loadConfig();
 
@@ -74,6 +77,7 @@ async function initializeAIHelpers() {
       businessHelpers: {
         getBusinessProfile: aiHelpers.getBusinessProfile,
         getOfferByCode: aiHelpers.getOfferByCode,
+        getComboOffersForProduct: aiHelpers.getComboOffersForProduct,
         getFAQMatches: aiHelpers.getFAQMatches,
       },
       checkoutHelpers: {
@@ -98,6 +102,11 @@ async function initializeAIHelpers() {
           messageId,
           text,
         }),
+    });
+
+    setHandlingModeProvider({
+      getHandlingMode: (businessId, threadId) =>
+        aiHelpers.getConversationHandlingMode(businessId, threadId),
     });
 
     console.log("[Worker] AI helpers initialized");
@@ -138,16 +147,28 @@ function registerHandlers() {
     }
   });
 
+  // Runs every 5 minutes (not daily like billing) since it's checking for sessions that
+  // just crossed the 30-minute quiet threshold — a daily sweep would mean some customers
+  // wait up to 24h for a nudge meant to land 30 minutes after they went quiet.
+  queue.process("conversation-followup", async () => {
+    try {
+      await runConversationFollowUp();
+    } finally {
+      await queue.enqueue("conversation-followup", {}, { delay: FIVE_MIN_MS });
+    }
+  });
+
   console.log("[Worker] Job handlers registered");
 }
 
-/** Kicks off the two self-rescheduling billing jobs shortly after boot. Only needed once
- * per environment — if the queue already has one enqueued (e.g. worker restarted), this
- * adds a harmless extra run rather than losing the daily cadence entirely. */
+/** Kicks off the self-rescheduling billing + follow-up jobs shortly after boot. Only
+ * needed once per environment — if the queue already has one enqueued (e.g. worker
+ * restarted), this adds a harmless extra run rather than losing the cadence entirely. */
 function scheduleBillingJobs() {
   const initialDelayMs = 30_000;
   void queue.enqueue("subscription-renewal", {}, { delay: initialDelayMs });
   void queue.enqueue("trial-expiry-sweep", {}, { delay: initialDelayMs });
+  void queue.enqueue("conversation-followup", {}, { delay: initialDelayMs });
 }
 
 // Graceful shutdown

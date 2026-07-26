@@ -44,6 +44,8 @@ export interface InboxThread {
   customerId: string | null;
   tags: { id: string; label: string; color: string }[];
   assignedMemberId: string | null;
+  /** "ai" | "human" — whether the AI or a staff member currently owns replies on this thread. */
+  handlingMode: string;
 }
 
 export interface InboxActivityItem {
@@ -521,6 +523,7 @@ export function buildInboxData({
         customerId: null,
         tags: [],
         assignedMemberId: null,
+        handlingMode: "ai",
       });
       continue;
     }

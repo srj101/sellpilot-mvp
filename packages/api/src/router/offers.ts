@@ -1,10 +1,38 @@
 import type { TRPCRouterRecord } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
-import { and, desc, eq } from "@acme/db";
-import { offer } from "@acme/db/schema";
+import { and, desc, eq, inArray } from "@acme/db";
+import type { db as Db } from "@acme/db/client";
+import { offer, product } from "@acme/db/schema";
 
 import { businessScopedProcedure } from "../trpc";
+
+/** Combo fields are only meaningful as a pair — verifies both products actually belong to
+ * this business (defense in depth; the FK alone would still block a cross-tenant id, but
+ * this gives a clean error instead of a raw constraint violation) and rejects a lone half
+ * of a pair, which would silently create an unmatchable combo offer. */
+async function assertValidCombo(
+  db: typeof Db,
+  businessId: string,
+  comboProductAId?: string | null,
+  comboProductBId?: string | null,
+): Promise<void> {
+  if (!comboProductAId && !comboProductBId) return;
+  if (!comboProductAId || !comboProductBId) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "A combo offer needs both products selected." });
+  }
+  if (comboProductAId === comboProductBId) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Combo products must be two different products." });
+  }
+  const rows = await db
+    .select({ id: product.id })
+    .from(product)
+    .where(and(eq(product.businessId, businessId), inArray(product.id, [comboProductAId, comboProductBId])));
+  if (rows.length !== 2) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "One or both combo products weren't found." });
+  }
+}
 
 export const offersRouter = {
   list: businessScopedProcedure.query(async ({ ctx }) => {
@@ -27,9 +55,12 @@ export const offersRouter = {
         startDate: z.date().optional(),
         endDate: z.date().nullable().optional(),
         active: z.boolean().default(true),
+        comboProductAId: z.string().nullable().optional(),
+        comboProductBId: z.string().nullable().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      await assertValidCombo(ctx.db, ctx.businessId, input.comboProductAId, input.comboProductBId);
       const [newOffer] = await ctx.db
         .insert(offer)
         .values({
@@ -54,9 +85,12 @@ export const offersRouter = {
         startDate: z.date().optional(),
         endDate: z.date().nullable().optional(),
         active: z.boolean(),
+        comboProductAId: z.string().nullable().optional(),
+        comboProductBId: z.string().nullable().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      await assertValidCombo(ctx.db, ctx.businessId, input.comboProductAId, input.comboProductBId);
       const { id, ...data } = input;
       const [updatedOffer] = await ctx.db
         .update(offer)
