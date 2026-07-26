@@ -42,6 +42,10 @@
     "./s3": {
       "types": "./dist/lib/s3.d.ts",
       "default": "./src/lib/s3.ts"
+    },
+    "./sslcommerz": {
+      "types": "./dist/lib/sslcommerz.d.ts",
+      "default": "./src/lib/sslcommerz.ts"
     }
   },
   "license": "MIT",

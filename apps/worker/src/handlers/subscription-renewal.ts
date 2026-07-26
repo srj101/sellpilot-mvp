@@ -13,6 +13,7 @@ import { db } from "@acme/db/client";
 import { business, businessMember, saasInvoice, subscription, user } from "@acme/db/schema";
 import type { BillingCycle, PlanKey } from "@acme/api/plans";
 import { CYCLE_META, PLAN_CATALOG, priceForCycle } from "@acme/api/plans";
+import { CARD_AND_BANK_GATEWAYS, initiatePayment } from "@acme/api/sslcommerz";
 import { sendEmail } from "@acme/auth/email";
 
 const DAY_MS = 86_400_000;
@@ -27,7 +28,51 @@ function invoiceNumber(periodStart: Date): string {
   return `SP-${periodStart.getFullYear()}-${Date.now().toString().slice(-6)}`;
 }
 
-async function notifyOwner(businessId: string, kind: "renewal_due" | "reminder" | "cancelled", amount: number | null) {
+/**
+ * A direct SSLCommerz checkout link for the given invoice — skips the "log in, find the
+ * invoice, click Pay Now" detour the dashboard-only link used to require. Regenerated on
+ * every email (not cached) since a gateway session isn't guaranteed to still be valid by
+ * the time a reminder goes out days later. Falls back to undefined (caller uses the
+ * dashboard link instead) if the gateway call itself fails — a bad pay link is worse than
+ * no pay link, and this must never block the reminder email from going out.
+ */
+async function generatePayLink(invoice: { id: string; amount: number; plan: string }, ownerName: string): Promise<string | undefined> {
+  try {
+    const base = `${appUrl()}/api/billing`;
+    const result = await initiatePayment({
+      transactionId: invoice.id,
+      amount: invoice.amount,
+      customerName: ownerName,
+      customerPhone: "N/A",
+      productName: `SellPilot ${PLAN_CATALOG[invoice.plan as PlanKey]?.name ?? invoice.plan} — renewal`,
+      successUrl: `${base}/success`,
+      failUrl: `${base}/fail`,
+      cancelUrl: `${base}/cancel`,
+      ipnUrl: `${base}/ipn`,
+      restrictedGateways: CARD_AND_BANK_GATEWAYS,
+    });
+    return result.ok ? result.gatewayUrl : undefined;
+  } catch (err) {
+    console.error(`[subscription-renewal] failed to generate a pay link for invoice ${invoice.id}:`, err);
+    return undefined;
+  }
+}
+
+/** Only the name, for generatePayLink's `customerName` field — notifyOwner does its own
+ * independent owner lookup below rather than sharing this, matching the existing pattern
+ * of each helper being self-contained. */
+async function getOwnerName(businessId: string): Promise<string> {
+  const [owner] = await db
+    .select({ userId: businessMember.userId })
+    .from(businessMember)
+    .where(and(eq(businessMember.businessId, businessId), eq(businessMember.role, "owner")))
+    .limit(1);
+  if (!owner) return "Business owner";
+  const [ownerUser] = await db.select({ name: user.name }).from(user).where(eq(user.id, owner.userId)).limit(1);
+  return ownerUser?.name ?? "Business owner";
+}
+
+async function notifyOwner(businessId: string, kind: "renewal_due" | "reminder" | "cancelled", amount: number | null, payUrl?: string) {
   const [biz] = await db.select({ name: business.name, slug: business.slug }).from(business).where(eq(business.id, businessId)).limit(1);
   const [owner] = await db
     .select({ userId: businessMember.userId })
@@ -36,20 +81,21 @@ async function notifyOwner(businessId: string, kind: "renewal_due" | "reminder" 
     .limit(1);
   if (!owner || !biz) return;
 
-  const [ownerUser] = await db.select({ email: user.email }).from(user).where(eq(user.id, owner.userId)).limit(1);
+  const [ownerUser] = await db.select({ name: user.name, email: user.email }).from(user).where(eq(user.id, owner.userId)).limit(1);
   if (!ownerUser) return;
 
   const billingUrl = `${appUrl()}/${biz.slug}/dashboard/billing`;
+  const payLink = payUrl ?? billingUrl;
   const amountStr = amount ? ` of ৳${amount.toLocaleString("en-US")}` : "";
 
   const copy: Record<typeof kind, { subject: string; body: string }> = {
     renewal_due: {
       subject: `Action needed: confirm your SellPilot payment${amountStr}`,
-      body: `Your ${biz.name} subscription has renewed and needs payment confirmation${amountStr}. Pay now to keep your AI agent selling without interruption: ${billingUrl}`,
+      body: `Your ${biz.name} subscription has renewed and needs payment confirmation${amountStr}. Pay now to keep your AI agent selling without interruption: ${payLink}`,
     },
     reminder: {
       subject: "Reminder: your SellPilot subscription payment is still due",
-      body: `We still haven't received payment for your ${biz.name} subscription${amountStr}. Please pay soon — your account will be locked after a few more missed reminders: ${billingUrl}`,
+      body: `We still haven't received payment for your ${biz.name} subscription${amountStr}. Pay now to avoid interruption: ${payLink}${payUrl ? ` (or review it first in your dashboard: ${billingUrl})` : ""} — your account will be locked after a few more missed reminders.`,
     },
     cancelled: {
       subject: "Your SellPilot subscription has been cancelled",
@@ -85,23 +131,29 @@ async function processOne(sub: typeof subscription.$inferSelect) {
     const periodEnd = new Date(periodStart);
     periodEnd.setMonth(periodEnd.getMonth() + (CYCLE_META[cycle].months || 12));
 
-    await db.insert(saasInvoice).values({
-      businessId,
-      invoiceNumber: invoiceNumber(periodStart),
-      plan: effectivePlan,
-      billingCycle: cycle,
-      amount,
-      status: "pending",
-      periodStart,
-      periodEnd,
-    });
+    const [newInvoice] = await db
+      .insert(saasInvoice)
+      .values({
+        businessId,
+        invoiceNumber: invoiceNumber(periodStart),
+        plan: effectivePlan,
+        billingCycle: cycle,
+        amount,
+        status: "pending",
+        periodStart,
+        periodEnd,
+      })
+      .returning();
 
     await db
       .update(subscription)
       .set({ status: "past_due", failedPaymentCount: 1, plan: effectivePlan, pendingPlan: null })
       .where(eq(subscription.businessId, businessId));
 
-    await notifyOwner(businessId, "renewal_due", amount);
+    const payUrl = newInvoice
+      ? await generatePayLink({ id: newInvoice.id, amount, plan: effectivePlan }, await getOwnerName(businessId))
+      : undefined;
+    await notifyOwner(businessId, "renewal_due", amount, payUrl);
     return;
   }
 
@@ -116,7 +168,11 @@ async function processOne(sub: typeof subscription.$inferSelect) {
     await notifyOwner(businessId, "cancelled", null);
   } else {
     await db.update(subscription).set({ failedPaymentCount: nextCount }).where(eq(subscription.businessId, businessId));
-    await notifyOwner(businessId, "reminder", existingInvoice.amount);
+    const payUrl = await generatePayLink(
+      { id: existingInvoice.id, amount: existingInvoice.amount, plan: existingInvoice.plan },
+      await getOwnerName(businessId),
+    );
+    await notifyOwner(businessId, "reminder", existingInvoice.amount, payUrl);
   }
 }
 
