@@ -20,7 +20,7 @@ export function OnboardingShell({
   current,
   title,
   description,
-  maxWidthClassName = "max-w-2xl",
+  maxWidthClassName = "max-w-3xl",
   bodyClassName,
   children,
 }: OnboardingShellProps) {

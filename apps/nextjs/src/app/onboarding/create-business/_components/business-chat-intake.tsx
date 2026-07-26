@@ -10,7 +10,8 @@ import { cn } from "@acme/ui";
 import { Avatar, AvatarFallback } from "@acme/ui/avatar";
 import { useTRPC } from "~/trpc/react";
 import { INDUSTRY_TAXONOMY } from "./industry-taxonomy";
-import { CURRENCY_OPTIONS, type CurrencyCode } from "./currency-options";
+import { CURRENCY_OPTIONS } from "./currency-options";
+import type { CurrencyCode } from "./currency-options";
 import { OnboardingShell } from "./onboarding-shell";
 
 function initials(name: string) {
@@ -324,9 +325,9 @@ export function BusinessChatIntake({
 
   const placeholder =
     step === "name" ? "e.g. Aurora Goods"
-    : step === "address" ? (currency === "BDT" ? "e.g. 123 Main St, Dhaka" : "e.g. 123 Main St, City")
-    : step === "delivery" ? "e.g. 60"
-    : "";
+      : step === "address" ? (currency === "BDT" ? "e.g. 123 Main St, Dhaka" : "e.g. 123 Main St, City")
+        : step === "delivery" ? "e.g. 60"
+          : "";
 
   const activeGroup = INDUSTRY_TAXONOMY.find((g) => g.group === industryGroup);
 
@@ -335,7 +336,7 @@ export function BusinessChatIntake({
       current="chat"
       title="Let's set up your business"
       description="A few quick questions and you'll be ready to sell."
-      bodyClassName="flex h-[520px] flex-col"
+      bodyClassName="flex h-[75vh] flex-col"
     >
       <div ref={scrollRef} className="scrollbar-thin -mx-1 flex-1 space-y-4 overflow-y-auto px-1">
         <AnimatePresence initial={false}>
