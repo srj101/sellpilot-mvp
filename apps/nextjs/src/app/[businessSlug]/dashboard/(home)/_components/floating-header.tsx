@@ -48,7 +48,7 @@ export function FloatingHeader({
     .filter((c) => c.idx !== 0);
 
   return (
-    <header className="glass-overlay sticky top-0 z-30 flex h-16 w-full items-center justify-between gap-4 border-b border-haze-divider/40 px-6 hidden md:flex shrink-0">
+    <header className="glass-overlay sticky top-0 z-30 flex h-16 w-full items-center justify-between gap-4 border-b border-haze-divider/40 px-6 hidden md:flex shrink-0 print:hidden">
       {/* Left side: Breadcrumbs */}
       <nav aria-label="Breadcrumb">
         <ol className="flex items-center gap-1.5 text-xs font-medium tracking-tight">

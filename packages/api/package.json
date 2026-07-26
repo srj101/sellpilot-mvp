@@ -11,6 +11,14 @@
       "types": "./dist/lib/meta.d.ts",
       "default": "./src/lib/meta.ts"
     },
+    "./plans": {
+      "types": "./dist/lib/plans.d.ts",
+      "default": "./src/lib/plans.ts"
+    },
+    "./plan-limits": {
+      "types": "./dist/lib/plan-limits.d.ts",
+      "default": "./src/lib/plan-limits.ts"
+    },
     "./meta-inbox": {
       "types": "./dist/lib/meta-inbox.d.ts",
       "default": "./src/lib/meta-inbox.ts"

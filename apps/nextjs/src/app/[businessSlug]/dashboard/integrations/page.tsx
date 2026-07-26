@@ -1,12 +1,19 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { AlertTriangle } from "lucide-react";
 
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
 import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { IntegrationCard } from "./_components/integration-card";
 
-export default async function IntegrationsPage({ params }: { params: Promise<{ businessSlug: string }> }) {
+export default async function IntegrationsPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ businessSlug: string }>;
+  searchParams: Promise<{ error?: string }>;
+}) {
   const session = await getSession();
 
   if (!session) {
@@ -14,11 +21,14 @@ export default async function IntegrationsPage({ params }: { params: Promise<{ b
   }
 
   const { businessSlug } = await params;
+  const { error } = await searchParams;
   const caller = await createCaller(await headers());
-  const [connections, membersData] = await Promise.all([
+  const [connections, membersData, channelAccess] = await Promise.all([
     caller.integrations.list(),
     caller.roles.listMembers(),
+    caller.integrations.getChannelAccess(),
   ]);
+  const allowedChannels = new Set(channelAccess.channels);
 
   // Determine if the current user is the business owner
   const currentUserId = session.user.id;
@@ -40,6 +50,7 @@ export default async function IntegrationsPage({ params }: { params: Promise<{ b
       account: fbConnection
         ? `Connected as ${fbConnection.platformAccountName}`
         : null,
+      locked: !allowedChannels.has("messenger"),
     },
     {
       id: "instagram",
@@ -47,6 +58,7 @@ export default async function IntegrationsPage({ params }: { params: Promise<{ b
       description: "Enable auto-reply for Instagram DMs and story replies.",
       connected: !!igConnection,
       account: igConnection ? `@${igConnection.platformAccountName}` : null,
+      locked: !allowedChannels.has("instagram"),
     },
     {
       id: "whatsapp",
@@ -56,6 +68,7 @@ export default async function IntegrationsPage({ params }: { params: Promise<{ b
       account: waConnection
         ? `Connected: ${waConnection.platformAccountName}`
         : null,
+      locked: !allowedChannels.has("whatsapp"),
     },
   ];
 
@@ -74,6 +87,13 @@ export default async function IntegrationsPage({ params }: { params: Promise<{ b
         <div className="mb-6 flex items-center gap-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
           <span className="font-semibold">Read-only:</span>
           Connecting and disconnecting channels is restricted to the business owner.
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-6 flex items-center gap-3 rounded-lg border border-rose-500/20 bg-rose-500/5 px-4 py-3 text-sm text-rose-700 dark:text-rose-400">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          {error}
         </div>
       )}
 

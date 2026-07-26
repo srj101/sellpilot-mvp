@@ -13,6 +13,7 @@ import {
   getWhatsAppPhoneNumbers,
   subscribeWhatsAppWebhooks,
 } from "../lib/meta";
+import { assertChannelAllowed, getPlanChannels } from "../lib/plan-limits";
 import {
   createSession,
   deleteSession,
@@ -197,6 +198,12 @@ async function persistWhatsAppSignup(
 }
 
 export const integrationsRouter = {
+  /** Which channels the current plan allows — the Integrations page uses this to show a
+   * locked/upgrade state instead of a dead Connect button (billing plan channel gating). */
+  getChannelAccess: businessScopedProcedure.query(({ ctx }) => {
+    return getPlanChannels(ctx);
+  }),
+
   list: businessScopedProcedure.query(async ({ ctx }) => {
     return ctx.db
       .select({
@@ -246,6 +253,7 @@ export const integrationsRouter = {
     )
     .mutation(async ({ ctx, input }) => {
       try {
+        await assertChannelAllowed(ctx, "whatsapp");
         return await persistWhatsAppSignup(ctx.db, {
           userId: ctx.businessOwnerId,
           businessId: ctx.businessId,
@@ -267,6 +275,7 @@ export const integrationsRouter = {
     const name = sessionName(ctx.businessId);
 
     try {
+      await assertChannelAllowed(ctx, "whatsapp");
       await cleanupExistingSession(name);
       const created = await createSession(name);
       const started = await startSession(created.id);

@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@acme/ai-agent": "workspace:*",
+    "@acme/api": "workspace:*",
+    "@acme/auth": "workspace:*",
     "@acme/db": "workspace:*",
     "@acme/messaging": "workspace:*",
     "@acme/queue": "workspace:*",

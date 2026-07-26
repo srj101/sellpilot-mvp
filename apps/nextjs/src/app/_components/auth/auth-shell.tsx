@@ -80,21 +80,6 @@ const trust = [
   { icon: BarChart3, label: "Insight ready" },
 ];
 
-function BrandLogo({ size = 36 }: { size?: number }) {
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src="/logo.png"
-      alt="SellPilot"
-      width={size}
-      height={size}
-      className="h-auto w-auto shrink-0 select-none"
-      style={{ height: size * 0.32 }}
-      draggable={false}
-    />
-  );
-}
-
 /* ─── Infinite marquee (horizontal: right → left) ────────────── */
 
 interface MarqueeProps {
@@ -146,17 +131,6 @@ export function AuthShell({
       <div className="auth-grid pointer-events-none absolute inset-0" />
       <div className="auth-scan pointer-events-none absolute inset-x-0 top-0 h-px" />
 
-      {/* Theme toggle + secondary CTA, floating outside the card on mobile */}
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-3 sm:top-6 sm:right-6">
-        <Link
-          href={topRightHref}
-          className="bg-background/70 text-foreground/80 hover:text-foreground hover:border-primary/30 inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-medium backdrop-blur transition-colors"
-        >
-          {topRightLabel}
-        </Link>
-        <ThemeToggle />
-      </div>
-
       {/* The card: two-column grid, single rounded card */}
       <div
         className={cn(
@@ -172,8 +146,8 @@ export function AuthShell({
 
           {/* Logo + badge */}
           <div className="relative flex items-start justify-between gap-4">
-            <Link href="/" className="inline-flex items-center" aria-label="Home">
-              <BrandLogo size={36} />
+            <Link href="/" className="text-foreground inline-flex items-center text-lg font-semibold tracking-tight" aria-label="Home">
+              SellPilot
             </Link>
             <div className="bg-background/80 text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium backdrop-blur">
               <span className="relative flex h-1.5 w-1.5">
@@ -299,16 +273,33 @@ export function AuthShell({
 
         {/* ─── Right form panel (always visible) ─────────────────── */}
         <section className="relative flex items-center justify-center p-4 sm:p-6 lg:p-8 xl:p-10">
-          {/* Mobile logo (hidden on lg+) */}
+          {/* Mobile wordmark (hidden on lg+) */}
           <Link
             href="/"
-            className="absolute top-4 left-4 inline-flex items-center lg:hidden"
+            className="text-foreground absolute top-4 left-4 inline-flex items-center text-base font-semibold tracking-tight lg:hidden"
             aria-label="Home"
           >
-            <BrandLogo size={28} />
+            SellPilot
           </Link>
 
           <div className="w-full max-w-lg pt-12 sm:pt-4 lg:pt-0">
+            {/* Theme toggle + secondary CTAs — sit inside the card's own top-right corner */}
+            <div className="mb-5 flex flex-wrap items-center justify-end gap-2 sm:mb-6 sm:gap-2.5">
+              <Link
+                href="/pricing"
+                className="bg-background/70 text-foreground/80 hover:text-foreground hover:border-primary/30 inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-medium backdrop-blur transition-colors"
+              >
+                Pricing
+              </Link>
+              <Link
+                href={topRightHref}
+                className="bg-background/70 text-foreground/80 hover:text-foreground hover:border-primary/30 inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-medium backdrop-blur transition-colors"
+              >
+                {topRightLabel}
+              </Link>
+              <ThemeToggle />
+            </div>
+
             <div className="mb-6 flex flex-col gap-2.5 sm:mb-7">
               <div className="text-primary text-[11px] font-semibold tracking-[0.18em] uppercase">
                 {eyebrow}

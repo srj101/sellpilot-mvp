@@ -145,10 +145,21 @@ export interface ProductImageIndexJob {
   productTitle: string;
 }
 
+/** No payload — sweeps every business's subscription each run. Self-reschedules daily
+ * (see apps/worker/src/handlers/subscription-renewal.ts); there is no repeat option on
+ * JobOptions, so this is the queue-native equivalent of a daily cron. */
+export type SubscriptionRenewalJob = Record<string, never>;
+
+/** No payload — sweeps every trialing subscription past its period end for the
+ * "trial ended" notification email. Self-reschedules daily. */
+export type TrialExpirySweepJob = Record<string, never>;
+
 export type QueueJobMap = {
   "meta-dm-reply": MetaDMReplyJob;
   "meta-comment-reply": MetaCommentReplyJob;
   "product-image-index": ProductImageIndexJob;
+  "subscription-renewal": SubscriptionRenewalJob;
+  "trial-expiry-sweep": TrialExpirySweepJob;
 };
 
 export type QueueJobName = keyof QueueJobMap;

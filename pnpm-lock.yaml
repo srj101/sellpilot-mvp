@@ -243,6 +243,12 @@ importers:
       '@acme/ai-agent':
         specifier: workspace:*
         version: link:../../packages/ai-agent
+      '@acme/api':
+        specifier: workspace:*
+        version: link:../../packages/api
+      '@acme/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
       '@acme/db':
         specifier: workspace:*
         version: link:../../packages/db

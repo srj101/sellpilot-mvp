@@ -29,7 +29,7 @@ export default async function InvoicesPage() {
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Invoices</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
+          <p className="mt-1 text-sm text-muted-foreground">
             All paid, pending, and overdue billing invoices. Print, share, and download receipts in BDT.
           </p>
         </div>

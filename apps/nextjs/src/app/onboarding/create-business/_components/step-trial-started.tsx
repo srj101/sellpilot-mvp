@@ -2,8 +2,10 @@
 
 import { CheckCircle2, Sparkles, ArrowRight, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
+import { PLAN_CATALOG } from "@acme/api/plans";
+import type { PlanKey } from "@acme/api/plans";
 import { useTRPC } from "~/trpc/react";
 
 export function StepTrialStarted({
@@ -15,6 +17,9 @@ export function StepTrialStarted({
 }) {
   const trpc = useTRPC();
   const completeOnboarding = useMutation(trpc.business.completeOnboarding.mutationOptions());
+  const { data: subscription } = useQuery(trpc.subscription.getCurrent.queryOptions());
+  const planKey = (subscription?.plan as PlanKey | undefined) ?? "starter";
+  const plan = PLAN_CATALOG[planKey];
   const [dateStr, setDateStr] = useState("");
   const [navigating, setNavigating] = useState(false);
 
@@ -56,7 +61,7 @@ export function StepTrialStarted({
             <CheckCircle2 className="h-10 w-10 text-green-500" />
           </div>
 
-          <h1 className="mb-2 text-2xl font-bold tracking-tight">Your 14-day Pro trial is active!</h1>
+          <h1 className="mb-2 text-2xl font-bold tracking-tight">Your 14-day free trial is active!</h1>
           
           <div className="mb-8 rounded-full bg-muted px-4 py-1.5 text-sm font-medium text-muted-foreground">
             Trial ends on {dateStr || "..."}
@@ -65,21 +70,15 @@ export function StepTrialStarted({
           <div className="mb-8 w-full rounded-xl border bg-background/50 p-4 text-left">
             <h3 className="mb-3 text-sm font-semibold flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
-              What's included in Pro:
+              What's included in {plan.name}:
             </h3>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                Unlimited AI Conversations
-              </li>
-              <li className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                Unlimited Products
-              </li>
-              <li className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                All Integrations (WhatsApp, Messenger, IG)
-              </li>
+              {plan.features.map((feature) => (
+                <li key={feature} className="flex items-center gap-2">
+                  <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+                  {feature}
+                </li>
+              ))}
               <li className="flex items-center gap-2">
                 <div className="h-1.5 w-1.5 rounded-full bg-primary" />
                 No payment method required yet

@@ -1,10 +1,12 @@
 import type { TRPCRouterRecord } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
 import { and, desc, eq, inArray } from "@acme/db";
 import { product, productVariant } from "@acme/db/schema";
 
 import { deleteProductImageFromVectorDb, searchProductsByImage } from "../lib/chromadb";
+import { assertPlanLimit, getProductUsage } from "../lib/plan-limits";
 import { queueProductImageIndexing } from "../lib/queue";
 import { businessScopedProcedure } from "../trpc";
 
@@ -34,6 +36,10 @@ const ProductInput = z.object({
 });
 
 export const productsRouter = {
+  /** Powers the "X of Y products, Z remaining" banner shown above both the manual add
+   * form and the CSV bulk importer, before either one hits assertPlanLimit at save time. */
+  getUsage: businessScopedProcedure.query(({ ctx }) => getProductUsage(ctx)),
+
   list: businessScopedProcedure.query(async ({ ctx }) => {
     const businessId = ctx.businessId;
     const products = await ctx.db
@@ -56,6 +62,8 @@ export const productsRouter = {
   create: businessScopedProcedure.input(ProductInput).mutation(async ({ ctx, input }) => {
     const userId = ctx.businessOwnerId;
     const businessId = ctx.businessId;
+
+    await assertPlanLimit(ctx, "products");
 
     const [newProduct] = await ctx.db
       .insert(product)
@@ -290,10 +298,23 @@ export const productsRouter = {
       const businessId = ctx.businessId;
       const userId = ctx.businessOwnerId;
 
+      // Cap the batch at the plan's remaining capacity instead of rejecting the whole
+      // import — keeps the first N rows in file order (matching the CSV importer's
+      // preview truncation) rather than making the user re-upload a trimmed file.
+      const usage = await getProductUsage(ctx);
+      if (usage.remaining === 0) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `You've hit your ${usage.planName} product limit (${usage.limit}). Upgrade to import more.`,
+        });
+      }
+      const accepted = input.products.slice(0, usage.remaining);
+      const skipped = input.products.length - accepted.length;
+
       // Note: A transaction is ideal here, but to avoid complexity we insert one by one
       // In a real production scenario, use db.transaction
       const results = [];
-      for (const p of input.products) {
+      for (const p of accepted) {
         const compareAtPrice = p.discountPercent 
           ? p.price / (1 - p.discountPercent / 100) 
           : undefined;
@@ -325,6 +346,13 @@ export const productsRouter = {
           results.push(newProduct);
         }
       }
-      return { count: results.length };
+      return {
+        count: results.length,
+        imported: results.length,
+        requested: input.products.length,
+        skipped,
+        limit: usage.limit,
+        planName: usage.planName,
+      };
     }),
 } satisfies TRPCRouterRecord;

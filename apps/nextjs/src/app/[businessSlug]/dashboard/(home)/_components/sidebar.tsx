@@ -27,6 +27,7 @@ import {
   LifeBuoy,
   User,
   Shield,
+  Wallet,
 } from "lucide-react";
 
 import { useQuery } from "@tanstack/react-query";
@@ -110,6 +111,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Management",
     items: [
       { href: "/dashboard/orders", icon: Package, label: "Orders" },
+      { href: "/dashboard/payments", icon: Wallet, label: "Payments" },
       { href: "/dashboard/products", icon: ShoppingBag, label: "Products" },
       { href: "/dashboard/customers", icon: Users, label: "Customers" },
       { href: "/dashboard/invoices", icon: Receipt, label: "Invoices" },
@@ -152,6 +154,7 @@ const NAV_PERMISSIONS: Record<string, string> = {
   "/dashboard/inbox": "inbox:view",
   "/dashboard/products": "products:view",
   "/dashboard/orders": "orders:view",
+  "/dashboard/payments": "orders:view",
   "/dashboard/customers": "customers:view",
   "/dashboard/analytics": "analytics:view",
   "/dashboard/offers": "offers:view",
@@ -853,7 +856,7 @@ export function Sidebar() {
     <>
       <aside
         className={cn(
-          "relative hidden h-full shrink-0 transition-[width] duration-300 md:flex flex-col border-r border-haze-divider bg-haze-sidebar-bg text-haze-sidebar-text",
+          "relative hidden h-full shrink-0 transition-[width] duration-300 md:flex flex-col border-r border-haze-divider bg-haze-sidebar-bg text-haze-sidebar-text print:hidden",
           collapsed ? "w-16" : "w-64",
         )}
       >
@@ -884,7 +887,7 @@ export function Sidebar() {
         </Tooltip>
       </aside>
 
-      <div className="fixed left-4 right-4 top-4 z-40 flex h-14 w-full items-center justify-between rounded-xl border border-haze-divider bg-card/75 px-4 shadow-md backdrop-blur-md md:hidden">
+      <div className="fixed left-4 right-4 top-4 z-40 flex h-14 w-full items-center justify-between rounded-xl border border-haze-divider bg-card/75 px-4 shadow-md backdrop-blur-md md:hidden print:hidden">
         <div className="flex items-center gap-2.5">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/15">
             <span className="h-2.5 w-2.5 rounded-full bg-primary" />

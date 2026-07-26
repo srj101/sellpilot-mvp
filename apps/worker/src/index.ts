@@ -21,6 +21,9 @@ import {
   setHistoryProvider,
   setOutboundLogger,
 } from "./handlers/index.js";
+import { runSubscriptionRenewal, runTrialExpirySweep } from "./handlers/subscription-renewal.js";
+
+const DAY_MS = 86_400_000;
 
 const config = loadConfig();
 
@@ -116,7 +119,35 @@ function registerHandlers() {
     await handleCommentReply(job);
   });
 
+  // Billing jobs (billing plan D6) — no native "repeat" option on the shared queue
+  // interface, so each run reschedules itself 24h out. The `finally` means a thrown
+  // error still keeps the daily cadence alive instead of silently stopping forever.
+  queue.process("subscription-renewal", async () => {
+    try {
+      await runSubscriptionRenewal();
+    } finally {
+      await queue.enqueue("subscription-renewal", {}, { delay: DAY_MS });
+    }
+  });
+
+  queue.process("trial-expiry-sweep", async () => {
+    try {
+      await runTrialExpirySweep();
+    } finally {
+      await queue.enqueue("trial-expiry-sweep", {}, { delay: DAY_MS });
+    }
+  });
+
   console.log("[Worker] Job handlers registered");
+}
+
+/** Kicks off the two self-rescheduling billing jobs shortly after boot. Only needed once
+ * per environment — if the queue already has one enqueued (e.g. worker restarted), this
+ * adds a harmless extra run rather than losing the daily cadence entirely. */
+function scheduleBillingJobs() {
+  const initialDelayMs = 30_000;
+  void queue.enqueue("subscription-renewal", {}, { delay: initialDelayMs });
+  void queue.enqueue("trial-expiry-sweep", {}, { delay: initialDelayMs });
 }
 
 // Graceful shutdown
@@ -162,6 +193,7 @@ async function main() {
   try {
     await initializeAIHelpers();
     registerHandlers();
+    scheduleBillingJobs();
 
     if (process.env.WORKER_HEALTH_PORT) {
       await startHealthCheck();

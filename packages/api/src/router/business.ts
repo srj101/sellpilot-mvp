@@ -5,6 +5,8 @@ import { and, eq, ilike, isNotNull } from "@acme/db";
 import { businessMember, business, businessProfile, subscription } from "@acme/db/schema";
 import { sendEmail } from "@acme/auth/email";
 
+import { priceForCycle } from "../lib/plans";
+
 import { ownerOnlyProcedure, protectedProcedure, businessScopedProcedure, publicProcedure } from "../trpc";
 
 function slugify(name: string) {
@@ -126,9 +128,12 @@ export const businessRouter = {
       await ctx.db.insert(subscription).values({
         userId: ctx.session.user.id,
         businessId,
-        plan: "pro",
+        plan: "starter",
         status: "trialing",
         billingCycle: "monthly",
+        // The price the trial will actually renew at once it ends — was previously never
+        // set at all here, silently defaulting to 0 regardless of plan.
+        amount: priceForCycle("starter", "monthly") ?? 0,
         currentPeriodStart: new Date(),
         currentPeriodEnd: trialEnd,
         aiConversationsUsed: 0,

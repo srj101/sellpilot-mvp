@@ -30,3 +30,4 @@ export * from "./product-schema";
 export * from "./agent-schema";
 export * from "./analytics-schema";
 export * from "./inbox-schema";
+export * from "./billing-schema";

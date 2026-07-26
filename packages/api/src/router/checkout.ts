@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
 import { eq } from "@acme/db";
-import { businessProfile, order, orderItem, pageView } from "@acme/db/schema";
+import { businessProfile, order, orderItem, pageView, transaction } from "@acme/db/schema";
 
 import { initiatePayment, isSslcommerzConfigured, validatePayment } from "../lib/sslcommerz";
 import { publicProcedure } from "../trpc";
@@ -88,6 +88,17 @@ export const checkoutRouter = {
       if (input.pageViewId) {
         await ctx.db.update(pageView).set({ converted: true }).where(eq(pageView.id, input.pageViewId));
       }
+      // COD is "pending" in the transaction ledger, not "success" — the money hasn't
+      // actually changed hands yet, it's collected at delivery (Payments page S5-A).
+      await ctx.db.insert(transaction).values({
+        businessId: orderRow.businessId,
+        orderId: orderRow.id,
+        reference: orderRow.orderNumber,
+        method: "cod",
+        status: "pending",
+        amount: orderRow.total,
+        deliveryCharge: orderRow.shippingCost,
+      });
       return { ok: true as const };
     }),
 
@@ -129,8 +140,22 @@ export const checkoutRouter = {
       const orderRow = await ctx.db.query.order.findFirst({ where: eq(order.paymentToken, input.tranId) });
       if (!orderRow) return { ok: false };
 
+      // The real rail (bkash/nagad/card/internetbank), not the flat "sslcommerz" string —
+      // see billing plan D8. Without this the Payments page can never show a per-method
+      // breakdown, no matter how the UI is built.
+      const method = result.method ?? "card";
+
       if (orderRow.status === "pending" || orderRow.status === "confirmed") {
-        await ctx.db.update(order).set({ status: "paid", paymentMethod: "sslcommerz", paymentConfirmedAt: new Date() }).where(eq(order.id, orderRow.id));
+        await ctx.db.update(order).set({ status: "paid", paymentMethod: method, paymentConfirmedAt: new Date() }).where(eq(order.id, orderRow.id));
+        await ctx.db.insert(transaction).values({
+          businessId: orderRow.businessId,
+          orderId: orderRow.id,
+          reference: input.valId,
+          method,
+          status: "success",
+          amount: orderRow.total,
+          deliveryCharge: orderRow.shippingCost,
+        });
       }
       await ctx.db.update(pageView).set({ converted: true }).where(eq(pageView.orderId, orderRow.id));
       return { ok: true };

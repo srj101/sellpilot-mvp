@@ -16,6 +16,7 @@ import {
   subscribeMetaPageWebhooks,
   subscribeWhatsAppWebhooks,
 } from "@acme/api/meta";
+import { assertChannelAllowed } from "@acme/api/plan-limits";
 
 const FB_VERSION = env.FACEBOOK_GRAPH_VERSION;
 
@@ -281,6 +282,21 @@ export async function connectChannel(formData: FormData) {
       maxAge: 10 * 60,
       path: "/",
     });
+
+    // Gate BEFORE the Facebook OAuth round-trip, not just at save time — rejecting only
+    // after the user already went through the login dialog is a far worse experience
+    // than never starting it. Skipped only when there's no resolvable slug at all — this
+    // path isn't actually reachable from onboarding (it posts to the separate
+    // /api/integrations/facebook/connect route instead, gated there), this is just a
+    // defensive fallback for the rare case of a missing header.
+    try {
+      const businessId = await resolveBusinessId(session.user.id, businessSlug);
+      const catalogChannel = channel === "facebook" ? "messenger" : channel;
+      await assertChannelAllowed({ db, businessId }, catalogChannel);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Upgrade your plan to connect this channel.";
+      redirect(`/${businessSlug}/dashboard/integrations?error=${encodeURIComponent(message)}`);
+    }
   }
 
   cookieStore.set("meta_channel_intent", channel, {

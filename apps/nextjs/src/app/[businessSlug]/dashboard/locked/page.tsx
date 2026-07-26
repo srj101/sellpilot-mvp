@@ -5,12 +5,7 @@ import { Lock, CheckCircle2, LifeBuoy } from "lucide-react";
 
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
-
-const PLANS = [
-  { name: "Starter", price: "৳3,999", period: "/mo" },
-  { name: "Growth", price: "৳9,999", period: "/mo" },
-  { name: "Pro", price: "৳24,999+", period: "/mo" },
-] as const;
+import { LockedPlanPicker } from "./locked-plan-picker";
 
 const REASON_COPY: Record<string, { title: string; body: string }> = {
   trial_expired: {
@@ -58,17 +53,7 @@ export default async function LockedPage({ params }: { params: Promise<{ busines
           All your business data is safe and preserved
         </div>
 
-        <div className="mt-8 grid gap-4 sm:grid-cols-3">
-          {PLANS.map((plan) => (
-            <div key={plan.name} className="rounded-2xl border bg-background/60 p-5 text-left">
-              <p className="text-sm font-semibold">{plan.name}</p>
-              <p className="mt-1 text-xl font-bold tracking-tight">
-                {plan.price}
-                <span className="text-xs font-normal text-muted-foreground">{plan.period}</span>
-              </p>
-            </div>
-          ))}
-        </div>
+        <LockedPlanPicker />
 
         <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
           <Link

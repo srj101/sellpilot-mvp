@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useFormStatus } from "react-dom";
-import { MessageCircle, Facebook, Instagram, Store, Upload, Link2, Loader2 } from "lucide-react";
+import { AlertTriangle, MessageCircle, Facebook, Instagram, Upload, Link2, Loader2, Lock, ImagePlus } from "lucide-react";
 import { useTRPC } from "~/trpc/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { cn } from "@acme/ui";
@@ -18,6 +19,21 @@ import {
 import { cancelMetaSelection, fetchAvailableMetaPages } from "../../../[businessSlug]/dashboard/integrations/actions";
 import { OnboardingShell } from "./onboarding-shell";
 
+/** Shown instead of a Connect control when the channel isn't in the business's current plan. */
+function UpgradeBadge() {
+  return (
+    <a
+      href="/pricing"
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-500/20 dark:text-amber-400"
+    >
+      <Lock className="h-3.5 w-3.5" />
+      Upgrade
+    </a>
+  );
+}
+
 /** Shows a spinner while `cancelMetaSelection`'s server action is in flight. */
 function DoneButton() {
   const { pending } = useFormStatus();
@@ -31,8 +47,15 @@ function DoneButton() {
 
 export function StepConnectChannels({ businessSlug, onNext }: { businessSlug: string; onNext: () => void }) {
   const trpc = useTRPC();
+  const searchParams = useSearchParams();
+  const connectError = searchParams.get("error");
   const { data: connections = [], refetch: refetchConnections } = useQuery(trpc.integrations.list.queryOptions());
   const { data: currentBusiness } = useQuery(trpc.business.current.queryOptions());
+  const { data: channelAccess } = useQuery(trpc.integrations.getChannelAccess.queryOptions());
+  const allowedChannels = new Set(channelAccess?.channels ?? []);
+  const lockedMessenger = !!channelAccess && !allowedChannels.has("messenger");
+  const lockedInstagram = !!channelAccess && !allowedChannels.has("instagram");
+  const lockedWhatsapp = !!channelAccess && !allowedChannels.has("whatsapp");
   const getUploadUrl = useMutation(trpc.business.getUploadUrl.mutationOptions());
   const updateLogo = useMutation(trpc.business.updateLogo.mutationOptions());
   const [logo, setLogo] = useState<string | null>(null);
@@ -161,20 +184,27 @@ export function StepConnectChannels({ businessSlug, onNext }: { businessSlug: st
       description="Link WhatsApp, Messenger, and Instagram so the AI agent can start selling right away."
       maxWidthClassName={showRightPanel ? "max-w-5xl" : "max-w-2xl"}
     >
+      {connectError && (
+        <div className="mb-6 flex items-center gap-3 rounded-lg border border-rose-500/20 bg-rose-500/5 px-4 py-3 text-sm text-rose-700 dark:text-rose-400">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          {connectError}
+        </div>
+      )}
+
       <div className={`grid gap-8 ${showRightPanel ? "lg:grid-cols-2" : "grid-cols-1"}`}>
           {/* Left Column: Connect Actions */}
           <div className="space-y-4">
-            <div className="flex items-center gap-4 rounded-xl border p-5 bg-card text-card-foreground shadow-sm">
-              <label
-                className={cn(
-                  "group relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border bg-muted",
-                  logoUploading ? "cursor-not-allowed" : "cursor-pointer",
-                )}
-              >
+            <label
+              className={cn(
+                "group relative flex items-center gap-4 rounded-xl border border-dashed p-5 text-left transition-colors",
+                logoUploading ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:border-primary/40 hover:bg-primary/5",
+              )}
+            >
+              <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border bg-muted">
                 {logo ? (
                   <img src={logo} alt="Business logo" className="h-full w-full object-cover" />
                 ) : (
-                  <Store className="h-6 w-6 text-muted-foreground" />
+                  <ImagePlus className="h-6 w-6 text-muted-foreground" />
                 )}
                 <div
                   className={cn(
@@ -188,82 +218,118 @@ export function StepConnectChannels({ businessSlug, onNext }: { businessSlug: st
                     <Upload className="h-4 w-4 text-white" />
                   )}
                 </div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="sr-only"
-                  onChange={handleLogoChange}
-                  disabled={logoUploading}
-                />
-              </label>
+              </div>
               <div className="min-w-0 flex-1">
-                <h3 className="font-semibold">Business logo</h3>
+                <h3 className="flex items-center gap-2 font-semibold">
+                  Business logo
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Optional</span>
+                </h3>
                 <p className={logoError ? "text-sm text-destructive" : "text-sm text-muted-foreground"}>
                   {logoUploading
                     ? "Uploading..."
                     : logoError
                       ? logoError
-                      : "Optional — shown to customers in chats and checkout."}
+                      : "Click to upload — PNG or JPG, shown to customers in chats and checkout."}
                 </p>
               </div>
-            </div>
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={handleLogoChange}
+                disabled={logoUploading}
+              />
+            </label>
 
             <div className="space-y-4">
               <div className="flex items-center justify-between rounded-xl border p-5 bg-card text-card-foreground shadow-sm">
                 <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500/10 text-green-500">
-                    <MessageCircle className="h-6 w-6" />
+                  <div
+                    className={cn(
+                      "flex h-12 w-12 items-center justify-center rounded-full",
+                      lockedWhatsapp ? "bg-muted text-muted-foreground" : "bg-green-500/10 text-green-500",
+                    )}
+                  >
+                    {lockedWhatsapp ? <Lock className="h-5 w-5" /> : <MessageCircle className="h-6 w-6" />}
                   </div>
                   <div>
                     <h3 className="font-semibold">WhatsApp Business</h3>
-                    <p className="text-sm text-muted-foreground">Automate replies on WhatsApp</p>
+                    <p className="text-sm text-muted-foreground">
+                      {lockedWhatsapp ? "Not included in your current plan" : "Automate replies on WhatsApp"}
+                    </p>
                   </div>
                 </div>
-                <div className="w-[100px]">
-                  <WhatsAppConnectButton />
-                </div>
+                {lockedWhatsapp ? (
+                  <UpgradeBadge />
+                ) : (
+                  <div className="w-[100px]">
+                    <WhatsAppConnectButton />
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between rounded-xl border p-5 bg-card text-card-foreground shadow-sm">
                 <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-500/10 text-blue-500">
-                    <Facebook className="h-6 w-6" />
+                  <div
+                    className={cn(
+                      "flex h-12 w-12 items-center justify-center rounded-full",
+                      lockedMessenger ? "bg-muted text-muted-foreground" : "bg-blue-500/10 text-blue-500",
+                    )}
+                  >
+                    {lockedMessenger ? <Lock className="h-5 w-5" /> : <Facebook className="h-6 w-6" />}
                   </div>
                   <div>
                     <h3 className="font-semibold">Facebook Messenger</h3>
-                    <p className="text-sm text-muted-foreground">Reply to comments and DMs</p>
+                    <p className="text-sm text-muted-foreground">
+                      {lockedMessenger ? "Not included in your current plan" : "Reply to comments and DMs"}
+                    </p>
                   </div>
                 </div>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    window.location.href = connectUrl("facebook");
-                  }}
-                >
-                  <Link2 className="h-4 w-4" />
-                  Connect
-                </Button>
+                {lockedMessenger ? (
+                  <UpgradeBadge />
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      window.location.href = connectUrl("facebook");
+                    }}
+                  >
+                    <Link2 className="h-4 w-4" />
+                    Connect
+                  </Button>
+                )}
               </div>
 
               <div className="flex items-center justify-between rounded-xl border p-5 bg-card text-card-foreground shadow-sm">
                 <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-pink-500/10 text-pink-500">
-                    <Instagram className="h-6 w-6" />
+                  <div
+                    className={cn(
+                      "flex h-12 w-12 items-center justify-center rounded-full",
+                      lockedInstagram ? "bg-muted text-muted-foreground" : "bg-pink-500/10 text-pink-500",
+                    )}
+                  >
+                    {lockedInstagram ? <Lock className="h-5 w-5" /> : <Instagram className="h-6 w-6" />}
                   </div>
                   <div>
                     <h3 className="font-semibold">Instagram DM</h3>
-                    <p className="text-sm text-muted-foreground">Handle Instagram stories and messages</p>
+                    <p className="text-sm text-muted-foreground">
+                      {lockedInstagram ? "Not included in your current plan" : "Handle Instagram stories and messages"}
+                    </p>
                   </div>
                 </div>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    window.location.href = connectUrl("instagram");
-                  }}
-                >
-                  <Link2 className="h-4 w-4" />
-                  Connect
-                </Button>
+                {lockedInstagram ? (
+                  <UpgradeBadge />
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      window.location.href = connectUrl("instagram");
+                    }}
+                  >
+                    <Link2 className="h-4 w-4" />
+                    Connect
+                  </Button>
+                )}
               </div>
             </div>
           </div>

@@ -87,17 +87,8 @@ export function InvoicesClient({ orders }: { orders: Order[] }) {
   };
 
   return (
-    <div>
-      {/* Page Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" style={{ marginBottom: "var(--haze-section-gap, 24px)" }}>
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Invoices</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Manage billing invoices and payment tracking</p>
-        </div>
-      </div>
-
+    <div className="space-y-4">
       {/* Filters */}
-      <div className="space-y-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-1 items-center gap-3">
             <div className="relative w-full max-w-xs">
@@ -229,7 +220,6 @@ export function InvoicesClient({ orders }: { orders: Order[] }) {
             </p>
           </div>
         </div>
-      </div>
     </div>
   );
 }

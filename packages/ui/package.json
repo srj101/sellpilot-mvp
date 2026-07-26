@@ -17,6 +17,7 @@
     "./popover": "./src/popover.tsx",
     "./separator": "./src/separator.tsx",
     "./sheet": "./src/sheet.tsx",
+    "./skeleton": "./src/skeleton.tsx",
     "./tabs": "./src/tabs.tsx",
     "./theme": "./src/theme.tsx",
     "./toast": "./src/toast.tsx",

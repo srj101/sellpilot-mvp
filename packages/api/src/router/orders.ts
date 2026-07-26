@@ -2,7 +2,7 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod";
 
 import { desc, eq, and, inArray, createCustomerAndOrder, quoteOrder } from "@acme/db";
-import { order, orderItem } from "@acme/db/schema";
+import { order, orderItem, transaction } from "@acme/db/schema";
 
 import { businessScopedProcedure } from "../trpc";
 
@@ -97,6 +97,22 @@ export const ordersRouter = {
         .update(order)
         .set({ status: input.status })
         .where(and(eq(order.id, input.id), eq(order.businessId, businessId)));
+
+      // COD money is only actually collected at the doorstep — flip the ledger entry from
+      // "pending" to "success" once delivery is confirmed, so the Payments page's Pending
+      // COD vs Total Collected split reflects reality, not just order status.
+      if (input.status === "delivered") {
+        await ctx.db
+          .update(transaction)
+          .set({ status: "success" })
+          .where(and(eq(transaction.orderId, input.id), eq(transaction.method, "cod"), eq(transaction.status, "pending")));
+      }
+      if (input.status === "cancelled" || input.status === "returned") {
+        await ctx.db
+          .update(transaction)
+          .set({ status: "failed" })
+          .where(and(eq(transaction.orderId, input.id), eq(transaction.method, "cod"), eq(transaction.status, "pending")));
+      }
 
       return { success: true };
     }),

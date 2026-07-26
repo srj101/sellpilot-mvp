@@ -29,7 +29,7 @@ export default async function SignUpPage({ searchParams }: SignUpPageProps) {
 
   return (
     <AuthShell
-      eyebrow="Start free · 14-day Pro trial"
+      eyebrow="Start free · 14-day trial"
       title="Create your SellPilot workspace"
       description="Spin up your AI agent, connect your channels, and start selling — no credit card required."
     >

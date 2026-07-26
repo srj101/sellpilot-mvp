@@ -8,9 +8,10 @@ import {
   X,
   Loader2,
   AlertCircle,
+  Lock,
 } from "lucide-react";
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import Papa from "papaparse";
 
 import { cn } from "@acme/ui";
@@ -118,12 +119,19 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
   const trpc = useTRPC();
   const createProduct = useMutation(trpc.products.create.mutationOptions());
   const bulkCreate = useMutation(trpc.products.bulkCreate.mutationOptions());
+  const { data: usage } = useQuery(trpc.products.getUsage.queryOptions());
 
   // ── Manual entry state ──────────────────────────────────────────
   const [draft, setDraft] = useState<DraftProduct>(EMPTY_DRAFT);
   const [queued, setQueued] = useState<DraftProduct[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveErrors, setSaveErrors] = useState<string[]>([]);
+
+  // Slots left on the current plan after accounting for what's already queued locally —
+  // recomputed on every render so the "Add Another" button locks the instant the queue
+  // catches up to the limit, not just after a failed save round-trip.
+  const remainingSlots = usage ? Math.max(0, usage.remaining - queued.length) : null;
+  const atProductLimit = remainingSlots === 0;
 
   function updateDraft<K extends keyof DraftProduct>(key: K, value: DraftProduct[K]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -141,7 +149,7 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
   }
 
   function addToQueue() {
-    if (!draft.name.trim() || !draft.price) return;
+    if (!draft.name.trim() || !draft.price || atProductLimit) return;
     setQueued((prev) => [...prev, { ...draft, name: draft.name.trim() }]);
     setDraft(EMPTY_DRAFT);
   }
@@ -182,6 +190,7 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
   }
 
   // ── CSV import state ────────────────────────────────────────────
+  const [importSummary, setImportSummary] = useState<{ imported: number; skipped: number } | null>(null);
   const [csvRows, setCsvRows] = useState<BulkRow[]>([]);
   const [csvSkipped, setCsvSkipped] = useState(0);
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
@@ -275,9 +284,16 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
     if (csvRows.length === 0) return;
     setIsImporting(true);
     setCsvError(null);
+    setImportSummary(null);
     try {
-      await bulkCreate.mutateAsync({ products: csvRows });
-      onNext();
+      // The server caps this at the plan's remaining product slots (first rows in file
+      // order win) rather than rejecting the whole file — `skipped` reflects that cap.
+      const result = await bulkCreate.mutateAsync({ products: csvRows });
+      if (result.skipped > 0) {
+        setImportSummary({ imported: result.imported, skipped: result.skipped });
+      } else {
+        onNext();
+      }
     } catch (err) {
       setCsvError(err instanceof Error ? err.message : "Import failed — please try again.");
     } finally {
@@ -293,6 +309,25 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
       maxWidthClassName="max-w-2xl"
     >
       <div className="space-y-6">
+          {usage && (
+            <div className="rounded-xl border bg-card p-4">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="font-medium">
+                  {usage.used} of {usage.limit} products used
+                </span>
+                <span className={cn("font-medium", atProductLimit ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")}>
+                  {usage.remaining} remaining on {usage.planName}
+                </span>
+              </div>
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className={cn("h-full rounded-full transition-all", atProductLimit ? "bg-amber-500" : "bg-primary")}
+                  style={{ width: `${Math.min(100, Math.round((usage.used / usage.limit) * 100))}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex border-b border-border">
             <button
               onClick={() => setTab("manual")}
@@ -421,12 +456,22 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
                 <div className="pt-2">
                   <button
                     onClick={addToQueue}
-                    disabled={!draft.name.trim() || !draft.price}
+                    disabled={!draft.name.trim() || !draft.price || atProductLimit}
                     className="rounded-lg bg-secondary px-4 py-2 text-sm font-medium hover:bg-secondary/80 transition-colors flex items-center gap-2 disabled:opacity-50"
                   >
                     <PackagePlus className="h-4 w-4" />
                     Add Another
                   </button>
+                  {atProductLimit && (
+                    <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                      <Lock className="h-3.5 w-3.5" />
+                      You've reached your {usage?.planName} plan's product limit ({usage?.limit}).{" "}
+                      <a href="/pricing" target="_blank" rel="noopener noreferrer" className="font-medium underline underline-offset-2">
+                        Upgrade
+                      </a>{" "}
+                      to add more.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -504,12 +549,43 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
                 </div>
               )}
 
+              {importSummary && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-400">
+                  <p className="flex items-center gap-2 font-medium">
+                    <Lock className="h-4 w-4 shrink-0" />
+                    Imported {importSummary.imported} product{importSummary.imported === 1 ? "" : "s"}
+                  </p>
+                  <p className="mt-1">
+                    {importSummary.skipped} row{importSummary.skipped > 1 ? "s were" : " was"} skipped — you've reached your{" "}
+                    {usage?.planName} plan's product limit ({usage?.limit}).{" "}
+                    <a href="/pricing" target="_blank" rel="noopener noreferrer" className="font-medium underline underline-offset-2">
+                      Upgrade
+                    </a>{" "}
+                    to import the rest.
+                  </p>
+                </div>
+              )}
+
               {csvRows.length > 0 && (
                 <div className="space-y-3">
                   <p className="text-sm text-muted-foreground">
                     {csvRows.length} valid row{csvRows.length > 1 ? "s" : ""}
                     {csvSkipped > 0 ? ` — ${csvSkipped} skipped (missing title/price)` : ""}
                   </p>
+                  {usage && csvRows.length > usage.remaining && (
+                    <p className="flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400">
+                      <Lock className="h-3.5 w-3.5 shrink-0 translate-y-0.5" />
+                      <span>
+                        Your {usage.planName} plan allows {usage.limit} products and you have {usage.remaining} slot
+                        {usage.remaining === 1 ? "" : "s"} left. Only the first {usage.remaining} of {csvRows.length} rows
+                        will be imported (in file order) — the rest will be skipped.{" "}
+                        <a href="/pricing" target="_blank" rel="noopener noreferrer" className="font-medium underline underline-offset-2">
+                          Upgrade
+                        </a>{" "}
+                        to import all of them.
+                      </span>
+                    </p>
+                  )}
                   <div className="overflow-x-auto rounded-lg border">
                     <table className="w-full text-sm">
                       <thead className="bg-muted/50 text-left text-xs font-medium text-muted-foreground">
@@ -541,11 +617,14 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
                   )}
                   <button
                     onClick={handleImport}
-                    disabled={isImporting}
+                    disabled={isImporting || usage?.remaining === 0}
                     className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50"
                   >
                     {isImporting && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Import {csvRows.length} Product{csvRows.length > 1 ? "s" : ""}
+                    {(() => {
+                      const importCount = usage ? Math.min(csvRows.length, usage.remaining) : csvRows.length;
+                      return `Import ${importCount} Product${importCount === 1 ? "" : "s"}`;
+                    })()}
                   </button>
                 </div>
               )}

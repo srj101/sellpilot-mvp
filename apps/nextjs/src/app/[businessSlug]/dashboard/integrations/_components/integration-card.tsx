@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight, BadgeCheck } from "lucide-react";
+import { ArrowUpRight, BadgeCheck, Lock } from "lucide-react";
 
 import {
   FacebookIcon,
@@ -33,6 +33,9 @@ export interface IntegrationCardProps {
   account?: string | null;
   businessSlug: string;
   isOwner: boolean;
+  /** Not included in the business's current plan (spec §6: Starter = Messenger only,
+   * Growth = +Instagram, Pro = +WhatsApp) — shows an upgrade prompt instead of Connect. */
+  locked?: boolean;
 }
 
 export function IntegrationCard({
@@ -43,15 +46,18 @@ export function IntegrationCard({
   account,
   businessSlug,
   isOwner,
+  locked = false,
 }: IntegrationCardProps) {
   const Icon = ICONS[id] ?? FacebookIcon;
   const gradient = GRADIENTS[id] ?? "from-primary to-primary/60";
-  const href = `/${businessSlug}/dashboard/${ROUTES[id] ?? "integrations"}`;
+  const href = locked
+    ? `/${businessSlug}/dashboard/pricing`
+    : `/${businessSlug}/dashboard/${ROUTES[id] ?? "integrations"}`;
 
   const cardBody = (
     <>
       {/* Brand gradient background */}
-      <div className={`absolute inset-0 bg-gradient-to-br ${gradient}`} />
+      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} ${locked ? "grayscale" : ""}`} />
 
       {/* Watermark icon */}
       <Icon className="absolute -top-4 -right-4 h-24 w-24 rotate-12 text-white/10" />
@@ -59,7 +65,7 @@ export function IntegrationCard({
       {/* Centered brand icon */}
       <div className="absolute inset-0 flex items-center justify-center pb-14">
         <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-white/15 shadow-lg ring-1 ring-white/20 backdrop-blur-sm">
-          <Icon className="h-10 w-10 text-white" />
+          {locked ? <Lock className="h-9 w-9 text-white" /> : <Icon className="h-10 w-10 text-white" />}
         </div>
       </div>
 
@@ -79,14 +85,19 @@ export function IntegrationCard({
         </div>
 
         <p className="line-clamp-1 text-xs leading-snug text-white/75">
-          {description}
+          {locked ? "Not included in your current plan" : description}
         </p>
 
         <div className="mt-0.5 flex items-center justify-between gap-2">
           <span className="truncate text-[11px] font-medium text-white/65">
-            {connected ? (account ?? "Connected") : "Not connected"}
+            {locked ? "Requires a higher plan" : connected ? (account ?? "Connected") : "Not connected"}
           </span>
-          {isOwner ? (
+          {locked ? (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-black shadow transition-transform duration-200 group-hover:scale-105">
+              <Lock className="h-3 w-3" />
+              Upgrade
+            </span>
+          ) : isOwner ? (
             <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-black shadow transition-transform duration-200 group-hover:scale-105">
               Go
               <ArrowUpRight className="h-3 w-3" />
@@ -101,7 +112,7 @@ export function IntegrationCard({
     </>
   );
 
-  if (!isOwner) {
+  if (!isOwner && !locked) {
     return (
       <div className="group relative flex h-64 w-full flex-col justify-end overflow-hidden rounded-2xl shadow-md ring-1 ring-black/5 opacity-80 cursor-default">
         {cardBody}

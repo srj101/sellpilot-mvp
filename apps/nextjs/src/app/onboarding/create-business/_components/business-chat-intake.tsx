@@ -107,53 +107,26 @@ const CHIP_CLASS =
   "rounded-full border px-4 py-2 text-xs font-medium hover:bg-muted disabled:opacity-50 disabled:pointer-events-none transition-colors";
 
 /**
- * Persisted across remounts (React Fast Refresh during dev, an accidental tab
- * reload, etc.) — without this, any remount wipes the whole conversation back
- * to "what's your business name?" since it previously lived in plain useState.
- * sessionStorage (not localStorage) so it doesn't outlive the tab/session.
+ * Validates each chat step's free-text answer before it's accepted — replaces silently
+ * coercing bad input (e.g. a non-numeric delivery charge used to just become `0`) with a
+ * real error surfaced back to the user in the same chat-bubble error style as the
+ * business-name-taken check.
  */
-const STORAGE_KEY = "sellpilot:onboarding-chat";
+const StoreNameInputSchema = z
+  .string()
+  .trim()
+  .min(2, "Business name needs to be at least 2 characters.")
+  .max(120, "That name's a bit long — try something under 120 characters.");
 
-const ChatMessageSchema = z.object({
-  id: z.string(),
-  role: z.enum(["ai", "user"]),
-  content: z.string(),
-  variant: z.enum(["question", "success", "error"]).optional(),
-});
+const AddressInputSchema = z
+  .string()
+  .trim()
+  .max(300, "That address is a bit long — try something under 300 characters.");
 
-const StepSchema = z.enum(["name", "industry", "currency", "address", "delivery", "creating"]);
-
-const CurrencyCodeSchema = z.enum(CURRENCY_OPTIONS.map((c) => c.code) as [CurrencyCode, ...CurrencyCode[]]);
-
-const PersistedChatStateSchema = z.object({
-  messages: z.array(ChatMessageSchema),
-  step: StepSchema,
-  storeName: z.string(),
-  industry: z.string(),
-  currency: CurrencyCodeSchema,
-  address: z.string(),
-});
-
-type PersistedChatState = z.infer<typeof PersistedChatStateSchema>;
-
-/** Validates the stored JSON against the schema above rather than blindly trusting an `as` cast — a stale
- * shape left over from a previous version of this schema (or hand-edited storage) is discarded, not crashed on. */
-function loadPersisted(): PersistedChatState | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const result = PersistedChatStateSchema.safeParse(JSON.parse(raw));
-    return result.success ? result.data : null;
-  } catch {
-    return null;
-  }
-}
-
-function clearPersisted() {
-  if (typeof window === "undefined") return;
-  sessionStorage.removeItem(STORAGE_KEY);
-}
+const ShippingCostInputSchema = z.coerce
+  .number({ error: "Enter a number, e.g. 60." })
+  .min(0, "Delivery charge can't be negative.")
+  .max(100_000, "That seems too high — enter a smaller amount.");
 
 export function BusinessChatIntake({
   userName,
@@ -165,24 +138,18 @@ export function BusinessChatIntake({
   const trpc = useTRPC();
   const queryClient = useQueryClient();
 
-  const [restored] = useState(() => loadPersisted());
-
-  const [messages, setMessages] = useState<ChatMessage[]>(restored?.messages ?? []);
-  // "creating" is a transient in-flight state — if a remount catches it mid-submit,
-  // fall back to "delivery" so the user can just press submit again.
-  const [step, setStep] = useState<Step>(
-    restored?.step === "creating" ? "delivery" : (restored?.step ?? "name"),
-  );
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [step, setStep] = useState<Step>("name");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [showTyping, setShowTyping] = useState(false);
-  const [storeName, setStoreName] = useState(restored?.storeName ?? "");
-  const [industry, setIndustry] = useState(restored?.industry ?? "");
+  const [storeName, setStoreName] = useState("");
+  const [industry, setIndustry] = useState("");
   const [industryGroup, setIndustryGroup] = useState<string | null>(null);
-  const [currency, setCurrency] = useState<CurrencyCode>(restored?.currency ?? "BDT");
-  const [address, setAddress] = useState(restored?.address ?? "");
+  const [currency, setCurrency] = useState<CurrencyCode>("BDT");
+  const [address, setAddress] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const greetedRef = useRef(!!restored);
+  const greetedRef = useRef(false);
 
   const createBusiness = useMutation(trpc.business.create.mutationOptions());
 
@@ -199,16 +166,6 @@ export function BusinessChatIntake({
     setBusy(true);
     pushAi(`Welcome to SellPilot, ${userName.split(" ")[0]}! What's the name of your business?`);
   }, [userName]);
-
-  // Persist on every change so a remount picks up exactly where the user left off.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (messages.length === 0) return;
-    sessionStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ messages, step, storeName, industry, currency, address } satisfies PersistedChatState),
-    );
-  }, [messages, step, storeName, industry, currency, address]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -251,32 +208,48 @@ export function BusinessChatIntake({
     if (busy && step !== "address" && step !== "delivery") return;
 
     if (step === "name") {
-      pushUser(value);
+      const parsed = StoreNameInputSchema.safeParse(value);
+      if (!parsed.success) {
+        pushUser(value);
+        setInput("");
+        pushAi(parsed.error.issues[0]?.message ?? "That doesn't look right — try again.", "error");
+        return;
+      }
+
+      pushUser(parsed.data);
       setInput("");
       setBusy(true);
       setShowTyping(true);
 
-      const { isAvailable } = await queryClient.fetchQuery(trpc.business.verifyName.queryOptions({ name: value }));
+      const { isAvailable } = await queryClient.fetchQuery(trpc.business.verifyName.queryOptions({ name: parsed.data }));
       setShowTyping(false);
 
       if (!isAvailable) {
-        pushAi(`"${value}" is already taken by another store — try a different name.`, "error");
+        pushAi(`"${parsed.data}" is already taken by another store — try a different name.`, "error");
         setBusy(false);
         return;
       }
 
-      setStoreName(value);
-      pushAi(`Nice! Which industry is ${value} in? Pick a category below.`, "success");
+      setStoreName(parsed.data);
+      pushAi(`Nice! Which industry is ${parsed.data} in? Pick a category below.`, "success");
       setStep("industry");
       return;
     }
 
     if (step === "address") {
-      pushUser(skip ? "Skip" : value);
+      const parsed = skip ? { success: true as const, data: "" } : AddressInputSchema.safeParse(value);
+      if (!parsed.success) {
+        pushUser(value);
+        setInput("");
+        pushAi(parsed.error.issues[0]?.message ?? "That doesn't look right — try again.", "error");
+        return;
+      }
+
+      pushUser(skip ? "Skip" : parsed.data);
       setInput("");
       setBusy(true);
       setShowTyping(true);
-      setAddress(skip ? "" : value);
+      setAddress(parsed.data);
 
       setTimeout(() => {
         setShowTyping(false);
@@ -291,13 +264,21 @@ export function BusinessChatIntake({
     }
 
     if (step === "delivery") {
+      const parsed = skip ? { success: true as const, data: 0 } : ShippingCostInputSchema.safeParse(value);
+      if (!parsed.success) {
+        pushUser(value);
+        setInput("");
+        pushAi(parsed.error.issues[0]?.message ?? "Enter a valid number.", "error");
+        return;
+      }
+
       pushUser(skip ? "Skip" : value);
       setInput("");
       setBusy(true);
       setShowTyping(true);
       setStep("creating");
 
-      const shippingCost = skip || isNaN(parseInt(value)) ? 0 : parseInt(value);
+      const shippingCost = parsed.data;
 
       setTimeout(() => {
         setShowTyping(false);
@@ -306,7 +287,6 @@ export function BusinessChatIntake({
           { name: storeName, industry, address, defaultShippingCost: shippingCost, currency },
           {
             onSuccess: (data) => {
-              clearPersisted();
               pushAi(`You're all set! Taking you to the next step...`, "success");
               setTimeout(() => {
                 if (onComplete) onComplete(data.slug, data.trialEndsAt);

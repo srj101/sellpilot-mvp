@@ -10,10 +10,12 @@ import { integrationsRouter } from "./router/integrations";
 import { offersRouter } from "./router/offers";
 import { businessRouter } from "./router/business";
 import { ordersRouter } from "./router/orders";
+import { paymentsRouter } from "./router/payments";
 import { postRouter } from "./router/post";
 import { productsRouter } from "./router/products";
 import { rolesRouter } from "./router/roles";
 import { settingsRouter } from "./router/settings";
+import { subscriptionRouter } from "./router/subscription";
 import { superadminRouter } from "./router/superadmin";
 import { usersRouter } from "./router/users";
 import { createTRPCRouter } from "./trpc";
@@ -31,8 +33,10 @@ export const appRouter = createTRPCRouter({
   products: productsRouter,
   customers: customersRouter,
   orders: ordersRouter,
+  payments: paymentsRouter,
   offers: offersRouter,
   business: businessRouter,
+  subscription: subscriptionRouter,
   roles: rolesRouter,
   settings: settingsRouter,
   superadmin: superadminRouter,

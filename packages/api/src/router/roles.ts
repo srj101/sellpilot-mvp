@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import { desc, eq, and } from "@acme/db";
 import { role, businessMember, businessInvitation, user, business } from "@acme/db/schema";
 
+import { assertPlanLimit } from "../lib/plan-limits";
 import { businessProcedure, protectedProcedure, publicProcedure, businessScopedProcedure } from "../trpc";
 
 const RESOURCES = [
@@ -279,6 +280,11 @@ export const rolesRouter = {
   inviteMember: businessProcedure
     .input(z.object({ email: z.string().email(), customRoleKey: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      // Skip the seat gate for a business created moments ago by this very call (below) —
+      // it has no subscription row yet, and the fallback-to-Starter default in
+      // assertPlanLimit would otherwise block the owner's very first invite.
+      const hadExistingBusiness = Boolean(ctx.businessId);
+
       let businessId = ctx.businessId;
       let memberRole = ctx.memberRole;
       let customRoleKey = ctx.customRoleKey;
@@ -306,6 +312,10 @@ export const rolesRouter = {
         customRoleKey = membership.customRoleKey;
       } else if (memberRole !== "owner" && customRoleKey !== "admin") {
         throw new Error("Only the store owner or an Admin can invite team members");
+      }
+
+      if (hadExistingBusiness) {
+        await assertPlanLimit({ db: ctx.db, businessId }, "seats");
       }
 
       await ctx.db.insert(businessInvitation).values({

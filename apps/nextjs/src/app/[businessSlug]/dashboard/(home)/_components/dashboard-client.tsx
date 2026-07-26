@@ -16,6 +16,7 @@ import {
   ActivityTimeline,
   OverviewChart,
 } from "./dashboard-widgets";
+import { TrialBanner } from "./trial-banner";
 
 export function DashboardClient({ userName, now, orders, customerCount, recentItems, messageStats }: DashboardClientProps) {
   const businessSlug = useBusinessSlug();
@@ -149,6 +150,8 @@ export function DashboardClient({ userName, now, orders, customerCount, recentIt
 
   return (
     <div className="space-y-6">
+      <TrialBanner businessSlug={businessSlug} />
+
       {/* ─── Welcome banner ────────────────────────────────────────── */}
       <div
         className="relative overflow-hidden rounded-2xl p-6 sm:p-8"

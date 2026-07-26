@@ -73,7 +73,7 @@ export const offer = pgTable(
     description: text("description"),
     /** Discount type: "percentage" | "fixed" */
     type: text("type").default("percentage").notNull(),
-    /** For percentage: 10 = 10%. For fixed: amount in minor units (cents). */
+    /** For percentage: 10 = 10%. For fixed: whole taka, same convention as order.total (see D2). */
     value: integer("value").notNull(),
     minSubtotal: integer("min_subtotal").default(0).notNull(),
     startDate: timestamp("start_date").defaultNow().notNull(),
@@ -147,7 +147,7 @@ export const order = pgTable(
     /** Human-readable order number, e.g. #10051 */
     orderNumber: text("order_number").notNull(),
     status: text("status").default("pending").notNull(),
-    /** Subtotal in minor units */
+    /** Whole taka, not paisa — checkout.ts passes this straight into SSLCommerz's `amount` field unconverted */
     subtotal: integer("subtotal").default(0).notNull(),
     shippingCost: integer("shipping_cost").default(0).notNull(),
     discountAmount: integer("discount_amount").default(0).notNull(),
@@ -211,7 +211,7 @@ export const orderItem = pgTable(
     variantTitle: text("variant_title"),
     sku: text("sku"),
     qty: integer("qty").notNull().default(1),
-    /** Unit price in minor units at time of purchase */
+    /** Unit price in whole taka at time of purchase */
     unitPrice: integer("unit_price").notNull(),
     /** Line total = qty * unitPrice */
     lineTotal: integer("line_total").notNull(),
@@ -342,9 +342,11 @@ export const subscription = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     businessId: text("business_id")
       .references(() => business.id, { onDelete: "cascade" }),
-    billingCycle: text("billing_cycle").default("monthly"),
+    /** "monthly" | "half_yearly" | "yearly" | "lifetime" */
+    billingCycle: text("billing_cycle").default("monthly").notNull(),
+    /** Reset by the renewal job each period — whole-number token count, not currency */
     aiConversationsUsed: integer("ai_conversations_used").default(0),
-    /** "starter" | "pro" | "enterprise" */
+    /** "starter" | "growth" | "pro" — must match PLAN_CATALOG keys in api/src/lib/plans.ts */
     plan: text("plan").notNull(),
     /** "trialing" | "active" | "past_due" | "cancelled" */
     status: text("status").default("trialing").notNull(),
@@ -354,6 +356,18 @@ export const subscription = pgTable(
     currentPeriodStart: timestamp("current_period_start").defaultNow().notNull(),
     currentPeriodEnd: timestamp("current_period_end"),
     cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false).notNull(),
+    /** Whole taka charged per renewal at the time of subscribe — price changes don't repricing existing subs */
+    amount: integer("amount").default(0).notNull(),
+    /** Set when the owner schedules a downgrade that only applies at period end (D-S2-E) */
+    pendingPlan: text("pending_plan"),
+    /** Which payment_method row to charge on renewal */
+    paymentMethodId: text("payment_method_id"),
+    productsUsed: integer("products_used").default(0).notNull(),
+    seatsUsed: integer("seats_used").default(1).notNull(),
+    usageResetAt: timestamp("usage_reset_at").defaultNow().notNull(),
+    /** Consecutive failed renewal charges — drives the 3-strike dunning ladder */
+    failedPaymentCount: integer("failed_payment_count").default(0).notNull(),
+    cancelledAt: timestamp("cancelled_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -363,6 +377,11 @@ export const subscription = pgTable(
   (table) => [
     index("subscription_user_id_idx").on(table.userId),
     index("subscription_status_idx").on(table.status),
+    // checkLockStatus, enterBySlug, and the renewal job all assume exactly one row per
+    // business — without this, a duplicate insert would silently give a business two
+    // conflicting subscriptions.
+    unique("subscription_business_id_unique").on(table.businessId),
+    index("subscription_period_end_idx").on(table.currentPeriodEnd),
   ],
 );
 
@@ -442,7 +461,7 @@ export const shippingRate = pgTable(
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
     district: text("district").notNull(),
-    /** Cost in minor units */
+    /** Whole taka */
     cost: integer("cost").notNull().default(0),
     /** Estimated delivery days */
     estimatedDays: integer("estimated_days"),
