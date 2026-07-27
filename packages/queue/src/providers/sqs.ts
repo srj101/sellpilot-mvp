@@ -17,6 +17,7 @@ import type {
   Job,
   JobOptions,
   JobHandler,
+  ProcessHooks,
   QueueStats,
   QueueConfig,
 } from "../types";
@@ -36,6 +37,7 @@ export class SQSQueueProvider implements QueueProvider {
   private client: SQSClient;
   private queueUrls = new Map<string, string>();
   private handlers = new Map<string, JobHandler>();
+  private hooks = new Map<string, ProcessHooks>();
   private polling = new Map<string, boolean>();
   private pollIntervals = new Map<string, NodeJS.Timeout>();
   private queueUrlPrefix: string;
@@ -170,13 +172,14 @@ export class SQSQueueProvider implements QueueProvider {
     return jobId;
   }
 
-  process<T>(jobName: string, handler: JobHandler<T>): void {
+  process<T>(jobName: string, handler: JobHandler<T>, hooks?: ProcessHooks<T>): void {
     if (this.handlers.has(jobName)) {
       console.warn(`[SQSQueue] Handler already registered for ${jobName}`);
       return;
     }
 
     this.handlers.set(jobName, handler as JobHandler);
+    if (hooks) this.hooks.set(jobName, hooks as ProcessHooks);
     this.polling.set(jobName, true);
     this.startPolling(jobName);
 
@@ -205,11 +208,12 @@ export class SQSQueueProvider implements QueueProvider {
         for (const msg of response.Messages ?? []) {
           if (!msg.Body || !msg.ReceiptHandle) continue;
 
+          let job: Job | undefined;
           try {
             const sqsMessage: SQSMessage = JSON.parse(msg.Body);
             sqsMessage.attempts++;
 
-            const job: Job = {
+            job = {
               id: sqsMessage.id,
               name: sqsMessage.name,
               data: sqsMessage.data,
@@ -230,9 +234,14 @@ export class SQSQueueProvider implements QueueProvider {
             );
 
             console.log(`[SQSQueue] Job ${job.id} completed`);
+            this.hooks.get(jobName)?.onCompleted?.(job);
           } catch (err) {
             console.error(`[SQSQueue] Job processing failed:`, err);
             // Message returns to queue after visibility timeout
+            const error = err instanceof Error ? err : new Error(String(err));
+            if (job && job.attempts >= job.maxAttempts) {
+              this.hooks.get(jobName)?.onFailed?.(job, error);
+            }
           }
         }
       } catch (err) {

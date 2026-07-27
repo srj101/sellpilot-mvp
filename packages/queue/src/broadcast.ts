@@ -117,3 +117,128 @@ export function createThreadCancelBroadcast(
 ): ThreadCancelBroadcast {
   return new ThreadCancelBroadcast(resolveRedisConnection(connection));
 }
+
+/**
+ * Cross-process "a new notification was created" broadcast — a business's in-app
+ * notifications (new order, payment received, abandoned follow-up sent, ...) can be
+ * created from either apps/nextjs (customer checkout, manual order creation) or
+ * apps/worker (the AI creating an order, the follow-up sweep), but only apps/nextjs
+ * holds the live SSE connections to browsers. Redis pub/sub is what lets a
+ * worker-originated event actually reach a browser in real time instead of only
+ * showing up after a page reload.
+ */
+const NOTIFICATION_CHANNEL = "notification-created";
+
+export interface NotificationMessage {
+  businessId: string;
+  notification: {
+    id: string;
+    type: string;
+    title: string;
+    body: string | null;
+    link: string | null;
+    read: boolean;
+    createdAt: string;
+  };
+}
+
+export class NotificationBroadcast {
+  private publisher: Redis;
+  private subscriber: Redis;
+  private handlers = new Set<(msg: NotificationMessage) => void>();
+
+  constructor(connection: RedisConnectionOptions) {
+    const opts = {
+      host: connection.host,
+      port: connection.port,
+      password: connection.password,
+      db: connection.db,
+      ...(connection.tls ? { tls: {} } : {}),
+    };
+
+    this.publisher = new Redis(opts);
+    this.subscriber = new Redis(opts);
+
+    this.publisher.on("error", (err) => {
+      console.error("[NotificationBroadcast] Publisher error:", err.message);
+    });
+    this.subscriber.on("error", (err) => {
+      console.error("[NotificationBroadcast] Subscriber error:", err.message);
+    });
+
+    this.subscriber.subscribe(NOTIFICATION_CHANNEL).catch((err) => {
+      console.error("[NotificationBroadcast] Failed to subscribe:", err.message);
+    });
+
+    this.subscriber.on("message", (channel, raw) => {
+      if (channel !== NOTIFICATION_CHANNEL) return;
+      let msg: NotificationMessage;
+      try {
+        msg = JSON.parse(raw) as NotificationMessage;
+      } catch {
+        return;
+      }
+      for (const handler of this.handlers) {
+        try {
+          handler(msg);
+        } catch (err) {
+          console.error("[NotificationBroadcast] Handler threw:", err);
+        }
+      }
+    });
+  }
+
+  async publish(msg: NotificationMessage): Promise<void> {
+    try {
+      await this.publisher.publish(NOTIFICATION_CHANNEL, JSON.stringify(msg));
+    } catch (err) {
+      console.error("[NotificationBroadcast] Failed to publish:", err);
+    }
+  }
+
+  onNotification(handler: (msg: NotificationMessage) => void): void {
+    this.handlers.add(handler);
+  }
+
+  async close(): Promise<void> {
+    await Promise.all([this.publisher.quit(), this.subscriber.quit()]);
+  }
+}
+
+export function createNotificationBroadcast(
+  connection?: RedisConnectionOptions
+): NotificationBroadcast {
+  return new NotificationBroadcast(resolveRedisConnection(connection));
+}
+
+// Publish-only path for callers that only ever create notifications (packages/db's
+// createNotification, called from both apps/nextjs and apps/worker) and have no reason
+// to hold a subscriber connection open — the full NotificationBroadcast class above is
+// for apps/nextjs's SSE route specifically, which genuinely needs to subscribe. A
+// lazily-created singleton publisher, not a new connection per call.
+let sharedPublisher: Redis | null = null;
+
+export async function publishNotificationEvent(
+  msg: NotificationMessage,
+  connection?: RedisConnectionOptions
+): Promise<void> {
+  if (!sharedPublisher) {
+    const opts = resolveRedisConnection(connection);
+    sharedPublisher = new Redis({
+      host: opts.host,
+      port: opts.port,
+      password: opts.password,
+      db: opts.db,
+      ...(opts.tls ? { tls: {} } : {}),
+    });
+    sharedPublisher.on("error", (err) => {
+      console.error("[publishNotificationEvent] Redis error:", err.message);
+    });
+  }
+
+  try {
+    await sharedPublisher.publish(NOTIFICATION_CHANNEL, JSON.stringify(msg));
+  } catch (err) {
+    console.error("[publishNotificationEvent] Failed to publish:", err);
+  }
+}

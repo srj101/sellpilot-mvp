@@ -185,42 +185,53 @@ function registerHandlers() {
   });
 
   // Billing jobs (billing plan D6) — no native "repeat" option on the shared queue
-  // interface, so each run reschedules itself 24h out. The `finally` means a thrown
-  // error still keeps the daily cadence alive instead of silently stopping forever.
+  // interface, so each run reschedules itself 24h out via onCompleted/onFailed, which
+  // fire only once the job's own record has been finalized (see ProcessHooks' doc
+  // comment in packages/queue/src/types.ts). Rescheduling inside the handler itself
+  // (e.g. a try/finally around the run) was tried before and is a trap: it races the
+  // fixed-id reschedule against that same job's still-"active" record, which BullMQ
+  // silently no-ops — the chain would run once per worker boot and then stay dead
+  // until the next restart, exactly as found live (all three loops here sat dead for
+  // over a day despite repeated restarts, until rescheduling was moved to these hooks).
   //
   // Fixed jobId on every (re-)enqueue below, not a random one: BullMQ treats add() with
   // an id that already has a non-terminal (waiting/delayed/active) job as a no-op rather
   // than creating a second job. Without this, every worker restart (e.g. tsx watch
   // reloading on each save in dev) started a brand new, un-deduplicated "forever" chain —
   // after enough restarts you end up with dozens of independent loops all still firing,
-  // which is exactly the flood reported against conversation-followup. A fixed id makes
-  // every restart converge back onto the same single chain instead of spawning another.
-  queue.process("subscription-renewal", async () => {
-    try {
+  // which is exactly the flood previously reported against conversation-followup.
+  const rescheduleSubscriptionRenewal = () =>
+    void queue.enqueue("subscription-renewal", {}, { delay: DAY_MS, jobId: "subscription-renewal-loop" });
+  queue.process(
+    "subscription-renewal",
+    async () => {
       await runSubscriptionRenewal();
-    } finally {
-      await queue.enqueue("subscription-renewal", {}, { delay: DAY_MS, jobId: "subscription-renewal-loop" });
-    }
-  });
+    },
+    { onCompleted: rescheduleSubscriptionRenewal, onFailed: rescheduleSubscriptionRenewal },
+  );
 
-  queue.process("trial-expiry-sweep", async () => {
-    try {
+  const rescheduleTrialExpirySweep = () =>
+    void queue.enqueue("trial-expiry-sweep", {}, { delay: DAY_MS, jobId: "trial-expiry-sweep-loop" });
+  queue.process(
+    "trial-expiry-sweep",
+    async () => {
       await runTrialExpirySweep();
-    } finally {
-      await queue.enqueue("trial-expiry-sweep", {}, { delay: DAY_MS, jobId: "trial-expiry-sweep-loop" });
-    }
-  });
+    },
+    { onCompleted: rescheduleTrialExpirySweep, onFailed: rescheduleTrialExpirySweep },
+  );
 
   // Runs every 5 minutes (not daily like billing) since it's checking for sessions that
   // just crossed the 30-minute quiet threshold — a daily sweep would mean some customers
   // wait up to 24h for a nudge meant to land 30 minutes after they went quiet.
-  queue.process("conversation-followup", async () => {
-    try {
+  const rescheduleConversationFollowUp = () =>
+    void queue.enqueue("conversation-followup", {}, { delay: FIVE_MIN_MS, jobId: "conversation-followup-loop" });
+  queue.process(
+    "conversation-followup",
+    async () => {
       await runConversationFollowUp();
-    } finally {
-      await queue.enqueue("conversation-followup", {}, { delay: FIVE_MIN_MS, jobId: "conversation-followup-loop" });
-    }
-  });
+    },
+    { onCompleted: rescheduleConversationFollowUp, onFailed: rescheduleConversationFollowUp },
+  );
 
   console.log("[Worker] Job handlers registered");
 }

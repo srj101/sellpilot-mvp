@@ -46,6 +46,7 @@ import {
   DropdownMenuTrigger,
 } from "@acme/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@acme/ui/sheet";
+import { toast } from "@acme/ui/toast";
 import {
   Tooltip,
   TooltipContent,
@@ -136,7 +137,6 @@ const NAV_GROUPS: NavGroup[] = [
         submenu: [
           { href: "/dashboard/settings/profile", label: "Profile" },
           { href: "/dashboard/settings/password", label: "Password" },
-          { href: "/dashboard/settings/configurations", label: "Configurations" },
         ],
       },
       { href: "/dashboard/notifications", icon: Bell, label: "Notifications" },
@@ -284,6 +284,43 @@ function useInboxStream() {
   return unreadCount;
 }
 
+/* ─── Notification bell stream ──────────────────────────────────────── */
+
+function useNotificationStream() {
+  const [unreadCount, setUnreadCount] = useState(0);
+  const hasConnectedRef = useRef(false);
+  const businessSlug = useBusinessSlug();
+
+  useEffect(() => {
+    const eventSource = new EventSource(`/api/notifications/stream?businessSlug=${encodeURIComponent(businessSlug)}`);
+    eventSource.onmessage = (event: MessageEvent<string>) => {
+      try {
+        const data = JSON.parse(event.data) as
+          | { kind: "unread-count"; unreadCount: number }
+          | { kind: "notification"; notification: { id: string; type: string; title: string; body: string | null; link: string | null } };
+
+        if (data.kind === "unread-count") {
+          // First message on every connect — sets the initial badge without
+          // treating it as a "new" notification (no toast/chime on page load).
+          setUnreadCount(data.unreadCount);
+          hasConnectedRef.current = true;
+        } else if (hasConnectedRef.current) {
+          setUnreadCount((c) => c + 1);
+          playChime();
+          toast(data.notification.title, { description: data.notification.body ?? undefined });
+        }
+      } catch (err) {
+        console.error("Failed to parse notification SSE payload:", err);
+      }
+    };
+    return () => {
+      eventSource.close();
+    };
+  }, [businessSlug]);
+
+  return unreadCount;
+}
+
 /* ─── Active indicator bar ──────────────────────────────────────────── */
 
 function ActiveBar({ active }: { active: boolean }) {
@@ -362,6 +399,7 @@ function NavRow({
   openMenus,
   setOpenMenus,
   unreadCount,
+  notificationCount,
   businessSlug,
 }: {
   item: NavItem;
@@ -370,6 +408,7 @@ function NavRow({
   openMenus: Record<string, boolean>;
   setOpenMenus: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   unreadCount: number;
+  notificationCount: number;
   businessSlug: string;
 }) {
   const isActive = isItemActive(pathname, item);
@@ -379,6 +418,7 @@ function NavRow({
   const isOpen = openMenus[item.label] ?? (isActive || isSubmenuActive);
   const Icon = item.icon;
   const showInboxBadge = item.href === "/dashboard/inbox" && unreadCount > 0;
+  const showNotificationBadge = item.href === "/dashboard/notifications" && notificationCount > 0;
   const withSlug = (href: string) => `/${businessSlug}${href}`;
 
   const rowBase =
@@ -479,6 +519,7 @@ function NavRow({
         <ItemIcon Icon={Icon} active={isActive} />
         <span className="flex-1 truncate pl-1">{item.label}</span>
         {showInboxBadge ? <UnreadBadge count={unreadCount} /> : null}
+        {showNotificationBadge ? <UnreadBadge count={notificationCount} /> : null}
       </Link>
     );
   }
@@ -632,6 +673,7 @@ function useSidebarData() {
   const pathname = rawPathname.startsWith(slugPrefix) ? rawPathname.slice(slugPrefix.length) || "/" : rawPathname;
   const active = getActiveItem(pathname);
   const unreadCount = useInboxStream();
+  const notificationCount = useNotificationStream();
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -639,7 +681,7 @@ function useSidebarData() {
       unreadCount > 0 ? `(${unreadCount}) SellPilot` : "SellPilot";
   }, [unreadCount]);
 
-  return { pathname, active, unreadCount, businessSlug };
+  return { pathname, active, unreadCount, notificationCount, businessSlug };
 }
 
 function SidebarLogoHeader({ isCollapsed }: { isCollapsed: boolean }) {
@@ -682,7 +724,7 @@ function SidebarLogoHeader({ isCollapsed }: { isCollapsed: boolean }) {
 /* ─── Desktop sidebar ──────────────────────────────────────────────── */
 
 function SidebarBody({ isCollapsed }: { isCollapsed: boolean }) {
-  const { pathname, active: _active, unreadCount, businessSlug } = useSidebarData();
+  const { pathname, active: _active, unreadCount, notificationCount, businessSlug } = useSidebarData();
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
 
   const filteredGroups = useFilteredNavGroups();
@@ -719,6 +761,7 @@ function SidebarBody({ isCollapsed }: { isCollapsed: boolean }) {
                   openMenus={openMenus}
                   setOpenMenus={setOpenMenus}
                   unreadCount={unreadCount}
+                  notificationCount={notificationCount}
                   businessSlug={businessSlug}
                 />
               ))}
@@ -736,7 +779,7 @@ function SidebarBody({ isCollapsed }: { isCollapsed: boolean }) {
 /* ─── Mobile sheet (pinned header, scrollable nav, pinned footer) ──── */
 
 function MobileSidebarSheet() {
-  const { pathname, unreadCount, businessSlug } = useSidebarData();
+  const { pathname, unreadCount, notificationCount, businessSlug } = useSidebarData();
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
 
   const filteredGroups = useFilteredNavGroups();
@@ -758,6 +801,7 @@ function MobileSidebarSheet() {
                   openMenus={openMenus}
                   setOpenMenus={setOpenMenus}
                   unreadCount={unreadCount}
+                  notificationCount={notificationCount}
                   businessSlug={businessSlug}
                 />
               ))}

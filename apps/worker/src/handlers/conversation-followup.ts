@@ -14,7 +14,7 @@ import { and, eq, inArray, isNull, lt } from "@acme/db";
 import { db } from "@acme/db/client";
 import { agentSession, businessProfile, metaConnection } from "@acme/db/schema";
 import type { AgentSessionState } from "@acme/db/schema";
-import { getBusinessProfile, getComboOffersForProduct } from "@acme/db/helpers/aiHelpers";
+import { getBusinessProfile, getComboOffersForProduct, createNotification } from "@acme/db/helpers/aiHelpers";
 import { MessagingService } from "@acme/messaging";
 import type { PlatformConnection, PlatformType } from "@acme/messaging";
 import { createSalesAgent } from "@acme/ai-agent";
@@ -211,7 +211,18 @@ export async function runConversationFollowUp(): Promise<void> {
       // Mark attempted either way — a dead/revoked connection shouldn't retry forever
       // and risk hammering a recipient every sweep with a message that keeps failing.
       await db.update(agentSession).set({ followUpSentAt: new Date() }).where(eq(agentSession.id, session.id));
-      if (!sent) console.warn(`[conversation-followup] send failed for session ${session.id}`);
+      if (sent) {
+        const item = session.state.cart?.[0];
+        await createNotification({
+          businessId: session.businessId,
+          type: "abandoned_followup_sent",
+          title: "Abandoned conversation follow-up sent",
+          body: item ? `Nudged a customer about ${item.name}` : "Nudged a customer who went quiet mid-purchase",
+          link: "/dashboard/inbox",
+        }).catch((err) => console.error(`[conversation-followup] Failed to create notification for session ${session.id}:`, err));
+      } else {
+        console.warn(`[conversation-followup] send failed for session ${session.id}`);
+      }
     } catch (err) {
       console.error(`[conversation-followup] failed for session ${session.id}:`, err);
     }

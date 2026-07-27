@@ -7,6 +7,7 @@ import { dashboardRouter } from "./router/dashboard";
 import { ecommerceRouter } from "./router/ecommerce";
 import { inboxRouter } from "./router/inbox";
 import { integrationsRouter } from "./router/integrations";
+import { notificationsRouter } from "./router/notifications";
 import { offersRouter } from "./router/offers";
 import { businessRouter } from "./router/business";
 import { ordersRouter } from "./router/orders";
@@ -41,6 +42,7 @@ export const appRouter = createTRPCRouter({
   settings: settingsRouter,
   superadmin: superadminRouter,
   users: usersRouter,
+  notifications: notificationsRouter,
 });
 
 // export type definition of API

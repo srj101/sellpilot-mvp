@@ -382,6 +382,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@acme/queue':
+        specifier: workspace:*
+        version: link:../queue
       '@vercel/postgres':
         specifier: ^0.10.0
         version: 0.10.0(utf-8-validate@6.0.4)

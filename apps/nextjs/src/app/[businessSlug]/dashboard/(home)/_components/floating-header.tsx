@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Bell, ChevronDown, LogOut, Store, User as UserIcon } from "lucide-react";
 
 import {
@@ -13,9 +14,12 @@ import {
   DropdownMenuTrigger,
 } from "@acme/ui/dropdown-menu";
 import { ThemeToggle } from "@acme/ui/theme";
+import { cn } from "@acme/ui";
 
 import { signOut } from "../actions";
 import { useBusinessSlug } from "~/hooks/use-business-slug";
+import { useTRPC } from "~/trpc/react";
+import { NOTIFICATION_TYPE_ICON, formatNotificationTime } from "~/lib/notification-utils";
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/);
@@ -26,6 +30,101 @@ const capitalize = (s: string) => {
   if (!s) return "";
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
+
+/* ─── Header notification bell + dropdown ────────────────────────────
+ * Polls rather than opens its own SSE connection — the sidebar's bell already
+ * holds a live connection for instant toast/chime; a second one here would just
+ * double up those side effects for the same event. This stays "eventually
+ * fresh" (15s) without that duplication. */
+function NotificationBell() {
+  const trpc = useTRPC();
+  const businessSlug = useBusinessSlug();
+
+  const { data: notifications } = useQuery({
+    ...trpc.notifications.list.queryOptions({ limit: 10 }),
+    refetchInterval: 15_000,
+  });
+  const { data: unread } = useQuery({
+    ...trpc.notifications.getUnreadCount.queryOptions(),
+    refetchInterval: 15_000,
+  });
+  const markRead = useMutation(trpc.notifications.markRead.mutationOptions());
+
+  const unreadCount = unread?.count ?? 0;
+  const items = notifications ?? [];
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Notifications"
+          className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-haze-sidebar-active-bg/30 hover:text-foreground transition-all duration-200"
+        >
+          <Bell className="h-4.5 w-4.5" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white ring-1 ring-background">
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-80 rounded-lg border-haze-divider bg-card p-0">
+        <div className="flex items-center justify-between px-3 py-2.5">
+          <span className="text-sm font-semibold text-foreground">Notifications</span>
+          {unreadCount > 0 && <span className="text-xs text-muted-foreground">{unreadCount} unread</span>}
+        </div>
+        <DropdownMenuSeparator className="m-0 bg-haze-divider/40" />
+
+        {items.length === 0 ? (
+          <p className="px-3 py-8 text-center text-xs text-muted-foreground">No notifications yet</p>
+        ) : (
+          <div className="max-h-[360px] overflow-y-auto">
+            {items.map((n) => {
+              const Icon = NOTIFICATION_TYPE_ICON[n.type] ?? Bell;
+              const body = (
+                <div className={cn("flex items-start gap-2.5 px-3 py-2.5", !n.read && "bg-primary/[0.04]")}>
+                  <div
+                    className={cn(
+                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
+                      n.read ? "bg-muted text-muted-foreground" : "bg-primary/10 text-primary",
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className={cn("truncate text-xs", n.read ? "font-medium" : "font-semibold")}>{n.title}</p>
+                    {n.body && <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{n.body}</p>}
+                    <p className="mt-0.5 text-[10px] text-muted-foreground/70">{formatNotificationTime(n.createdAt)}</p>
+                  </div>
+                  {!n.read && <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />}
+                </div>
+              );
+
+              return (
+                <DropdownMenuItem
+                  key={n.id}
+                  asChild
+                  className="cursor-pointer rounded-none p-0 focus:bg-muted"
+                  onSelect={() => {
+                    if (!n.read) markRead.mutate({ id: n.id });
+                  }}
+                >
+                  {n.link ? <Link href={`/${businessSlug}${n.link}`}>{body}</Link> : <div>{body}</div>}
+                </DropdownMenuItem>
+              );
+            })}
+          </div>
+        )}
+
+        <DropdownMenuSeparator className="m-0 bg-haze-divider/40" />
+        <DropdownMenuItem asChild className="justify-center rounded-none py-2.5 text-xs font-medium text-primary focus:bg-muted">
+          <Link href={`/${businessSlug}/dashboard/notifications`}>View all notifications</Link>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 export function FloatingHeader({
   user,
@@ -76,17 +175,8 @@ export function FloatingHeader({
 
       {/* Right side: Action items */}
       <div className="flex items-center gap-3">
-        <Link
-          href={`/${businessSlug}/dashboard/notifications`}
-          aria-label="Notifications"
-          className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-haze-sidebar-active-bg/30 hover:text-foreground transition-all duration-200"
-        >
-          <Bell className="h-4.5 w-4.5" />
-          <span className="absolute -top-0.5 -right-0.5 flex size-3 items-center justify-center rounded-full bg-rose-500 text-[8px] font-bold text-white ring-1 ring-background">
-            4
-          </span>
-        </Link>
-        
+        <NotificationBell />
+
         <ThemeToggle />
 
         <div className="h-4 w-px bg-haze-divider/60" />

@@ -177,6 +177,13 @@ export const agentRouter = {
         defaultShippingCost: z.number().min(0).default(0),
         supportEmail: z.string().optional(),
         supportPhone: z.string().optional(),
+        // AI Agent persona/behavior settings (spec Settings > AI Agent tab) — columns
+        // already existed and were already read by the agent's prompt-building and
+        // abandoned-follow-up logic, just never exposed to save from the UI until now.
+        agentName: z.string().optional(),
+        conversationTone: z.enum(["friendly", "professional", "playful", "formal"]).optional(),
+        preferredLanguage: z.enum(["auto", "bangla", "english"]).optional(),
+        abandonedFollowupMinutes: z.number().min(1).optional(),
         metadata: z.record(z.string(), z.unknown()).optional(),
       }),
     )

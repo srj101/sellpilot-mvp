@@ -8,6 +8,7 @@ import type {
   Job,
   JobOptions,
   JobHandler,
+  ProcessHooks,
   QueueStats,
 } from "../types";
 
@@ -22,6 +23,7 @@ export class MemoryQueueProvider implements QueueProvider {
 
   private queues = new Map<string, QueuedJob[]>();
   private handlers = new Map<string, JobHandler>();
+  private hooks = new Map<string, ProcessHooks>();
   private jobs = new Map<string, Job>();
   private stats = new Map<
     string,
@@ -67,8 +69,9 @@ export class MemoryQueueProvider implements QueueProvider {
     return jobId;
   }
 
-  process<T>(jobName: string, handler: JobHandler<T>): void {
+  process<T>(jobName: string, handler: JobHandler<T>, hooks?: ProcessHooks<T>): void {
     this.handlers.set(jobName, handler as JobHandler);
+    if (hooks) this.hooks.set(jobName, hooks as ProcessHooks);
     console.log(`[MemoryQueue] Registered handler for ${jobName}`);
   }
 
@@ -101,6 +104,7 @@ export class MemoryQueueProvider implements QueueProvider {
       this.updateStats(jobName, "active", -1);
       this.updateStats(jobName, "completed", 1);
       console.log(`[MemoryQueue] Job ${jobId} completed`);
+      this.hooks.get(jobName)?.onCompleted?.(job);
     } catch (err) {
       this.updateStats(jobName, "active", -1);
 
@@ -135,6 +139,7 @@ export class MemoryQueueProvider implements QueueProvider {
           `[MemoryQueue] Job ${jobId} failed permanently:`,
           job.failedReason
         );
+        this.hooks.get(jobName)?.onFailed?.(job, err instanceof Error ? err : new Error(String(err)));
       }
     }
   }
@@ -188,6 +193,7 @@ export class MemoryQueueProvider implements QueueProvider {
     this.timers = [];
     this.queues.clear();
     this.handlers.clear();
+    this.hooks.clear();
     this.jobs.clear();
     this.stats.clear();
     console.log("[MemoryQueue] Closed");

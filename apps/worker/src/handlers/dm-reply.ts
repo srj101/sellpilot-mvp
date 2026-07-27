@@ -16,7 +16,7 @@ import {
 import type { ThreadCancelBroadcast } from "@acme/queue";
 import { searchProductsByImage } from "@acme/api/vector-search";
 import { getMetaContactName } from "@acme/api/resolve-contact-names";
-import { getConversationSummary, generateAndSaveConversationSummary } from "@acme/db/helpers/aiHelpers";
+import { getConversationSummary, generateAndSaveConversationSummary, getCustomerForThread } from "@acme/db/helpers/aiHelpers";
 
 import { checkAiTokenAvailability, incrementAiToken } from "../lib/ai-tokens.js";
 import { getBusinessPlanKey } from "../lib/plan.js";
@@ -286,6 +286,18 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
   // background after this reply is sent, see the fire-and-forget call further down.
   const conversationSummary = await getConversationSummary(data.businessId, data.threadId);
 
+  // The real on-file delivery details, if this thread already has a linked customer —
+  // handed to the model directly rather than trusting it to call trackOrder and
+  // accurately relay the result. Confirmed necessary: even with that tool + an explicit
+  // "never guess a previous phone number" prompt rule, the model still occasionally
+  // fabricated a plausible-looking one instead of calling the tool. This removes the
+  // opportunity to guess by just always providing the real value up front.
+  const existingCustomer = await getCustomerForThread(data.businessId, data.threadId);
+  const knownCustomer =
+    existingCustomer?.phone && existingCustomer.address
+      ? { name: existingCustomer.name, phone: existingCustomer.phone, address: existingCustomer.address }
+      : undefined;
+
   // Handle voice messages - transcribe first
   let messageText = incomingText;
   const audioUrl = incomingAudio?.[0];
@@ -317,6 +329,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
       customerId: data.recipientId,
       customerName: facebookFirstName,
       conversationSummary: conversationSummary ?? undefined,
+      knownCustomer,
       connectionContext: {
         platform: data.platform,
         accessToken: data.accessToken,

@@ -328,7 +328,13 @@ export const review = pgTable(
 );
 
 /**
- * In-app notifications for the merchant (dashboard bell icon).
+ * In-app notifications for the merchant (dashboard bell icon) — business-wide activity
+ * feed (new order, payment received, COD confirmed, abandoned follow-up sent, low
+ * stock, etc.), not scoped to a single recipient. For an SMB-sized team, every staff
+ * member seeing every notification is simpler and more useful than building per-user
+ * targeting/read-state for a first version. userId is kept (now optional) for the one
+ * case that's inherently personal — who read it isn't tracked per-user yet, but the
+ * column stays available for that later without another migration.
  */
 export const notification = pgTable(
   "notification",
@@ -336,10 +342,11 @@ export const notification = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    /** e.g. "order_placed", "low_stock", "review_received", "cart_abandoned" */
+      .references(() => business.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
+    /** e.g. "order_created", "payment_received", "cod_confirmed", "abandoned_followup_sent", "low_stock" */
     type: text("type").notNull(),
     title: text("title").notNull(),
     body: text("body"),
@@ -349,8 +356,8 @@ export const notification = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    index("notification_user_id_idx").on(table.userId),
-    index("notification_read_idx").on(table.read),
+    index("notification_org_id_idx").on(table.businessId),
+    index("notification_org_unread_idx").on(table.businessId, table.read),
   ],
 );
 
@@ -684,6 +691,7 @@ export const reviewRelations = relations(review, ({ one }) => ({
 }));
 
 export const notificationRelations = relations(notification, ({ one }) => ({
+  business: one(business, { fields: [notification.businessId], references: [business.id] }),
   user: one(user, { fields: [notification.userId], references: [user.id] }),
 }));
 

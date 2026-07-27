@@ -55,6 +55,15 @@ export interface ConversationContext {
    * covers anything said earlier than the raw message history window below can reach
    * (e.g. an allergy or complaint mentioned 20+ messages ago). May be one turn stale. */
   conversationSummary?: string;
+  /** The real on-file delivery details for this customer, if this thread is already
+   * linked to one (i.e. they've ordered before in this conversation) — fetched fresh by
+   * the caller every turn and handed to the model directly, rather than trusting it to
+   * remember or re-fetch this itself via a tool call. This exists because relying on a
+   * "call trackOrder before stating a previous phone number" prompt instruction alone
+   * was NOT reliable enough in practice — the model still occasionally fabricated a
+   * plausible-looking phone number instead of calling the tool. Providing the real value
+   * directly removes the opportunity to guess. */
+  knownCustomer?: { name: string; phone: string; address: string };
   /** Connection context for sending messages */
   connectionContext?: ConnectionContext;
   /** Subscription plan tier, used by tool handlers to resolve per-plan limits at call

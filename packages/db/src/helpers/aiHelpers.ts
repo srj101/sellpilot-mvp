@@ -1,10 +1,13 @@
 import { and, desc, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
 
+import { publishNotificationEvent } from "@acme/queue";
+
 import {
   agentSession,
   businessProfile,
   customer,
   faq,
+  notification,
   offer,
   order,
   orderItem,
@@ -35,12 +38,47 @@ async function linkConversationToCustomer(
     });
 }
 
+/**
+ * Records one business-wide in-app notification (dashboard bell icon) and pushes it
+ * live over Redis pub/sub so it shows up in an open dashboard immediately — the single
+ * call site every trigger point (checkout, manual/AI order creation, the
+ * abandoned-follow-up sweep) uses, whether it runs in apps/nextjs or apps/worker. The
+ * live-push is best-effort: a Redis hiccup must never undo or block the real action
+ * (an order really was created, a payment really succeeded) just because the bell
+ * couldn't be notified instantly — the row is already in the DB either way, so the
+ * dashboard picks it up on next load regardless.
+ */
+export async function createNotification(params: {
+  businessId: string;
+  type: string;
+  title: string;
+  body?: string;
+  link?: string;
+}) {
+  const [created] = await db.insert(notification).values(params).returning();
+  if (created) {
+    publishNotificationEvent({
+      businessId: created.businessId,
+      notification: {
+        id: created.id,
+        type: created.type,
+        title: created.title,
+        body: created.body,
+        link: created.link,
+        read: created.read,
+        createdAt: created.createdAt.toISOString(),
+      },
+    }).catch((err) => console.error("[createNotification] Failed to publish live update:", err));
+  }
+  return created;
+}
+
 // The customer already linked to this thread (set by linkConversationToCustomer above,
 // the first time an order was placed in this conversation) — lets createCustomerAndOrder
 // reuse a returning customer's name/phone/address on a second order in the same thread
 // instead of the agent needing to ask again (and re-relying on values it only remembers
 // from its own earlier reply text, the same reliability problem productId had).
-async function getCustomerForThread(businessId: string, threadId: string) {
+export async function getCustomerForThread(businessId: string, threadId: string) {
   const [meta] = await db
     .select({ customerId: conversationMeta.customerId })
     .from(conversationMeta)
@@ -607,6 +645,37 @@ export async function createCustomerAndOrder(params: {
 
   await linkConversationToCustomer(userId, businessId, threadId, cust.id);
 
+  // Covers both the AI's own order creation and the manual "Create Order" sheet — this
+  // is the one function both paths funnel through, so notifying here means every order
+  // gets one regardless of which path created it.
+  await createNotification({
+    businessId,
+    type: "order_created",
+    title: `New order #${created.orderNumber}`,
+    body: `${p.title} × ${quantity} — ৳${created.total.toLocaleString()} (${customerName})`,
+    link: "/dashboard/orders",
+  }).catch((err) => console.error("[createCustomerAndOrder] Failed to create notification:", err));
+
+  // Mark this thread's session (if recordSessionCartItem ever created one, from an
+  // earlier quoteOrder call) as no longer "abandoned mid-purchase" — RECOVERABLE_STEPS
+  // in the abandoned-follow-up sweep excludes "order_placed" specifically so a customer
+  // who already completed their order doesn't get nudged about it afterward. Without
+  // this, the session would stay stuck at "cart_active" forever.
+  try {
+    const [session] = await db
+      .select({ id: agentSession.id, state: agentSession.state })
+      .from(agentSession)
+      .where(and(eq(agentSession.businessId, businessId), eq(agentSession.threadId, threadId)));
+    if (session) {
+      await db
+        .update(agentSession)
+        .set({ state: { ...session.state, currentStep: "order_placed" } })
+        .where(eq(agentSession.id, session.id));
+    }
+  } catch (err) {
+    console.error("[createCustomerAndOrder] Failed to mark session as order_placed:", err);
+  }
+
   return {
     success: true,
     orderId: created.id,
@@ -966,7 +1035,17 @@ export async function recordSessionCartItem(
     const nextState: AgentSessionState = { ...existing.state, cart: [item], currentStep: "cart_active" };
     await db
       .update(agentSession)
-      .set({ state: nextState, lastMessageAt: new Date(), senderId: senderId ?? undefined })
+      .set({
+        state: nextState,
+        lastMessageAt: new Date(),
+        senderId: senderId ?? undefined,
+        // Re-arm the follow-up sweep: followUpSentAt means "already nudged for this
+        // quiet period," not "nudged once, ever" — a customer who was nudged, came
+        // back, and got a fresh quote is a new abandonment episode if they go quiet
+        // again, and deserves its own follow-up rather than being silently skipped
+        // forever because the flag from last time was never cleared.
+        followUpSentAt: null,
+      })
       .where(eq(agentSession.id, existing.id));
     return;
   }
@@ -1042,4 +1121,6 @@ export const aiHelpers = {
   getConversationHandlingMode,
   getConversationSummary,
   generateAndSaveConversationSummary,
+  getCustomerForThread,
+  createNotification,
 };

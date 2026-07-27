@@ -18,6 +18,8 @@ import {
   Store,
   UploadCloud,
   Loader2,
+  Bot,
+  Clock,
 } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
@@ -44,6 +46,10 @@ type BusinessProfile = {
   defaultShippingCost: number;
   supportEmail: string | null;
   supportPhone: string | null;
+  agentName: string | null;
+  conversationTone: string;
+  preferredLanguage: string;
+  abandonedFollowupMinutes: number;
 } | null;
 
 interface ShippingRate {
@@ -148,6 +154,12 @@ export function SettingsClient({
   const [bpEmail, setBpEmail] = useState(profile?.supportEmail ?? "");
   const [bpPhone, setBpPhone] = useState(profile?.supportPhone ?? "");
 
+  // AI Agent settings state
+  const [agentName, setAgentName] = useState(profile?.agentName ?? "");
+  const [conversationTone, setConversationTone] = useState(profile?.conversationTone ?? "friendly");
+  const [preferredLanguage, setPreferredLanguage] = useState(profile?.preferredLanguage ?? "auto");
+  const [followUpMinutes, setFollowUpMinutes] = useState(String(profile?.abandonedFollowupMinutes ?? 30));
+
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
@@ -233,6 +245,34 @@ export function SettingsClient({
       router.refresh();
     } catch {
       showToast("Failed to save profile");
+    }
+    setSaving(null);
+  };
+
+  const handleSaveAiAgent = async () => {
+    const minutes = Number(followUpMinutes);
+    if (!Number.isFinite(minutes) || minutes < 1) {
+      showToast("Follow-up delay must be at least 1 minute");
+      return;
+    }
+    setSaving("ai-agent");
+    try {
+      await upsertProfile.mutateAsync({
+        name: bpName,
+        description: bpDescription,
+        currency: bpCurrency,
+        defaultShippingCost: Number(bpShippingCost),
+        supportEmail: bpEmail,
+        supportPhone: bpPhone,
+        agentName: agentName.trim() || undefined,
+        conversationTone: conversationTone as "friendly" | "professional" | "playful" | "formal",
+        preferredLanguage: preferredLanguage as "auto" | "bangla" | "english",
+        abandonedFollowupMinutes: minutes,
+      });
+      showToast("AI Agent settings saved!");
+      router.refresh();
+    } catch {
+      showToast("Failed to save AI Agent settings");
     }
     setSaving(null);
   };
@@ -428,6 +468,75 @@ export function SettingsClient({
           >
             <Save className="h-4 w-4" />
             {saving === "profile" ? "Saving..." : "Save Profile"}
+          </Button>
+        </div>
+      </SettingsSection>
+
+      {/* ─── AI Agent ──────────────────────────────────────────── */}
+      <SettingsSection
+        icon={Bot}
+        title="AI Agent"
+        description="How the AI sales agent introduces itself, talks, and follows up on abandoned conversations."
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="agent-name">Agent Name</Label>
+            <Input
+              id="agent-name"
+              value={agentName}
+              onChange={(e) => setAgentName(e.target.value)}
+              placeholder={bpName || "Defaults to your store name"}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="agent-tone">Conversation Tone</Label>
+            <select
+              id="agent-tone"
+              value={conversationTone}
+              onChange={(e) => setConversationTone(e.target.value)}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="friendly">Friendly</option>
+              <option value="professional">Professional</option>
+              <option value="playful">Playful</option>
+              <option value="formal">Formal</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="agent-language">Preferred Reply Language</Label>
+            <select
+              id="agent-language"
+              value={preferredLanguage}
+              onChange={(e) => setPreferredLanguage(e.target.value)}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="auto">Auto-detect (matches customer)</option>
+              <option value="bangla">Always Bangla</option>
+              <option value="english">Always English</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="agent-followup" className="flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5" /> Abandoned Follow-up Delay (minutes)
+            </Label>
+            <Input
+              id="agent-followup"
+              type="number"
+              min={1}
+              value={followUpMinutes}
+              onChange={(e) => setFollowUpMinutes(e.target.value)}
+              placeholder="30"
+            />
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <Button
+            onClick={handleSaveAiAgent}
+            disabled={saving === "ai-agent"}
+            className="gap-2"
+          >
+            <Save className="h-4 w-4" />
+            {saving === "ai-agent" ? "Saving..." : "Save AI Agent Settings"}
           </Button>
         </div>
       </SettingsSection>

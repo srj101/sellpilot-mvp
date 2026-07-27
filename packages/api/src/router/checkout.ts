@@ -2,7 +2,7 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
-import { eq } from "@acme/db";
+import { eq, createNotification } from "@acme/db";
 import { businessProfile, order, orderItem, pageView, transaction } from "@acme/db/schema";
 
 import { enqueueOrderStatusNotify } from "../lib/notify-queue";
@@ -101,6 +101,13 @@ export const checkoutRouter = {
         deliveryCharge: orderRow.shippingCost,
       });
       await enqueueOrderStatusNotify(orderRow.businessId, orderRow.id);
+      await createNotification({
+        businessId: orderRow.businessId,
+        type: "cod_confirmed",
+        title: `Order #${orderRow.orderNumber} confirmed (COD)`,
+        body: `৳${orderRow.total.toLocaleString()} — cash on delivery`,
+        link: "/dashboard/orders",
+      }).catch((err) => console.error("[checkout.confirmCod] Failed to create notification:", err));
       return { ok: true as const };
     }),
 
@@ -159,6 +166,13 @@ export const checkoutRouter = {
           deliveryCharge: orderRow.shippingCost,
         });
         await enqueueOrderStatusNotify(orderRow.businessId, orderRow.id);
+        await createNotification({
+          businessId: orderRow.businessId,
+          type: "payment_received",
+          title: `Payment received — order #${orderRow.orderNumber}`,
+          body: `৳${orderRow.total.toLocaleString()} via ${method}`,
+          link: "/dashboard/orders",
+        }).catch((err) => console.error("[checkout.markOrderPaid] Failed to create notification:", err));
       }
       await ctx.db.update(pageView).set({ converted: true }).where(eq(pageView.orderId, orderRow.id));
       return { ok: true };

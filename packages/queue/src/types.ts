@@ -42,6 +42,22 @@ export interface JobResult {
 
 export type JobHandler<T = unknown> = (job: Job<T>) => Promise<void>;
 
+/**
+ * Fired strictly after a job's own record has been finalized (completed and, per
+ * removeOnComplete/removeOnFail, possibly already removed) — never from inside the
+ * handler's own execution. This matters for self-rescheduling jobs that reuse a fixed
+ * jobId for their next cycle (see apps/worker/src/index.ts's billing/follow-up loops):
+ * calling `enqueue(..., {jobId: sameId})` from inside the handler's own try/finally
+ * races against that same job's still-"active" record in Redis and silently no-ops
+ * (BullMQ refuses to create a job while one with that id still exists), permanently
+ * killing the loop after its first run. Scheduling from these hooks instead guarantees
+ * the old record is already gone before the next one is created.
+ */
+export interface ProcessHooks<T = unknown> {
+  onCompleted?: (job: Job<T>) => void;
+  onFailed?: (job: Job<T> | null, error: Error) => void;
+}
+
 export interface QueueProvider {
   /** Provider name for logging */
   readonly name: string;
@@ -50,7 +66,7 @@ export interface QueueProvider {
   enqueue<T>(jobName: string, data: T, options?: JobOptions): Promise<string>;
 
   /** Register a job handler */
-  process<T>(jobName: string, handler: JobHandler<T>): void;
+  process<T>(jobName: string, handler: JobHandler<T>, hooks?: ProcessHooks<T>): void;
 
   /** Get job by ID */
   getJob<T>(jobId: string): Promise<Job<T> | null>;

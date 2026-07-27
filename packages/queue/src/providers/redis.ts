@@ -9,6 +9,7 @@ import type {
   Job,
   JobOptions,
   JobHandler,
+  ProcessHooks,
   QueueStats,
   QueueConfig,
 } from "../types";
@@ -104,26 +105,27 @@ export class RedisQueueProvider implements QueueProvider {
     return job.id!;
   }
 
-  process<T>(jobName: string, handler: JobHandler<T>): void {
+  process<T>(jobName: string, handler: JobHandler<T>, hooks?: ProcessHooks<T>): void {
     if (this.workers.has(jobName)) {
       console.warn(`[RedisQueue] Handler already registered for ${jobName}`);
       return;
     }
 
+    const toJob = (bullJob: BullJob<T>): Job<T> => ({
+      id: bullJob.id!,
+      name: bullJob.name,
+      data: bullJob.data,
+      attempts: bullJob.attemptsMade,
+      maxAttempts: bullJob.opts.attempts ?? 3,
+      timestamp: bullJob.timestamp,
+      processedAt: bullJob.processedOn ?? undefined,
+      failedReason: bullJob.failedReason,
+    });
+
     const worker = new Worker<T>(
       jobName,
       async (bullJob: BullJob<T>) => {
-        const job: Job<T> = {
-          id: bullJob.id!,
-          name: bullJob.name,
-          data: bullJob.data,
-          attempts: bullJob.attemptsMade,
-          maxAttempts: bullJob.opts.attempts ?? 3,
-          timestamp: bullJob.timestamp,
-          processedAt: Date.now(),
-        };
-
-        await handler(job);
+        await handler(toJob(bullJob));
       },
       {
         connection: this.connection,
@@ -133,10 +135,16 @@ export class RedisQueueProvider implements QueueProvider {
 
     worker.on("completed", (job) => {
       console.log(`[RedisQueue] Job ${job.id} completed`);
+      hooks?.onCompleted?.(toJob(job));
     });
 
     worker.on("failed", (job, err) => {
       console.error(`[RedisQueue] Job ${job?.id} failed:`, err.message);
+      // Only fire once attempts are truly exhausted — not on every retry attempt,
+      // to match the old finally-block semantics (reschedule once the job is done
+      // trying, whichever way it ended).
+      if (job && job.attemptsMade < (job.opts.attempts ?? 1)) return;
+      hooks?.onFailed?.(job ? toJob(job) : null, err);
     });
 
     worker.on("error", (err) => {
