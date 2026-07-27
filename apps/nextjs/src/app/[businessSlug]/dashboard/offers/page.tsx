@@ -14,11 +14,11 @@ export default async function OffersPage() {
   }
 
   const caller = await createCaller(await headers());
-  const offers = await caller.offers.list();
+  const [offers, access] = await Promise.all([caller.offers.list(), caller.offers.getAccess()]);
 
   return (
     <DashboardShell>
-      <OffersClient initialOffers={offers} />
+      <OffersClient initialOffers={offers} canManage={access.canManage} />
     </DashboardShell>
   );
 }

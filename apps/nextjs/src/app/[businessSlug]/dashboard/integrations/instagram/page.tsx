@@ -66,11 +66,22 @@ export default async function InstagramIntegrationPage(props: {
 
   let availablePages: FacebookPage[] = [];
   let pickerError = "";
+  let connectedElsewhereIds = new Set<string>();
 
   if (isPicking) {
     try {
       const response = await getPagesWithInstagram(tempToken, "instagram");
       availablePages = response.data || [];
+      const igAccountIds = availablePages
+        .map((p) => p.instagram_business_account?.id)
+        .filter((id): id is string => !!id);
+      if (igAccountIds.length > 0) {
+        const { takenIds } = await caller.integrations.checkExternalConnections({
+          platform: "instagram",
+          accountIds: igAccountIds,
+        });
+        connectedElsewhereIds = new Set(takenIds);
+      }
     } catch (err) {
       console.error("Failed to load Instagram accounts:", err);
       pickerError =
@@ -124,8 +135,11 @@ export default async function InstagramIntegrationPage(props: {
             <div className="border-destructive/20 bg-destructive/5 text-destructive mb-6 flex items-start gap-2 rounded-xl border p-3 text-sm">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
-                {ERROR_MESSAGES[searchParams.error] ??
-                  "Something went wrong. Please try again."}
+                {/* Known codes map to a friendlier message; anything else (e.g. a
+                    dynamic upgrade-plan or already-connected-elsewhere message from
+                    actions.ts) is already full text, so show it as-is instead of
+                    discarding it behind a generic fallback. */}
+                {ERROR_MESSAGES[searchParams.error] ?? searchParams.error}
               </span>
             </div>
           ) : null}
@@ -161,6 +175,7 @@ export default async function InstagramIntegrationPage(props: {
                 <InstagramAccountPicker
                   pages={availablePages}
                   connectedIds={connectedIds}
+                  connectedElsewhereIds={connectedElsewhereIds}
                 />
               )}
             </div>

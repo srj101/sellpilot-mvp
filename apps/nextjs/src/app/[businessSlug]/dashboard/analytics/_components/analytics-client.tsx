@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { MessageSquare, Forward, Activity, Heart, ArrowUpRight } from "lucide-react";
+import { MessageSquare, Forward, Activity, Heart, ArrowUpRight, Lock } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@acme/ui/card";
@@ -50,6 +50,7 @@ export function AnalyticsClient({
   range,
   from,
   to,
+  tier,
   chatOrderSeries,
   messagingStats,
   weeklyInquiries,
@@ -59,6 +60,7 @@ export function AnalyticsClient({
   range: string;
   from: string | null;
   to: string | null;
+  tier: "none" | "basic" | "full";
   chatOrderSeries: ChatOrderPoint[];
   messagingStats: MessagingStats;
   weeklyInquiries: WeeklyInquiries;
@@ -71,6 +73,34 @@ export function AnalyticsClient({
 
   // Weekly inquiries daily counts
   const inquiryDays = weeklyInquiries.days;
+
+  if (tier === "none") {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
+          <p className="text-muted-foreground mt-1 text-sm">Detailed performance graphs and metrics for your business.</p>
+        </div>
+        <Card className="card-hover">
+          <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+              <Lock className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <div>
+              <p className="font-semibold text-foreground">Analytics is a Growth &amp; Pro feature</p>
+              <p className="mt-1 text-sm text-muted-foreground">Upgrade your plan to see performance graphs and metrics for your business.</p>
+            </div>
+            <Link href={`/${businessSlug}/dashboard/pricing`}>
+              <Button className="gap-2">
+                Upgrade plan
+                <ArrowUpRight className="h-4 w-4" />
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -93,7 +123,8 @@ export function AnalyticsClient({
         </div>
       </div>
 
-      {/* Segment 1: Chat Sessions & Orders Line Chart */}
+      {/* Segment 1: Chat Sessions & Orders Line Chart — Pro only */}
+      {tier === "full" && (
       <Card className="card-hover">
         <CardHeader>
           <CardTitle>Sessions & Orders Performance</CardTitle>
@@ -210,8 +241,9 @@ export function AnalyticsClient({
           </div>
         </CardContent>
       </Card>
+      )}
 
-      {/* Segment 2: Cards Section (Recommendations, Follow-ups, Conversion Rate, Product Inquiries Bar Chart) */}
+      {/* Segment 2: Cards Section (Recommendations, Follow-ups, Conversion Rate, Product Inquiries Bar Chart) — Growth+ */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {/* Messages Sent Count */}
         <Card className="card-hover p-5">
@@ -286,7 +318,8 @@ export function AnalyticsClient({
         </Card>
       </div>
 
-      {/* Segment 3: Top Selling Products & Customers Per City */}
+      {/* Segment 3: Top Selling Products & Customers Per City — Pro only */}
+      {tier === "full" && (
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Top Selling Products */}
         <Card className="card-hover">
@@ -368,6 +401,7 @@ export function AnalyticsClient({
           </CardContent>
         </Card>
       </div>
+      )}
     </div>
   );
 }

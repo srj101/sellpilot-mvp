@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
@@ -45,12 +45,34 @@ export function CreateOrderSheet({
   const [address, setAddress] = useState(defaultAddress ?? "");
   const [district, setDistrict] = useState(defaultDistrict ?? "");
   const [offerCode, setOfferCode] = useState("");
+  const [showCombo, setShowCombo] = useState(false);
+  const [comboProductId, setComboProductId] = useState("");
+  const [comboVariantId, setComboVariantId] = useState("");
+  const [comboQuantity, setComboQuantity] = useState(1);
+  const [paymentMethod, setPaymentMethod] = useState<"cod" | "online">("online");
+
+  // The contact's name/phone/address/district come from a separate query in the parent
+  // (ContactPanel) that's still loading when this component first mounts, so the initial
+  // useState above almost always captures empty defaults. Re-seed from whatever's current
+  // every time the sheet opens, rather than only once at mount.
+  useEffect(() => {
+    if (!open) return;
+    setCustomerName(defaultName ?? "");
+    setPhone(defaultPhone ?? "");
+    setAddress(defaultAddress ?? "");
+    setDistrict(defaultDistrict ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const { data: productData } = useQuery({ ...trpc.products.list.queryOptions(), enabled: open });
   const products = (productData?.products ?? []).filter((p) => p.status === "active");
   const variants = useMemo(
     () => (productData?.variants ?? []).filter((v) => v.productId === productId),
     [productData, productId],
+  );
+  const comboVariants = useMemo(
+    () => (productData?.variants ?? []).filter((v) => v.productId === comboProductId),
+    [productData, comboProductId],
   );
 
   const { data: quote } = useQuery({
@@ -60,6 +82,9 @@ export function CreateOrderSheet({
       quantity,
       district: district || undefined,
       offerCode: offerCode || undefined,
+      comboProductId: showCombo && comboProductId ? comboProductId : undefined,
+      comboVariantId: showCombo && comboVariantId ? comboVariantId : undefined,
+      comboQuantity: showCombo && comboProductId ? comboQuantity : undefined,
     }),
     enabled: open && Boolean(productId) && quantity > 0,
   });
@@ -71,6 +96,11 @@ export function CreateOrderSheet({
     setVariantId("");
     setQuantity(1);
     setOfferCode("");
+    setShowCombo(false);
+    setComboProductId("");
+    setComboVariantId("");
+    setComboQuantity(1);
+    setPaymentMethod("online");
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -90,6 +120,10 @@ export function CreateOrderSheet({
         address: address.trim(),
         district: district || undefined,
         offerCode: offerCode || undefined,
+        comboProductId: showCombo && comboProductId ? comboProductId : undefined,
+        comboVariantId: showCombo && comboVariantId ? comboVariantId : undefined,
+        comboQuantity: showCombo && comboProductId ? comboQuantity : undefined,
+        paymentMethod,
       },
       {
         onSuccess: (result) => {
@@ -181,6 +215,91 @@ export function CreateOrderSheet({
               <label className="text-xs font-medium text-muted-foreground">Offer Code (optional)</label>
               <input className={inputClass} value={offerCode} onChange={(e) => setOfferCode(e.target.value.toUpperCase())} />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Payment Method</label>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={paymentMethod === "cod" ? "default" : "outline"}
+                className="flex-1"
+                onClick={() => setPaymentMethod("cod")}
+              >
+                Cash on Delivery
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={paymentMethod === "online" ? "default" : "outline"}
+                className="flex-1"
+                onClick={() => setPaymentMethod("online")}
+              >
+                Online (payment link)
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-1.5 rounded-lg border p-3">
+            <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={showCombo}
+                onChange={(e) => {
+                  setShowCombo(e.target.checked);
+                  if (!e.target.checked) {
+                    setComboProductId("");
+                    setComboVariantId("");
+                    setComboQuantity(1);
+                  }
+                }}
+              />
+              Add a combo/bundle product
+            </label>
+
+            {showCombo && (
+              <div className="space-y-3 pt-1">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Combo Product</label>
+                  <select
+                    className={inputClass}
+                    value={comboProductId}
+                    onChange={(e) => { setComboProductId(e.target.value); setComboVariantId(""); }}
+                  >
+                    <option value="">Select a product...</option>
+                    {products.filter((p) => p.id !== productId).map((p) => (
+                      <option key={p.id} value={p.id}>{p.title}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {comboVariants.length > 0 && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Combo Variant</label>
+                    <select className={inputClass} value={comboVariantId} onChange={(e) => setComboVariantId(e.target.value)}>
+                      <option value="">Default</option>
+                      {comboVariants.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.title} — {formatCurrency(v.price)} ({v.inventoryQuantity} in stock)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Combo Quantity</label>
+                  <input
+                    type="number"
+                    min={1}
+                    className={inputClass}
+                    value={comboQuantity}
+                    onChange={(e) => setComboQuantity(Math.max(1, Number(e.target.value)))}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {quote && productId && (

@@ -5,6 +5,7 @@ import { z } from "zod/v4";
 import { eq } from "@acme/db";
 import { businessProfile, order, orderItem, pageView, transaction } from "@acme/db/schema";
 
+import { enqueueOrderStatusNotify } from "../lib/notify-queue";
 import { initiatePayment, isSslcommerzConfigured, validatePayment } from "../lib/sslcommerz";
 import { publicProcedure } from "../trpc";
 
@@ -99,6 +100,7 @@ export const checkoutRouter = {
         amount: orderRow.total,
         deliveryCharge: orderRow.shippingCost,
       });
+      await enqueueOrderStatusNotify(orderRow.businessId, orderRow.id);
       return { ok: true as const };
     }),
 
@@ -156,6 +158,7 @@ export const checkoutRouter = {
           amount: orderRow.total,
           deliveryCharge: orderRow.shippingCost,
         });
+        await enqueueOrderStatusNotify(orderRow.businessId, orderRow.id);
       }
       await ctx.db.update(pageView).set({ converted: true }).where(eq(pageView.orderId, orderRow.id));
       return { ok: true };

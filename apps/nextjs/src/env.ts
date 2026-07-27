@@ -39,8 +39,13 @@ export const env = createEnv({
     CLOUDFLARE_API_TOKEN: z.string().optional(),
     CLOUDFLARE_AGENT_MODEL: z.string().default("@cf/zai-org/glm-5.2"),
     AGENT_SERVICE_URL: z.string().default("http://localhost:8787"),
-    CHROMA_URL: z.string().default("http://localhost:8000"),
-    CHROMA_AUTH_TOKEN: z.string().optional(),
+    /** Image/text embeddings for image search — see packages/api/src/lib/embeddings.ts.
+     * Optional: without it, image indexing/search just degrades (no-ops), same as the old
+     * ChromaDB-offline behavior. URL/model are overridable so a future NVIDIA model
+     * deprecation/rename (as already happened once to nvclip) is a config change. */
+    NVIDIA_API_KEY: z.string().optional(),
+    NVIDIA_EMBEDDINGS_URL: z.string().default("https://integrate.api.nvidia.com/v1/embeddings"),
+    NVIDIA_EMBED_MODEL: z.string().default("nvidia/llama-nemotron-embed-vl-1b-v2"),
     REDIS_URL: z.string().default("redis://localhost:6379"),
     OPENAI_API_KEY: z.string().optional(),
     OPENAI_BASE_URL: z.string().url().optional(),

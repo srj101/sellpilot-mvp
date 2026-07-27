@@ -24,7 +24,7 @@ export * from "./prompts";
 export * from "./tools/index";
 export { SalesAgentGraph, SimpleChatAgent } from "./graph";
 
-import type { AgentConfig, AgentInput, AgentOutput } from "./types";
+import type { AgentConfig, AgentInput, AgentOutput, PlanKey } from "./types";
 import { SalesAgentGraph, SimpleChatAgent } from "./graph";
 import {
   setAIHelpers,
@@ -80,13 +80,15 @@ interface AgentOptions {
   debug?: boolean;
   /** Use simple chat without tools (for providers that don't support function calling) */
   simple?: boolean;
+  /** Subscription plan tier — see AgentConfig.planKey. Defaults to "starter" if omitted. */
+  planKey?: PlanKey;
 }
 
 /**
  * Create a sales agent with the given configuration
  */
 export function createSalesAgent(options: AgentOptions = {}): {
-  run: (input: AgentInput) => Promise<AgentOutput>;
+  run: (input: AgentInput, runOptions?: { signal?: AbortSignal }) => Promise<AgentOutput>;
   runStream?: (input: AgentInput) => AsyncGenerator<AgentOutput & { delta?: string }, void, unknown>;
 } {
   const config: AgentConfig = {
@@ -96,6 +98,7 @@ export function createSalesAgent(options: AgentOptions = {}): {
     temperature: options.temperature ?? 0.7,
     maxTokens: options.maxTokens ?? 800,
     debug: options.debug ?? process.env.NODE_ENV !== "production",
+    planKey: options.planKey,
   };
 
   // Tool-calling is required for product lookups, pricing, and order creation/tracking.

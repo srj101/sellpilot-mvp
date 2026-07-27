@@ -5,6 +5,7 @@ import { eq, inArray } from "@acme/db";
 import { agentSession, customer, metaWebhookEvent, order, orderItem, pageView, product } from "@acme/db/schema";
 
 import { businessScopedProcedure } from "../trpc";
+import { getFeatureTier } from "../lib/plan-limits";
 
 const DAY = 86_400_000;
 
@@ -20,6 +21,10 @@ function formatDate(ms: number) {
 }
 
 export const analyticsRouter = {
+  /** Never throws — the page renders a soft-lock empty state for "none" and a widget
+   * subset for "basic", instead of erroring on load (see plan-limits.ts's getFeatureTier). */
+  getAccessTier: businessScopedProcedure.query(({ ctx }) => getFeatureTier(ctx, "analytics")),
+
   getSummary: businessScopedProcedure
     .input(
       z.object({

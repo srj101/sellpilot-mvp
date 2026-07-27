@@ -73,7 +73,7 @@ export const getOfferByCodeTool = new DynamicStructuredTool({
 
 export const getComboOffersForProductTool = new DynamicStructuredTool({
   name: "getComboOffersForProduct",
-  description: "Check whether a product has any live combo/bundle offer set up with a partner product (e.g. \"Panjabi + Pajama, ৳100 off\"). Call this right after identifying what the customer wants, before they commit — if a combo exists, naturally suggest the partner product and the discount. Never suggest a combo or a discount amount that isn't returned here.",
+  description: "Check whether a product has a live combo/bundle offer with a partner product (e.g. \"Panjabi + Pajama, ৳100 off\"). Call right after identifying what the customer wants, before they commit. Never suggest a combo or discount not returned here.",
   schema: z.object({
     productId: z.string().describe("The product the customer is currently interested in"),
   }),

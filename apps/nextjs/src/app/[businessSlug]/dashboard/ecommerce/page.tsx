@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { ShoppingBag, TrendingUp, Sparkles, AlertTriangle, ArrowUpRight, DollarSign, Percent, Gift } from "lucide-react";
+import { ShoppingBag, TrendingUp, Sparkles, AlertTriangle, ArrowUpRight, DollarSign, Percent, Gift, Lock } from "lucide-react";
 
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
@@ -21,12 +21,42 @@ export default async function EcommercePage({ params }: { params: Promise<{ busi
   const { businessSlug } = await params;
 
   const caller = await createCaller(await headers());
-  const overview = await caller.ecommerce.getOverview();
+  const [overview, tier] = await Promise.all([caller.ecommerce.getOverview(), caller.ecommerce.getAccessTier()]);
 
   // Format currency helper
   const formatCurrency = (val: number) => `৳${Math.round(val).toLocaleString()}`;
 
   const { totalSales, totalSalesTrend, totalOrders, totalOrdersTrend, aov, aovTrend, conversionRate, conversionRateTrend, salesSeries, inventoryStatus, promoCodePerformance } = overview;
+
+  if (tier === "none") {
+    return (
+      <DashboardShell>
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">eCommerce Overview</h1>
+            <p className="text-muted-foreground mt-1 text-sm">Sales, inventory, and promo performance for your business.</p>
+          </div>
+          <Card className="card-hover">
+            <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
+                <Lock className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="font-semibold text-foreground">eCommerce Overview is a Growth &amp; Pro feature</p>
+                <p className="mt-1 text-sm text-muted-foreground">Upgrade your plan to see sales, inventory, and promo performance in one place.</p>
+              </div>
+              <Link href={`/${businessSlug}/dashboard/pricing`}>
+                <Button className="gap-2">
+                  Upgrade plan
+                  <ArrowUpRight className="h-4 w-4" />
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+      </DashboardShell>
+    );
+  }
 
   return (
     <DashboardShell>
@@ -116,8 +146,9 @@ export default async function EcommercePage({ params }: { params: Promise<{ busi
           </Card>
         </div>
 
-        {/* Sales Performance Chart & Inventory status */}
+        {/* Sales Performance Chart (Pro only) & Inventory status (Growth+) */}
         <div className="grid gap-6 lg:grid-cols-3">
+          {tier === "full" && (
           <Card className="card-hover lg:col-span-2">
             <CardHeader>
               <CardTitle>Sales Over Time</CardTitle>
@@ -145,9 +176,10 @@ export default async function EcommercePage({ params }: { params: Promise<{ busi
               )}
             </CardContent>
           </Card>
+          )}
 
           {/* Inventory / Low stock alerts */}
-          <Card className="card-hover">
+          <Card className={`card-hover ${tier === "basic" ? "lg:col-span-3" : ""}`}>
             <CardHeader>
               <CardTitle>Inventory Status</CardTitle>
               <CardDescription>Low stock alerts and restock status</CardDescription>
@@ -175,7 +207,8 @@ export default async function EcommercePage({ params }: { params: Promise<{ busi
           </Card>
         </div>
 
-        {/* Promo Codes & Offers performance */}
+        {/* Promo Codes & Offers performance — Pro only (tied to Offers being Pro-only) */}
+        {tier === "full" && (
         <Card className="card-hover">
           <CardHeader className="border-b py-4">
             <CardTitle>Promo Code Performance</CardTitle>
@@ -218,6 +251,7 @@ export default async function EcommercePage({ params }: { params: Promise<{ busi
             </div>
           </CardContent>
         </Card>
+        )}
       </div>
     </DashboardShell>
   );

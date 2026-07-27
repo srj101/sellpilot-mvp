@@ -7,6 +7,7 @@ import type { db as Db } from "@acme/db/client";
 import { offer, product } from "@acme/db/schema";
 
 import { businessScopedProcedure } from "../trpc";
+import { assertPlanFeature, getPlanFeatureEnabled } from "../lib/plan-limits";
 
 /** Combo fields are only meaningful as a pair — verifies both products actually belong to
  * this business (defense in depth; the FK alone would still block a cross-tenant id, but
@@ -35,6 +36,10 @@ async function assertValidCombo(
 }
 
 export const offersRouter = {
+  /** Never throws — powers the "Upgrade to Pro to create and manage offers" read-only
+   * banner instead of erroring the whole page for non-Pro plans. */
+  getAccess: businessScopedProcedure.query(({ ctx }) => getPlanFeatureEnabled(ctx, "offers").then((canManage) => ({ canManage }))),
+
   list: businessScopedProcedure.query(async ({ ctx }) => {
     return ctx.db
       .select()
@@ -60,6 +65,7 @@ export const offersRouter = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      await assertPlanFeature(ctx, "offers");
       await assertValidCombo(ctx.db, ctx.businessId, input.comboProductAId, input.comboProductBId);
       const [newOffer] = await ctx.db
         .insert(offer)
@@ -90,6 +96,7 @@ export const offersRouter = {
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      await assertPlanFeature(ctx, "offers");
       await assertValidCombo(ctx.db, ctx.businessId, input.comboProductAId, input.comboProductBId);
       const { id, ...data } = input;
       const [updatedOffer] = await ctx.db
@@ -103,6 +110,7 @@ export const offersRouter = {
   delete: businessScopedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      await assertPlanFeature(ctx, "offers");
       const [deletedOffer] = await ctx.db
         .delete(offer)
         .where(and(eq(offer.id, input.id), eq(offer.businessId, ctx.businessId)))

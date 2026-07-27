@@ -249,7 +249,7 @@ export function ProductsClient({
       setSandboxResults(results);
     } catch (err: any) {
       setSandboxError(
-        err?.message ?? "Error searching image index. Is ChromaDB running?",
+        err?.message ?? "Error searching image index. Is NVIDIA_API_KEY configured?",
       );
     } finally {
       setIsSearchingSandbox(false);
@@ -429,7 +429,7 @@ export function ProductsClient({
                   Vector Match Results
                 </h3>
                 <p className="text-muted-foreground text-xs leading-5">
-                  Closest matches from ChromaDB vector space. Uses cosine similarity (distance close to 0 means exact match).
+                  Closest matches by image similarity. Uses cosine distance (closer to 0 means exact match).
                 </p>
               </div>
               <Badge variant="secondary">

@@ -1,6 +1,6 @@
 import { Queue, Worker } from "bullmq";
 
-import { addProductImageToVectorDb } from "./chromadb";
+import { addProductImageToVectorDb } from "./vector-search";
 
 export interface ProductImageJobData {
   businessId: string;

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@acme/db/client";
-import { product, productVariant } from "@acme/db/schema";
-import { getOrCreateCollection } from "@acme/api/chromadb";
+import { product, productVariant, productImageEmbedding } from "@acme/db/schema";
 import { queueProductImageIndexing } from "@acme/api/queue";
 
 export const dynamic = "force-dynamic";
@@ -14,16 +13,24 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const collection = await getOrCreateCollection();
-    if (!collection) {
-      return NextResponse.json({ error: "ChromaDB offline or unavailable" }, { status: 503 });
-    }
-
     const allProducts = await db.select().from(product);
     const allVariants = await db.select().from(productVariant);
+    const existingEmbeddings = await db
+      .select({
+        productId: productImageEmbedding.productId,
+        variantId: productImageEmbedding.variantId,
+        imageUrl: productImageEmbedding.imageUrl,
+      })
+      .from(productImageEmbedding);
+
+    // Same key shape the old ChromaDB IDs used (variant:<id> / product:<id>:<imageUrl>),
+    // now checked against Postgres in one query instead of ChromaDB's batched .get({ids}).
+    const existingKeys = new Set(
+      existingEmbeddings.map((e) => (e.variantId ? `variant:${e.variantId}` : `product:${e.productId}:${e.imageUrl}`)),
+    );
 
     interface IndexJob {
-      id: string;
+      key: string;
       businessId: string;
       productId: string;
       variantId?: string;
@@ -41,9 +48,8 @@ export async function GET(req: NextRequest) {
       const prod = allProducts.find((p) => p.id === variant.productId);
       if (!prod) continue;
 
-      const chromaId = `variant:${variant.id}`;
       potentialJobs.push({
-        id: chromaId,
+        key: `variant:${variant.id}`,
         businessId: prod.businessId,
         productId: prod.id,
         variantId: variant.id,
@@ -64,10 +70,8 @@ export async function GET(req: NextRequest) {
         const isVariantImage = prodVariants.some((v) => v.imageUrl === imgUrl);
         if (isVariantImage) continue;
 
-        const base64Url = Buffer.from(imgUrl).toString("base64").slice(0, 40);
-        const chromaId = `product:${prod.id}:${base64Url}`;
         potentialJobs.push({
-          id: chromaId,
+          key: `product:${prod.id}:${imgUrl}`,
           businessId: prod.businessId,
           productId: prod.id,
           imageUrl: imgUrl,
@@ -80,29 +84,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ message: "No product images found to check" });
     }
 
-    // Batch query ChromaDB to see which IDs exist
-    const batchSize = 100;
-    const missingJobs: IndexJob[] = [];
-
-    for (let i = 0; i < potentialJobs.length; i += batchSize) {
-      const batch = potentialJobs.slice(i, i + batchSize);
-      const batchIds = batch.map((job) => job.id);
-
-      try {
-        const existing = await collection.get({ ids: batchIds });
-        const existingIds = new Set(existing.ids || []);
-
-        for (const job of batch) {
-          if (!existingIds.has(job.id)) {
-            missingJobs.push(job);
-          }
-        }
-      } catch (err) {
-        console.error(`[Cron Sync] Error querying ChromaDB batch starting at ${i}:`, err);
-        // If query fails, assume all in this batch are missing to be safe
-        missingJobs.push(...batch);
-      }
-    }
+    const missingJobs = potentialJobs.filter((job) => !existingKeys.has(job.key));
 
     // Queue missing jobs
     for (const job of missingJobs) {

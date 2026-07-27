@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
 
 import {
+  agentSession,
   businessProfile,
   customer,
   faq,
@@ -9,6 +10,8 @@ import {
   orderItem,
   shippingRate,
 } from "../agent-schema";
+import type { AgentSessionState } from "../agent-schema";
+import { transaction } from "../billing-schema";
 import { db } from "../client";
 import { conversationMeta } from "../inbox-schema";
 import { metaWebhookEvent } from "../meta-webhook-event-schema";
@@ -30,6 +33,34 @@ async function linkConversationToCustomer(
       target: [conversationMeta.businessId, conversationMeta.threadId],
       set: { customerId },
     });
+}
+
+// The customer already linked to this thread (set by linkConversationToCustomer above,
+// the first time an order was placed in this conversation) — lets createCustomerAndOrder
+// reuse a returning customer's name/phone/address on a second order in the same thread
+// instead of the agent needing to ask again (and re-relying on values it only remembers
+// from its own earlier reply text, the same reliability problem productId had).
+async function getCustomerForThread(businessId: string, threadId: string) {
+  const [meta] = await db
+    .select({ customerId: conversationMeta.customerId })
+    .from(conversationMeta)
+    .where(and(eq(conversationMeta.businessId, businessId), eq(conversationMeta.threadId, threadId)));
+  if (!meta?.customerId) return null;
+
+  const [cust] = await db.select().from(customer).where(eq(customer.id, meta.customerId));
+  return cust ?? null;
+}
+
+// Bangladeshi mobile numbers only — the only country this store currently serves.
+// Accepts local (01XXXXXXXXX) or international (+8801XXXXXXXXX / 8801XXXXXXXXX) input
+// and normalizes both to +8801XXXXXXXXX, so upsertCustomerByPhone's exact-match lookup
+// (and the DB's (businessId, phone) unique constraint) recognize the same customer
+// across orders regardless of which format was typed — and so garbage input (a
+// placeholder string instead of a real number) is rejected rather than silently stored.
+function normalizeBdPhone(raw: string): string | null {
+  const digits = raw.replace(/[\s-]/g, "");
+  const match = digits.match(/^(?:\+?880|0)(1[3-9]\d{8})$/);
+  return match ? `+880${match[1]}` : null;
 }
 
 // Helper: get top selling products by quantity (limit)
@@ -322,8 +353,11 @@ export async function quoteOrder(params: {
   const { businessId, productId, variantId, quantity, district, offerCode, comboProductId, comboVariantId, comboQuantity } = params;
 
   const empty = {
+    productId: "",
+    variantId: "",
     productTitle: "",
     variantTitle: null as string | null,
+    imageUrl: null as string | null,
     unitPrice: 0,
     compareAtPrice: null as number | null,
     quantity,
@@ -367,8 +401,11 @@ export async function quoteOrder(params: {
   const profile = await getBusinessProfile(businessId);
 
   return {
+    productId: p.id,
+    variantId: variant.id,
     productTitle: p.title,
     variantTitle: variant.title,
+    imageUrl: variant.imageUrl ?? p.images?.[0] ?? null,
     unitPrice: variant.price,
     compareAtPrice: variant.compareAtPrice ?? null,
     quantity,
@@ -393,9 +430,13 @@ export async function createCustomerAndOrder(params: {
   productId: string;
   variantId?: string;
   quantity: number;
-  customerName: string;
-  phone: string;
-  address: string;
+  /** Omit any of these three for a returning customer already linked to this
+   * conversation (from an earlier order in the same thread) — missing ones are filled
+   * in automatically from that record. Required if this is the first order in this
+   * conversation, or to update what's on file (e.g. a new delivery address). */
+  customerName?: string;
+  phone?: string;
+  address?: string;
   district?: string;
   offerCode?: string;
   /** Second product the customer agreed to add — e.g. accepting a combo suggestion. If a
@@ -403,6 +444,10 @@ export async function createCustomerAndOrder(params: {
   comboProductId?: string;
   comboVariantId?: string;
   comboQuantity?: number;
+  /** "cod" = order is inserted already confirmed, cash collected at delivery — mirrors
+   * checkout.ts's confirmCod end state exactly. "online"/undefined = today's behavior
+   * (pending, payment link). */
+  paymentMethod?: "cod" | "online";
 }) {
   const {
     userId,
@@ -412,15 +457,14 @@ export async function createCustomerAndOrder(params: {
     productId,
     variantId,
     quantity,
-    customerName,
-    phone,
-    address,
     district,
     offerCode,
     comboProductId,
     comboVariantId,
     comboQuantity,
+    paymentMethod,
   } = params;
+  let { customerName, phone, address } = params;
 
   const main = await resolveProductVariant(businessId, productId, variantId);
   if (main.error) return { success: false, error: main.error };
@@ -437,7 +481,30 @@ export async function createCustomerAndOrder(params: {
       return { success: false, error: "Insufficient stock for combo product" };
   }
 
-  const cust = await upsertCustomerByPhone(userId, businessId, { name: customerName, phone, address });
+  // Reuse the customer already linked to this conversation (from an earlier order in
+  // the same thread) for whichever of name/phone/address were omitted, instead of
+  // requiring the agent to re-ask for — or worse, re-guess from memory — details it
+  // already collected once (the same reliability problem productId had).
+  if (!customerName || !phone || !address) {
+    const existing = await getCustomerForThread(businessId, threadId);
+    customerName = customerName || existing?.name || undefined;
+    phone = phone || existing?.phone || undefined;
+    address = address || existing?.address || undefined;
+  }
+
+  if (!customerName || !phone || !address) {
+    return { success: false, error: "Missing customer details: name, phone, and address are all required." };
+  }
+
+  const normalizedPhone = normalizeBdPhone(phone);
+  if (!normalizedPhone) {
+    return {
+      success: false,
+      error: "Invalid phone number — must be a valid Bangladeshi mobile number, e.g. 01XXXXXXXXX or +8801XXXXXXXXX.",
+    };
+  }
+
+  const cust = await upsertCustomerByPhone(userId, businessId, { name: customerName, phone: normalizedPhone, address });
   if (!cust) return { success: false, error: "Unable to create customer" };
 
   const mainSubtotal = variant.price * quantity;
@@ -455,7 +522,10 @@ export async function createCustomerAndOrder(params: {
 
   const { cost: shippingCost } = await getShippingCost(businessId, district);
   const total = Math.max(0, subtotal + shippingCost - discountAmount);
+  // Generated regardless of paymentMethod — cheap, and a COD order still benefits from
+  // having a live link on file if the customer changes their mind later.
   const { paymentToken, paymentUrl } = buildPaymentLink();
+  const isCod = paymentMethod === "cod";
 
   const [created] = await db
     .insert(order)
@@ -464,7 +534,10 @@ export async function createCustomerAndOrder(params: {
       businessId,
       customerId: cust.id,
       orderNumber: generateOrderNumber(),
-      status: "pending",
+      // Mirrors checkout.ts's confirmCod end state exactly for "cod" — the customer
+      // already told us in chat, no need to make them click the link and choose again.
+      status: isCod ? "confirmed" : "pending",
+      paymentMethod: isCod ? "cod" : null,
       subtotal,
       shippingCost,
       discountAmount,
@@ -481,6 +554,20 @@ export async function createCustomerAndOrder(params: {
     })
     .returning();
   if (!created) return { success: false, error: "Unable to create order" };
+
+  if (isCod) {
+    // Same shape as confirmCod's transaction insert — "pending" in the ledger, not
+    // "success": the cash hasn't actually changed hands yet, it's collected at delivery.
+    await db.insert(transaction).values({
+      businessId,
+      orderId: created.id,
+      reference: created.orderNumber,
+      method: "cod",
+      status: "pending",
+      amount: total,
+      deliveryCharge: shippingCost,
+    });
+  }
 
   await db.insert(orderItem).values({
     orderId: created.id,
@@ -525,6 +612,7 @@ export async function createCustomerAndOrder(params: {
     orderId: created.id,
     orderNumber: created.orderNumber,
     paymentUrl: created.paymentUrl ?? undefined,
+    paymentMethod: isCod ? ("cod" as const) : ("online" as const),
     total: created.total,
   };
 }
@@ -547,18 +635,90 @@ export async function getOrdersForThread(businessId: string, threadId: string) {
     total: o.total,
     paymentUrl: o.paymentUrl,
     createdAt: o.createdAt,
+    // The actual delivery details used for this order — without these, the agent has no
+    // real way to answer "what name/phone/address did I use last time?" and (confirmed
+    // happening) will guess/fabricate an answer instead of admitting it doesn't know.
+    customerName: o.customerName,
+    customerPhone: o.customerPhone,
+    shippingAddress: o.shippingAddress,
+    shippingDistrict: o.shippingDistrict,
     items: items
       .filter((i) => i.orderId === o.id)
       .map((i) => ({ name: i.name, variantTitle: i.variantTitle, qty: i.qty, lineTotal: i.lineTotal })),
   }));
 }
 
+/**
+ * Finds the most recent still-`pending` order for this thread and confirms it as COD —
+ * for a customer who already has a payment link (from earlier in this same conversation)
+ * but says in chat they want cash on delivery instead of using it. Mirrors checkout.ts's
+ * confirmCod mutation exactly (same status/paymentMethod/transaction shape), since this
+ * is the same state transition just triggered from chat instead of the /pay/[token] page.
+ */
+export async function confirmCodForThread(businessId: string, threadId: string) {
+  const [pendingOrder] = await db
+    .select()
+    .from(order)
+    .where(and(eq(order.businessId, businessId), eq(order.threadId, threadId), eq(order.status, "pending")))
+    .orderBy(desc(order.createdAt))
+    .limit(1);
+
+  if (!pendingOrder) {
+    return { success: false, error: "No pending order found for this conversation to confirm as COD." };
+  }
+
+  await db.update(order).set({ status: "confirmed", paymentMethod: "cod" }).where(eq(order.id, pendingOrder.id));
+
+  // Same as confirmCod's transaction insert — "pending" in the ledger, cash collected at delivery.
+  await db.insert(transaction).values({
+    businessId,
+    orderId: pendingOrder.id,
+    reference: pendingOrder.orderNumber,
+    method: "cod",
+    status: "pending",
+    amount: pendingOrder.total,
+    deliveryCharge: pendingOrder.shippingCost,
+  });
+
+  return { success: true, orderNumber: pendingOrder.orderNumber, total: pendingOrder.total };
+}
+
+/**
+ * THIS SAME customer's own orders across every conversation/channel they've used with
+ * this business — not scoped to a single thread, unlike getOrdersForThread above. Gated
+ * by plan (Growth: recent 3, Pro: full history) at the tool layer, not here — this
+ * always returns everything up to `limit`. Resolves the customer via conversationMeta's
+ * thread→customer link (populated once any order has been placed in this thread), so it
+ * never surfaces another customer's data — if this thread hasn't been linked yet, there's
+ * simply no history to return.
+ */
+export async function getCustomerPurchaseHistory(businessId: string, threadId: string, limit: number | null) {
+  const [meta] = await db
+    .select({ customerId: conversationMeta.customerId })
+    .from(conversationMeta)
+    .where(and(eq(conversationMeta.businessId, businessId), eq(conversationMeta.threadId, threadId)));
+  if (!meta?.customerId) return [];
+
+  const rows = await db
+    .select({ orderNumber: order.orderNumber, status: order.status, total: order.total, createdAt: order.createdAt })
+    .from(order)
+    .where(and(eq(order.businessId, businessId), eq(order.customerId, meta.customerId)))
+    .orderBy(desc(order.createdAt))
+    .limit(limit ?? 200); // hard ceiling even for Pro's "unlimited" tier, to avoid a pathological result size
+
+  return rows;
+}
+
 // Get customer by phone
 export async function getCustomerByPhone(businessId: string, phone: string) {
+  // Normalize first so a customer typing a different valid format (local vs +880) than
+  // whatever was stored still matches — falls back to the raw input if it doesn't look
+  // like a valid BD number, so this never gets stricter than the caller's own intent.
+  const normalized = normalizeBdPhone(phone) ?? phone;
   const [c] = await db
     .select()
     .from(customer)
-    .where(and(eq(customer.businessId, businessId), eq(customer.phone, phone)));
+    .where(and(eq(customer.businessId, businessId), eq(customer.phone, normalized)));
   return c ?? null;
 }
 
@@ -668,7 +828,7 @@ function extractMessageText(rawPayload: Record<string, unknown>): string | null 
 export async function getConversationHistory(
   businessId: string,
   threadId: string,
-  limit = 20,
+  limit = 15,
 ): Promise<{ role: "user" | "assistant"; content: string }[]> {
   const rows = await db
     .select()
@@ -693,6 +853,132 @@ export async function getConversationHistory(
       return text ? { role: "user" as const, content: text } : null;
     })
     .filter((m): m is { role: "user" | "assistant"; content: string } => m !== null);
+}
+
+// Cached AI-generated 2-3 sentence summary of the conversation (conversationMeta.summary)
+// — read by the agent as older-than-the-raw-window memory, and shown in the inbox's
+// Conversation Summary sidebar section. Written by generateAndSaveConversationSummary.
+export async function getConversationSummary(businessId: string, threadId: string): Promise<string | null> {
+  const [meta] = await db
+    .select({ summary: conversationMeta.summary })
+    .from(conversationMeta)
+    .where(and(eq(conversationMeta.businessId, businessId), eq(conversationMeta.threadId, threadId)));
+  return meta?.summary ?? null;
+}
+
+/**
+ * Summarizes the last 20 turns of a conversation in 2-3 sentences via a cheap, separate
+ * LLM call, and caches the result on conversationMeta — the one thing the agent's raw
+ * 15-message history window can't cover (something said 15+ messages ago, e.g. an
+ * allergy or a complaint, that's since scrolled out of view). Called two ways:
+ *   - Fire-and-forget by the worker after each AI reply is sent (apps/worker/src/
+ *     handlers/dm-reply.ts) — keeps the cache at most one turn stale, never blocks the
+ *     customer's actual reply.
+ *   - Directly by the dashboard's "Regenerate" button (packages/api/src/router/
+ *     inbox.ts's generateSummary), for an on-demand refresh.
+ * Never throws — a summarization hiccup must never break either caller's real job.
+ */
+export async function generateAndSaveConversationSummary(
+  userId: string,
+  businessId: string,
+  threadId: string,
+): Promise<string | null> {
+  try {
+    const history = await getConversationHistory(businessId, threadId, 20);
+    if (history.length === 0) return null;
+
+    const transcript = history
+      .map((m) => `${m.role === "user" ? "Customer" : "Agent"}: ${m.content}`)
+      .join("\n")
+      .slice(0, 8000);
+
+    const apiKey = process.env.OPENAI_API_KEY ?? "";
+    const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
+    const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        max_tokens: 200,
+        messages: [
+          {
+            role: "system",
+            content:
+              "Summarize this customer service conversation in 2-3 short sentences for a merchant dashboard. Focus on what the customer wants, any important details they mentioned (allergies, preferences, complaints), and the current status.",
+          },
+          { role: "user", content: transcript },
+        ],
+      }),
+    });
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as { choices: { message: { content: string } }[] };
+    const summary = data.choices[0]?.message?.content?.trim();
+    if (!summary) return null;
+
+    await db
+      .insert(conversationMeta)
+      .values({ userId, businessId, threadId, summary, summaryGeneratedAt: new Date() })
+      .onConflictDoUpdate({
+        target: [conversationMeta.businessId, conversationMeta.threadId],
+        set: { summary, summaryGeneratedAt: new Date() },
+      });
+
+    return summary;
+  } catch (err) {
+    console.error(`[aiHelpers] Failed to generate conversation summary for ${threadId}:`, err);
+    return null;
+  }
+}
+
+const CHANNEL_FROM_PLATFORM: Record<string, string> = {
+  facebook_page: "messenger",
+  instagram: "instagram",
+  whatsapp: "whatsapp",
+};
+
+/**
+ * Records the product the customer just got a real price for as the session's single
+ * tracked cart item — powers the abandoned-cart follow-up job (see
+ * apps/worker/src/handlers/conversation-followup.ts), which otherwise has nothing to
+ * reference. Deliberately single-item (replaces, not appends) — multi-item cart is a
+ * separate, not-yet-built feature. Upserts the agentSession row since nothing else in
+ * the live DM flow creates one yet.
+ */
+export async function recordSessionCartItem(
+  userId: string,
+  businessId: string,
+  platform: string,
+  threadId: string,
+  senderId: string | undefined,
+  item: NonNullable<AgentSessionState["cart"]>[number],
+): Promise<void> {
+  const channel = CHANNEL_FROM_PLATFORM[platform] ?? platform;
+
+  const [existing] = await db
+    .select({ id: agentSession.id, state: agentSession.state })
+    .from(agentSession)
+    .where(and(eq(agentSession.businessId, businessId), eq(agentSession.threadId, threadId)));
+
+  if (existing) {
+    const nextState: AgentSessionState = { ...existing.state, cart: [item], currentStep: "cart_active" };
+    await db
+      .update(agentSession)
+      .set({ state: nextState, lastMessageAt: new Date(), senderId: senderId ?? undefined })
+      .where(eq(agentSession.id, existing.id));
+    return;
+  }
+
+  await db.insert(agentSession).values({
+    userId,
+    businessId,
+    channel,
+    threadId,
+    senderId,
+    state: { cart: [item], currentStep: "cart_active" },
+  });
 }
 
 // Log an AI-generated reply so future turns in this thread have it as history.
@@ -739,6 +1025,8 @@ export const aiHelpers = {
   checkProductStock,
   createCustomerAndOrder,
   getOrdersForThread,
+  confirmCodForThread,
+  getCustomerPurchaseHistory,
   getCustomerByPhone,
   getBusinessProfile,
   getOfferByCode,
@@ -749,6 +1037,9 @@ export const aiHelpers = {
   getConversationHistory,
   logOutboundMessage,
   quoteOrder,
+  recordSessionCartItem,
   getShippingCost,
   getConversationHandlingMode,
+  getConversationSummary,
+  generateAndSaveConversationSummary,
 };

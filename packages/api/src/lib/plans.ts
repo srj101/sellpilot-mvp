@@ -29,6 +29,20 @@ export interface PlanLimits {
   /** null = unlimited */
   invoices: number | null;
   conversationRetentionDays: number;
+  /** Starter: exact-match answers only. Growth: may upsell within the same product line.
+   * Pro: may upsell + proactively cross-sell using combo offers. */
+  recommendationTier: "basic" | "upsell" | "advanced";
+  /** Starter: no abandoned-cart follow-up sent at all. Growth: generic nudge, never
+   * references the product. Pro: real LLM-generated message referencing the actual cart item. */
+  abandonedCartRecovery: "none" | "generic" | "personalized";
+  /** Whether the customer-purchase-history tool is exposed to the agent at all. */
+  purchaseHistoryEnabled: boolean;
+  /** null = full history. Ignored when purchaseHistoryEnabled is false. */
+  purchaseHistoryLimit: number | null;
+  analyticsTier: "none" | "basic" | "full";
+  ecommerceTier: "none" | "basic" | "full";
+  /** Campaign & Promo Automation — Pro-only creation/editing of offers. */
+  offersEnabled: boolean;
 }
 
 export interface PlanCatalogEntry {
@@ -66,6 +80,13 @@ export const PLAN_CATALOG: Record<PlanKey, PlanCatalogEntry> = {
       channels: ["messenger"],
       invoices: 5,
       conversationRetentionDays: 90,
+      recommendationTier: "basic",
+      abandonedCartRecovery: "none",
+      purchaseHistoryEnabled: false,
+      purchaseHistoryLimit: 0,
+      analyticsTier: "none",
+      ecommerceTier: "none",
+      offersEnabled: false,
     },
     features: [
       "Messenger channel",
@@ -90,6 +111,13 @@ export const PLAN_CATALOG: Record<PlanKey, PlanCatalogEntry> = {
       channels: ["messenger", "instagram"],
       invoices: null,
       conversationRetentionDays: 180,
+      recommendationTier: "upsell",
+      abandonedCartRecovery: "generic",
+      purchaseHistoryEnabled: true,
+      purchaseHistoryLimit: 3,
+      analyticsTier: "basic",
+      ecommerceTier: "basic",
+      offersEnabled: false,
     },
     features: [
       "Messenger + Instagram",
@@ -117,6 +145,13 @@ export const PLAN_CATALOG: Record<PlanKey, PlanCatalogEntry> = {
       channels: ["messenger", "instagram", "whatsapp"],
       invoices: null,
       conversationRetentionDays: 730,
+      recommendationTier: "advanced",
+      abandonedCartRecovery: "personalized",
+      purchaseHistoryEnabled: true,
+      purchaseHistoryLimit: null,
+      analyticsTier: "full",
+      ecommerceTier: "full",
+      offersEnabled: true,
     },
     features: [
       "WhatsApp + Messenger + Instagram",

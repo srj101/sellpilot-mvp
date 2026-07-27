@@ -30,8 +30,10 @@ const circuitBreaker = new CircuitBreaker({
 });
 
 // Simple LLM call for comment replies (no tools needed)
-async function generateCommentReply(commentText: string): Promise<string> {
-  // Use fetch directly to avoid complex dependencies
+async function generateCommentReply(commentText: string, signal?: AbortSignal): Promise<string> {
+  // Use fetch directly to avoid complex dependencies. `signal` is passed through from
+  // circuitBreaker.run so a timeout actually cancels this request instead of leaving it
+  // to complete in the background as an untracked, still-billed "zombie" call.
   const response = await fetch(
     config.openaiBaseUrl
       ? `${config.openaiBaseUrl}/chat/completions`
@@ -50,6 +52,7 @@ async function generateCommentReply(commentText: string): Promise<string> {
           { role: "user", content: commentText },
         ],
       }),
+      signal,
     }
   );
 
@@ -115,8 +118,8 @@ export async function handleCommentReply(
 
   try {
     // Generate reply with circuit breaker
-    const replyText = await circuitBreaker.run(async () => {
-      return generateCommentReply(data.commentText);
+    const replyText = await circuitBreaker.run(async (signal) => {
+      return generateCommentReply(data.commentText, signal);
     });
 
     // Send the reply

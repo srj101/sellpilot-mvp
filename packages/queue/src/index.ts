@@ -29,6 +29,7 @@ import { SQSQueueProvider } from "./providers/sqs";
 
 export * from "./types";
 export * from "./providers/index";
+export * from "./broadcast";
 
 // Singleton instance
 let queueInstance: QueueProvider | null = null;

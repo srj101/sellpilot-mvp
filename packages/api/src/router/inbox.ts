@@ -1,7 +1,7 @@
 import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod/v4";
 
-import { and, desc, eq, inArray, notInArray } from "@acme/db";
+import { and, desc, eq, inArray, notInArray, generateAndSaveConversationSummary } from "@acme/db";
 import {
   customer,
   customerNote,
@@ -77,6 +77,8 @@ export const inboxRouter = {
         thread.customerId = meta?.customerId ?? null;
         thread.assignedMemberId = meta?.assignedMemberId ?? null;
         thread.handlingMode = meta?.handlingMode ?? "ai";
+        thread.summary = meta?.summary ?? null;
+        thread.summaryGeneratedAt = meta?.summaryGeneratedAt ?? null;
         thread.tags = thread.customerId ? (tagsByCustomerId.get(thread.customerId) ?? []) : [];
       }
 
@@ -218,19 +220,6 @@ export const inboxRouter = {
       return { ok: true as const };
     }),
 
-  assignMember: businessScopedProcedure
-    .input(z.object({ threadId: z.string(), memberId: z.string().nullable() }))
-    .mutation(async ({ ctx, input }) => {
-      await ctx.db
-        .insert(conversationMeta)
-        .values({ userId: ctx.businessOwnerId, businessId: ctx.businessId, threadId: input.threadId, assignedMemberId: input.memberId })
-        .onConflictDoUpdate({
-          target: [conversationMeta.businessId, conversationMeta.threadId],
-          set: { assignedMemberId: input.memberId },
-        });
-      return { ok: true as const };
-    }),
-
   /** Take a thread over from the AI, or hand it back (spec FR-AGT-15). While "human", the
    * DM-reply worker skips generating an AI reply entirely — see dm-reply.ts. */
   setHandlingMode: businessScopedProcedure
@@ -355,56 +344,15 @@ export const inboxRouter = {
       return created;
     }),
 
+  /** On-demand refresh — the same summary is also kept fresh automatically in the
+   * background by the worker after every AI reply (see generateAndSaveConversationSummary
+   * in @acme/db/helpers/aiHelpers, which this reuses rather than duplicating the OpenAI
+   * call here). Reads straight from this thread's own message history in the DB rather
+   * than trusting whatever the client currently has loaded. */
   generateSummary: businessScopedProcedure
-    .input(z.object({ threadId: z.string(), messages: z.array(z.object({ role: z.enum(["user", "assistant"]), text: z.string() })) }))
+    .input(z.object({ threadId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      if (input.messages.length === 0) {
-        return { summary: "No messages in this conversation yet." };
-      }
-
-      const transcript = input.messages
-        .map((m) => `${m.role === "user" ? "Customer" : "Agent"}: ${m.text}`)
-        .join("\n")
-        .slice(0, 8000);
-
-      let summary = "Unable to generate a summary right now.";
-      try {
-        const apiKey = process.env.OPENAI_API_KEY ?? "";
-        const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
-        const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
-
-        const res = await fetch(`${baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-          body: JSON.stringify({
-            model,
-            max_tokens: 200,
-            messages: [
-              {
-                role: "system",
-                content:
-                  "Summarize this customer service conversation in 2-3 short sentences for a merchant dashboard. Focus on what the customer wants and the current status.",
-              },
-              { role: "user", content: transcript },
-            ],
-          }),
-        });
-        if (res.ok) {
-          const data = (await res.json()) as { choices: { message: { content: string } }[] };
-          summary = data.choices[0]?.message?.content?.trim() ?? summary;
-        }
-      } catch {
-        // fall through to default summary above
-      }
-
-      await ctx.db
-        .insert(conversationMeta)
-        .values({ userId: ctx.businessOwnerId, businessId: ctx.businessId, threadId: input.threadId, summary, summaryGeneratedAt: new Date() })
-        .onConflictDoUpdate({
-          target: [conversationMeta.businessId, conversationMeta.threadId],
-          set: { summary, summaryGeneratedAt: new Date() },
-        });
-
-      return { summary };
+      const summary = await generateAndSaveConversationSummary(ctx.businessOwnerId, ctx.businessId, input.threadId);
+      return { summary: summary ?? "Unable to generate a summary right now." };
     }),
 } satisfies TRPCRouterRecord;

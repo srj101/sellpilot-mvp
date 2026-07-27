@@ -31,13 +31,17 @@
       "types": "./dist/lib/openwa.d.ts",
       "default": "./src/lib/openwa.ts"
     },
-    "./chromadb": {
-      "types": "./dist/lib/chromadb.d.ts",
-      "default": "./src/lib/chromadb.ts"
+    "./vector-search": {
+      "types": "./dist/lib/vector-search.d.ts",
+      "default": "./src/lib/vector-search.ts"
     },
     "./queue": {
       "types": "./dist/lib/queue.d.ts",
       "default": "./src/lib/queue.ts"
+    },
+    "./notify-queue": {
+      "types": "./dist/lib/notify-queue.d.ts",
+      "default": "./src/lib/notify-queue.ts"
     },
     "./s3": {
       "types": "./dist/lib/s3.d.ts",
@@ -60,12 +64,12 @@
   "dependencies": {
     "@acme/auth": "workspace:*",
     "@acme/db": "workspace:*",
+    "@acme/queue": "workspace:*",
     "@acme/validators": "workspace:*",
     "@aws-sdk/client-s3": "^3.1094.0",
     "@aws-sdk/s3-request-presigner": "^3.1094.0",
     "@trpc/server": "catalog:",
     "bullmq": "^5.79.3",
-    "chromadb": "^3.5.0",
     "superjson": "2.2.3",
     "zod": "catalog:"
   },

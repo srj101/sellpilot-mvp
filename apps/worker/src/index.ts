@@ -11,8 +11,9 @@
  *   pnpm --filter @acme/worker start  # Production
  */
 
-import { createQueue, type MetaDMReplyJob, type MetaCommentReplyJob } from "@acme/queue";
+import { createQueue, createThreadCancelBroadcast, type MetaDMReplyJob, type MetaCommentReplyJob, type OrderStatusNotifyJob } from "@acme/queue";
 import { initializeHelpers } from "@acme/ai-agent";
+import { MessagingService, type PlatformConnection } from "@acme/messaging";
 
 import { loadConfig } from "./config.js";
 import {
@@ -21,9 +22,11 @@ import {
   setHistoryProvider,
   setOutboundLogger,
   setHandlingModeProvider,
+  setThreadCancelBroadcast,
 } from "./handlers/index.js";
 import { runSubscriptionRenewal, runTrialExpirySweep } from "./handlers/subscription-renewal.js";
 import { runConversationFollowUp } from "./handlers/conversation-followup.js";
+import { handleOrderStatusNotify } from "./handlers/order-status-notify.js";
 
 const DAY_MS = 86_400_000;
 const FIVE_MIN_MS = 5 * 60_000;
@@ -39,6 +42,11 @@ console.log(`Rate Limit: ${config.rateLimitPerHour}/hour`);
 console.log(`AI Timeout: ${config.aiTimeoutMs}ms`);
 console.log("=".repeat(50));
 
+// Used by sendImageFn (wired into initializeHelpers below) to actually deliver
+// sendProductImageTool's images — a separate instance from dm-reply.ts's, see the
+// comment at that call site for why that's fine.
+const mediaMessagingService = new MessagingService();
+
 // Initialize queue
 const queue = createQueue({
   provider: config.queueProvider,
@@ -48,6 +56,20 @@ const queue = createQueue({
     password: config.redisPassword,
   },
 });
+
+// Cross-process "cancel the in-flight reply for this thread" broadcast (see
+// handleDMReply's cancel-and-restart logic) — only meaningful with the redis queue
+// provider; the memory provider is single-process dev only, where a local map alone
+// is already enough to catch a superseded reply.
+if (config.queueProvider === "redis") {
+  setThreadCancelBroadcast(
+    createThreadCancelBroadcast({
+      host: config.redisHost,
+      port: config.redisPort,
+      password: config.redisPassword,
+    })
+  );
+}
 
 // Initialize AI helpers (lazy loaded to avoid circular deps)
 async function initializeAIHelpers() {
@@ -73,6 +95,8 @@ async function initializeAIHelpers() {
         createCustomerAndOrder: aiHelpers.createCustomerAndOrder,
         getOrdersForThread: aiHelpers.getOrdersForThread,
         getCustomerByPhone: aiHelpers.getCustomerByPhone,
+        getCustomerPurchaseHistory: aiHelpers.getCustomerPurchaseHistory,
+        confirmCodForThread: aiHelpers.confirmCodForThread,
       },
       businessHelpers: {
         getBusinessProfile: aiHelpers.getBusinessProfile,
@@ -82,6 +106,33 @@ async function initializeAIHelpers() {
       },
       checkoutHelpers: {
         quoteOrder: aiHelpers.quoteOrder,
+        recordSessionCartItem: aiHelpers.recordSessionCartItem,
+      },
+      // Wires up sendProductImageTool (packages/ai-agent/src/tools/media-tools.ts) —
+      // previously never provided here, so the tool always failed with "Image sending
+      // not configured" regardless of what the model did. A separate MessagingService
+      // instance is fine here (own rate-limit tracking, independent of dm-reply.ts's) —
+      // image sends are rare enough that double-counting isn't a real concern.
+      sendImageFn: async (connectionContext, businessId, productId, userId) => {
+        const productResult = await aiHelpers.getProductById(businessId, productId);
+        if (!productResult) return { success: false, error: "Product not found" };
+
+        const imageUrl =
+          productResult.product.images?.[0] ?? productResult.variants.find((v) => v.imageUrl)?.imageUrl;
+        if (!imageUrl) return { success: false, error: "No image available for this product" };
+
+        const connection: PlatformConnection = {
+          id: connectionContext.connectionId,
+          platform: connectionContext.platform,
+          userId,
+          accountId: connectionContext.accountId,
+          accessToken: connectionContext.accessToken,
+          isActive: true,
+          connectedAt: new Date(),
+        };
+
+        const sendResult = await mediaMessagingService.sendImage(connection, connectionContext.recipientId, imageUrl);
+        return { success: sendResult.success, error: sendResult.error };
       },
     });
 
@@ -128,14 +179,27 @@ function registerHandlers() {
     await handleCommentReply(job);
   });
 
+  // Order status -> chat notification (COD confirmed / payment succeeded on /pay/[token])
+  queue.process<OrderStatusNotifyJob>("order-status-notify", async (job) => {
+    await handleOrderStatusNotify(job);
+  });
+
   // Billing jobs (billing plan D6) — no native "repeat" option on the shared queue
   // interface, so each run reschedules itself 24h out. The `finally` means a thrown
   // error still keeps the daily cadence alive instead of silently stopping forever.
+  //
+  // Fixed jobId on every (re-)enqueue below, not a random one: BullMQ treats add() with
+  // an id that already has a non-terminal (waiting/delayed/active) job as a no-op rather
+  // than creating a second job. Without this, every worker restart (e.g. tsx watch
+  // reloading on each save in dev) started a brand new, un-deduplicated "forever" chain —
+  // after enough restarts you end up with dozens of independent loops all still firing,
+  // which is exactly the flood reported against conversation-followup. A fixed id makes
+  // every restart converge back onto the same single chain instead of spawning another.
   queue.process("subscription-renewal", async () => {
     try {
       await runSubscriptionRenewal();
     } finally {
-      await queue.enqueue("subscription-renewal", {}, { delay: DAY_MS });
+      await queue.enqueue("subscription-renewal", {}, { delay: DAY_MS, jobId: "subscription-renewal-loop" });
     }
   });
 
@@ -143,7 +207,7 @@ function registerHandlers() {
     try {
       await runTrialExpirySweep();
     } finally {
-      await queue.enqueue("trial-expiry-sweep", {}, { delay: DAY_MS });
+      await queue.enqueue("trial-expiry-sweep", {}, { delay: DAY_MS, jobId: "trial-expiry-sweep-loop" });
     }
   });
 
@@ -154,21 +218,21 @@ function registerHandlers() {
     try {
       await runConversationFollowUp();
     } finally {
-      await queue.enqueue("conversation-followup", {}, { delay: FIVE_MIN_MS });
+      await queue.enqueue("conversation-followup", {}, { delay: FIVE_MIN_MS, jobId: "conversation-followup-loop" });
     }
   });
 
   console.log("[Worker] Job handlers registered");
 }
 
-/** Kicks off the self-rescheduling billing + follow-up jobs shortly after boot. Only
- * needed once per environment — if the queue already has one enqueued (e.g. worker
- * restarted), this adds a harmless extra run rather than losing the cadence entirely. */
+/** Kicks off the self-rescheduling billing + follow-up jobs shortly after boot. Fixed
+ * jobIds (matching the ones used to re-enqueue in registerHandlers above) mean a worker
+ * restart converges onto the existing chain instead of starting a duplicate one. */
 function scheduleBillingJobs() {
   const initialDelayMs = 30_000;
-  void queue.enqueue("subscription-renewal", {}, { delay: initialDelayMs });
-  void queue.enqueue("trial-expiry-sweep", {}, { delay: initialDelayMs });
-  void queue.enqueue("conversation-followup", {}, { delay: initialDelayMs });
+  void queue.enqueue("subscription-renewal", {}, { delay: initialDelayMs, jobId: "subscription-renewal-loop" });
+  void queue.enqueue("trial-expiry-sweep", {}, { delay: initialDelayMs, jobId: "trial-expiry-sweep-loop" });
+  void queue.enqueue("conversation-followup", {}, { delay: initialDelayMs, jobId: "conversation-followup-loop" });
 }
 
 // Graceful shutdown

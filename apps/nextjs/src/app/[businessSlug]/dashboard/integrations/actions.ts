@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { and, eq, inArray } from "@acme/db";
+import { and, eq, inArray, ne } from "@acme/db";
 import { db } from "@acme/db/client";
 import { business, businessMember, metaConnection } from "@acme/db/schema";
 
@@ -162,6 +162,10 @@ async function replaceMetaSelection(input: {
   instagramUsername?: string;
   instagramProfilePictureUrl?: string;
   businessSlug: string;
+  /** When true, first detaches this exact Page/account from whatever OTHER business
+   * currently has it before connecting it here — see saveSelectedPage's pre-flight
+   * conflict check, which is what actually decides whether this is allowed to be true. */
+  forceReconnect?: boolean;
 }) {
   // Webhook subscription is best-effort — a Graph API error here (e.g. a
   // permission not yet approved) must not block saving the Page/account
@@ -196,23 +200,40 @@ async function replaceMetaSelection(input: {
       webhookSubscribedAt: webhookSubscribed ? new Date() : null,
       webhookSubscriptionError: webhookError,
     };
-    await db
-      .insert(metaConnection)
-      .values(values)
-      .onConflictDoUpdate({
-        target: [
-          metaConnection.businessId,
-          metaConnection.platform,
-          metaConnection.platformAccountId,
-        ],
-        set: { ...values, updatedAt: new Date() },
-      });
+    await db.transaction(async (tx) => {
+      if (input.forceReconnect) {
+        await tx
+          .delete(metaConnection)
+          .where(
+            and(
+              eq(metaConnection.platform, "facebook_page"),
+              eq(metaConnection.platformAccountId, input.pageId),
+              ne(metaConnection.businessId, input.businessId),
+            ),
+          );
+      }
+      await tx
+        .insert(metaConnection)
+        .values(values)
+        .onConflictDoUpdate({
+          target: [
+            metaConnection.businessId,
+            metaConnection.platform,
+            metaConnection.platformAccountId,
+          ],
+          set: { ...values, updatedAt: new Date() },
+        });
+    });
     return;
   }
 
   if (!input.instagramId) {
     redirect(`/${input.businessSlug}/dashboard/integrations/instagram?error=no_instagram_account`);
   }
+  // Narrowing on `input.instagramId` doesn't survive into the closure below (TS only
+  // narrows local variables across closures, not object property access), so alias it
+  // to a local const here — it's guaranteed defined past the guard above.
+  const instagramId = input.instagramId;
 
   const values = {
     userId: input.userId,
@@ -234,17 +255,30 @@ async function replaceMetaSelection(input: {
     webhookSubscribedAt: webhookSubscribed ? new Date() : null,
     webhookSubscriptionError: webhookError,
   };
-  await db
-    .insert(metaConnection)
-    .values(values)
-    .onConflictDoUpdate({
-      target: [
-        metaConnection.businessId,
-        metaConnection.platform,
-        metaConnection.platformAccountId,
-      ],
-      set: { ...values, updatedAt: new Date() },
-    });
+  await db.transaction(async (tx) => {
+    if (input.forceReconnect) {
+      await tx
+        .delete(metaConnection)
+        .where(
+          and(
+            eq(metaConnection.platform, "instagram"),
+            eq(metaConnection.platformAccountId, instagramId),
+            ne(metaConnection.businessId, input.businessId),
+          ),
+        );
+    }
+    await tx
+      .insert(metaConnection)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [
+          metaConnection.businessId,
+          metaConnection.platform,
+          metaConnection.platformAccountId,
+        ],
+        set: { ...values, updatedAt: new Date() },
+      });
+  });
 }
 
 /**
@@ -400,6 +434,52 @@ export async function saveSelectedPage(formData: FormData) {
     redirect(returnTo ? `${returnTo}&error=invalid_selection` : `/${businessSlug}/dashboard/integrations/${targetPage}?error=invalid_selection`);
   }
 
+  // Resolved and gated outside the main try/catch below on purpose: redirect() throws a
+  // special Next.js control-flow error, and if it were thrown inside that try, the outer
+  // catch would swallow it and redirect a second time to a generic "save_failed" — losing
+  // the specific upgrade message. Keeping this as its own step (same shape as
+  // connectChannel's earlier soft gate) lets its redirect() propagate untouched.
+  const gateBusinessId = await resolveBusinessId(session.user.id, businessSlug);
+  // Re-checked right before the actual persist, not just at connectChannel's earlier soft
+  // gate — that cookie-driven gate is up to 10 minutes stale (a plan downgrade mid-flow,
+  // or a form POST that skips the earlier redirect entirely, must not slip an Instagram
+  // connection through). Messenger ("facebook" intent) has no gate — included on every plan.
+  if (intent === "instagram") {
+    try {
+      await assertChannelAllowed({ db, businessId: gateBusinessId }, "instagram");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Upgrade your plan to connect Instagram.";
+      redirect(returnTo ? `${returnTo}&error=${encodeURIComponent(message)}` : `/${businessSlug}/dashboard/integrations/instagram?error=${encodeURIComponent(message)}`);
+    }
+  }
+
+  // A single Page/Instagram account can only ever deliver webhooks to one business — see
+  // resolveMetaConnection in the meta webhook route, which has no way to pick "the right
+  // one" if two businesses both claim the same external account. The picker is supposed
+  // to steer this via forceReconnect (see meta-account-picker.tsx's "Unlink & reconnect"
+  // button), but this is the real enforcement point: it re-checks regardless of what the
+  // client sent, so a stale picker render or a direct form POST can't silently create a
+  // second, competing connection to the same Page.
+  const forceReconnect = formData.get("forceReconnect") === "1";
+  const targetAccountId = intent === "facebook" ? pageId : instagramId;
+  if (!forceReconnect && targetAccountId) {
+    const [conflict] = await db
+      .select({ id: metaConnection.id })
+      .from(metaConnection)
+      .where(
+        and(
+          eq(metaConnection.platform, intent === "facebook" ? "facebook_page" : "instagram"),
+          eq(metaConnection.platformAccountId, targetAccountId),
+          ne(metaConnection.businessId, gateBusinessId),
+        ),
+      )
+      .limit(1);
+    if (conflict) {
+      const message = "This page is already connected to another one of your stores. Use “Unlink & reconnect” to move it here.";
+      redirect(returnTo ? `${returnTo}&error=${encodeURIComponent(message)}` : `/${businessSlug}/dashboard/integrations/${targetPage}?error=${encodeURIComponent(message)}`);
+    }
+  }
+
   try {
     const businessId = await resolveBusinessId(session.user.id, businessSlug);
     const longToken = await exchangeForLongLivedToken(pageAccessToken);
@@ -415,6 +495,7 @@ export async function saveSelectedPage(formData: FormData) {
       instagramUsername,
       instagramProfilePictureUrl,
       businessSlug,
+      forceReconnect,
     });
 
     // Deliberately keep the temp token + intent cookies alive here (instead

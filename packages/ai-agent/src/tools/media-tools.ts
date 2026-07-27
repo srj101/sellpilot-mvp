@@ -11,6 +11,7 @@ import { getToolContext } from "./context";
 // Type for media send function (injected at runtime)
 export type SendImageFunction = (
   connectionContext: ConnectionContext,
+  businessId: string,
   productId: string,
   userId: string
 ) => Promise<{ success: boolean; error?: string }>;
@@ -35,8 +36,8 @@ export const sendProductImageTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { productId } = input as { productId: string };
-    const { userId } = getToolContext();
-    console.log("[Tool] sendProductImage", { productId, userId });
+    const { userId, businessId } = getToolContext();
+    console.log("[Tool] sendProductImage", { productId, userId, businessId });
 
     if (!sendImageFn) {
       return JSON.stringify({
@@ -52,7 +53,7 @@ export const sendProductImageTool = new DynamicStructuredTool({
       });
     }
 
-    const result = await sendImageFn(currentConnectionContext, productId, userId);
+    const result = await sendImageFn(currentConnectionContext, businessId, productId, userId);
     return JSON.stringify(result);
   },
 });

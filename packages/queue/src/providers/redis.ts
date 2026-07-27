@@ -12,6 +12,7 @@ import type {
   QueueStats,
   QueueConfig,
 } from "../types";
+import { resolveRedisConnection } from "../broadcast";
 
 export class RedisQueueProvider implements QueueProvider {
   readonly name = "redis";
@@ -29,12 +30,7 @@ export class RedisQueueProvider implements QueueProvider {
   private defaultJobOptions: JobOptions;
 
   constructor(config: QueueConfig) {
-    const redis = config.redis ?? {
-      host: process.env.REDIS_HOST ?? "localhost",
-      port: parseInt(process.env.REDIS_PORT ?? "6379"),
-      password: process.env.REDIS_PASSWORD,
-      db: parseInt(process.env.REDIS_DB ?? "0"),
-    };
+    const redis = resolveRedisConnection(config.redis);
 
     this.connection = {
       host: redis.host,
@@ -90,6 +86,18 @@ export class RedisQueueProvider implements QueueProvider {
       attempts: mergedOptions.attempts,
       backoff: mergedOptions.backoff,
       priority: mergedOptions.priority,
+      // A caller passing an explicit jobId is always a stable, reused id for a
+      // self-rescheduling loop (e.g. "conversation-followup-loop") — never a one-off job.
+      // BullMQ keeps a job's record in Redis under its id even after it completes/fails
+      // (that's what the default removeOnComplete/removeOnFail retention above is for),
+      // and add() silently refuses to create a new job while a record with that id still
+      // exists — including a *finished* one. Without this, the very first run of a fixed
+      // id job would complete, its own retained record would then block every subsequent
+      // re-enqueue attempt using the same id, and the "every 5 minutes forever" loop would
+      // silently stop after exactly one run. Removing the record immediately on
+      // completion/failure (only for these explicit-jobId jobs) frees the id for the next
+      // cycle instead of leaving a corpse behind that blocks it.
+      ...(options.jobId ? { removeOnComplete: true, removeOnFail: true } : {}),
     });
 
     console.log(`[RedisQueue] Enqueued job ${job.id} for ${jobName}`);

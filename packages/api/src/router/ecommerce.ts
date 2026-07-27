@@ -4,6 +4,7 @@ import { eq } from "@acme/db";
 import { customer, offer, order, pageView, product, productVariant } from "@acme/db/schema";
 
 import { businessScopedProcedure } from "../trpc";
+import { getFeatureTier } from "../lib/plan-limits";
 
 const DAY = 86_400_000;
 const WINDOW_DAYS = 30;
@@ -16,6 +17,8 @@ function trendPct(curr: number, prev: number) {
 }
 
 export const ecommerceRouter = {
+  getAccessTier: businessScopedProcedure.query(({ ctx }) => getFeatureTier(ctx, "ecommerce")),
+
   getOverview: businessScopedProcedure.query(async ({ ctx }) => {
     const businessId = ctx.businessId;
     const now = Date.now();

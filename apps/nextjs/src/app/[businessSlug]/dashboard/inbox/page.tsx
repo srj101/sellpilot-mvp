@@ -17,7 +17,6 @@ import { ReplyForm } from "./_components/reply-form";
 import { ThreadHeaderActions } from "./_components/thread-header-actions";
 import { ContactPanel } from "./_components/contact-panel";
 import { InboxTabsBar } from "./_components/inbox-tabs-bar";
-import { AssignAgentButton } from "./_components/assign-agent-button";
 import {
   avatarColor,
   channelIcon,
@@ -154,7 +153,6 @@ export default async function InboxPage(props: {
                       {channelIcon(selectedThread.platform, "h-3 w-3")}
                       {channelLabel(selectedThread.platform)} · Active {formatRelativeTimeLong(selectedThread.lastMessageAt)}
                     </p>
-                    <AssignAgentButton threadId={selectedThread.id} assignedMemberId={selectedThread.assignedMemberId} />
                   </div>
                   <ThreadHeaderActions
                     threadId={selectedThread.id}
@@ -197,10 +195,12 @@ export default async function InboxPage(props: {
           {selectedThread && (
             <div className="hidden min-h-0 border-l md:block">
               <ContactPanel
+                key={selectedThread.id}
                 threadId={selectedThread.id}
                 customerId={selectedThread.customerId}
                 contactLabel={selectedThread.contactLabel}
                 messages={selectedThread.messages}
+                initialSummary={selectedThread.summary}
               />
             </div>
           )}

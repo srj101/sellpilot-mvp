@@ -7,6 +7,7 @@ export {
   setHistoryProvider,
   setOutboundLogger,
   setHandlingModeProvider,
+  setThreadCancelBroadcast,
   type ConversationHistoryProvider,
   type OutboundLogger,
   type HandlingModeProvider,

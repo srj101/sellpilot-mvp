@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Percent,
@@ -15,6 +16,8 @@ import {
   Save,
   Sparkles,
   BadgePercent,
+  Lock,
+  ArrowUpRight,
 } from "lucide-react";
 
 import { Badge } from "@acme/ui/badge";
@@ -26,6 +29,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { toast } from "@acme/ui/toast";
 import { cn } from "@acme/ui";
 import { useTRPC } from "~/trpc/react";
+import { useBusinessSlug } from "~/hooks/use-business-slug";
 
 interface Offer {
   id: string;
@@ -138,8 +142,9 @@ function StatCard({
   );
 }
 
-export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
+export function OffersClient({ initialOffers, canManage }: { initialOffers: Offer[]; canManage: boolean }) {
   const trpc = useTRPC();
+  const businessSlug = useBusinessSlug();
   const createMutation = useMutation(trpc.offers.create.mutationOptions());
   const updateMutation = useMutation(trpc.offers.update.mutationOptions());
   const deleteMutation = useMutation(trpc.offers.delete.mutationOptions());
@@ -293,10 +298,35 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
             Manage discount codes and combo/bundle deals.
           </p>
         </div>
-        <Button onClick={openCreateModal} size="sm" className="rounded-lg shadow-sm gap-1.5">
-          <Plus className="h-4 w-4" /> Create Offer
-        </Button>
+        {canManage ? (
+          <Button onClick={openCreateModal} size="sm" className="rounded-lg shadow-sm gap-1.5">
+            <Plus className="h-4 w-4" /> Create Offer
+          </Button>
+        ) : (
+          <Link href={`/${businessSlug}/dashboard/pricing`}>
+            <Button size="sm" variant="outline" className="rounded-lg gap-1.5">
+              <Lock className="h-4 w-4" /> Upgrade to Pro
+            </Button>
+          </Link>
+        )}
       </div>
+
+      {!canManage && (
+        <Card className="border-dashed">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+            <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
+              <Lock className="h-4 w-4 shrink-0" />
+              <span>Campaign &amp; Promo Automation is a Pro feature. You can see offers already created, but creating, editing, or deleting them needs an upgrade.</span>
+            </div>
+            <Link href={`/${businessSlug}/dashboard/pricing`}>
+              <Button size="sm" variant="ghost" className="gap-1 shrink-0">
+                Upgrade plan
+                <ArrowUpRight className="h-3.5 w-3.5" />
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -327,7 +357,7 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
           <p className="mt-4 text-lg font-medium text-muted-foreground">
             {offers.length === 0 ? "No offers yet" : "No offers match this filter"}
           </p>
-          {offers.length === 0 && (
+          {offers.length === 0 && canManage && (
             <Button onClick={openCreateModal} size="sm" className="mt-4 gap-1.5">
               <Plus className="h-4 w-4" /> Create your first offer
             </Button>
@@ -432,12 +462,14 @@ export function OffersClient({ initialOffers }: { initialOffers: Offer[] }) {
                   </div>
                 </div>
 
+                {canManage && (
                 <div className="mt-6 pt-4 border-t flex items-center justify-end gap-2">
                   <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => openEditModal(o)}>
                     <Edit2 className="h-4 w-4" />
                   </Button>
                   <DeleteButton pending={deleteMutation.isPending} onConfirm={() => handleDelete(o.id)} />
                 </div>
+                )}
               </Card>
             );
           })}

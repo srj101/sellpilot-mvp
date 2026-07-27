@@ -219,6 +219,32 @@ export const integrationsRouter = {
       .where(eq(metaConnection.businessId, ctx.businessId));
   }),
 
+  /**
+   * Given a batch of external Page/Instagram-account IDs fetched live from Meta, reports
+   * which ones are already connected to a DIFFERENT business — so the picker can offer
+   * "Unlink & reconnect" instead of silently letting two businesses claim the same page
+   * (a single Page can only ever deliver webhooks to one business, see resolveMetaConnection
+   * in the meta webhook route — the "loser" business would look connected but never
+   * receive a single message). Deliberately returns only the IDs, never the other
+   * business's name/id, to avoid leaking one tenant's data to another.
+   */
+  checkExternalConnections: businessScopedProcedure
+    .input(
+      z.object({
+        platform: z.enum(["facebook_page", "instagram", "whatsapp"]),
+        accountIds: z.array(z.string()).max(100),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      if (input.accountIds.length === 0) return { takenIds: [] as string[] };
+      const rows = await ctx.db
+        .select({ platformAccountId: metaConnection.platformAccountId, businessId: metaConnection.businessId })
+        .from(metaConnection)
+        .where(and(eq(metaConnection.platform, input.platform), inArray(metaConnection.platformAccountId, input.accountIds)));
+      const takenIds = [...new Set(rows.filter((r) => r.businessId !== ctx.businessId).map((r) => r.platformAccountId))];
+      return { takenIds };
+    }),
+
   disconnectChannel: ownerOnlyProcedure
     .input(z.object({ connectionId: z.string() }))
     .mutation(async ({ ctx, input }) => {

@@ -22,8 +22,11 @@ export interface QuoteOrderParams {
 }
 
 export interface QuoteOrderResult {
+  productId: string;
+  variantId: string;
   productTitle: string;
   variantTitle: string | null;
+  imageUrl: string | null;
   unitPrice: number;
   compareAtPrice: number | null;
   quantity: number;
@@ -41,6 +44,17 @@ export interface QuoteOrderResult {
 
 export interface CheckoutHelpers {
   quoteOrder(params: QuoteOrderParams): Promise<QuoteOrderResult>;
+  /** Best-effort — a failure here must never break the customer-facing quote response.
+   * Records the last priced item as the session's tracked cart item, consumed by the
+   * abandoned-cart follow-up job. */
+  recordSessionCartItem?(
+    userId: string,
+    businessId: string,
+    platform: string,
+    threadId: string,
+    senderId: string | undefined,
+    item: { productId: string; variantId: string; name: string; variantTitle?: string; imageUrl?: string; quantity: number; unitPrice: number },
+  ): Promise<void>;
 }
 
 let helpers: CheckoutHelpers | null = null;
@@ -59,7 +73,7 @@ function getHelpers(): CheckoutHelpers {
 export const quoteOrderTool = new DynamicStructuredTool({
   name: "quoteOrder",
   description:
-    "Get the real price breakdown for a product before the customer commits: regular price, offer price (if a compareAtPrice or offer code applies), shipping cost for their district, and the final total. Always call this before quoting a total price or creating an order — never calculate totals yourself. If the customer has agreed to add a combo/bundle product suggested via getComboOffersForProduct, pass it as comboProductId so the combo discount is priced in for real.",
+    "Get the real price breakdown before the customer commits: regular/offer price, shipping for their district, and total. Always call before quoting a price or creating an order — never calculate totals yourself. If they agreed to a combo from getComboOffersForProduct, pass it as comboProductId so the discount is priced in for real.",
   schema: z.object({
     productId: z.string().describe("Product ID"),
     variantId: z.string().optional().describe("Specific variant ID, if the customer chose one"),
@@ -81,7 +95,7 @@ export const quoteOrderTool = new DynamicStructuredTool({
       comboVariantId?: string;
       comboQuantity?: number;
     };
-    const { businessId } = getToolContext();
+    const { userId, businessId, threadId, platform, customerId } = getToolContext();
     console.log("[Tool] quoteOrder", { businessId, productId, variantId, quantity, district, comboProductId });
     const result = await getHelpers().quoteOrder({
       businessId,
@@ -94,6 +108,22 @@ export const quoteOrderTool = new DynamicStructuredTool({
       comboVariantId,
       comboQuantity,
     });
+
+    if (!result.error && result.variantId) {
+      // Best-effort: powers the abandoned-cart follow-up job, must never fail the quote itself.
+      getHelpers()
+        .recordSessionCartItem?.(userId, businessId, platform, threadId, customerId, {
+          productId: result.productId,
+          variantId: result.variantId,
+          name: result.productTitle,
+          variantTitle: result.variantTitle ?? undefined,
+          imageUrl: result.imageUrl ?? undefined,
+          quantity: result.quantity,
+          unitPrice: result.unitPrice,
+        })
+        .catch((err) => console.error("[Tool] recordSessionCartItem failed:", err));
+    }
+
     return JSON.stringify(result);
   },
 });

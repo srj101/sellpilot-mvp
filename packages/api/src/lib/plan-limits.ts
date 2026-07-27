@@ -113,3 +113,46 @@ export async function getPlanChannels(ctx: { db: typeof Db; businessId: string }
   const planKey = await resolvePlanKey(ctx.db, ctx.businessId);
   return { plan: planKey, channels: PLAN_CATALOG[planKey].limits.channels };
 }
+
+type BooleanFeature = "offers";
+
+const FEATURE_LABEL: Record<BooleanFeature, string> = {
+  offers: "Offers & Promotions",
+};
+
+/** Feature gate for plan-exclusive capabilities that aren't a countable resource (unlike
+ * assertPlanLimit) or a channel — currently just Offers (Pro-only). Mirrors
+ * assertChannelAllowed's throw shape so the upgrade-message wording stays consistent. */
+export async function assertPlanFeature(ctx: { db: typeof Db; businessId: string }, feature: BooleanFeature): Promise<void> {
+  const planKey = await resolvePlanKey(ctx.db, ctx.businessId);
+  const { limits, name } = PLAN_CATALOG[planKey];
+
+  const enabled = feature === "offers" ? limits.offersEnabled : false;
+  if (!enabled) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `${name} doesn't include ${FEATURE_LABEL[feature]}. Upgrade your plan to use it.`,
+    });
+  }
+}
+
+/** Non-throwing companion to assertPlanFeature — for a page/query that needs to render a
+ * "read-only, upgrade to manage" state rather than erroring. */
+export async function getPlanFeatureEnabled(ctx: { db: typeof Db; businessId: string }, feature: BooleanFeature): Promise<boolean> {
+  const planKey = await resolvePlanKey(ctx.db, ctx.businessId);
+  const { limits } = PLAN_CATALOG[planKey];
+  return feature === "offers" ? limits.offersEnabled : false;
+}
+
+type TieredFeature = "analytics" | "ecommerce";
+
+/** Never throws — for read-heavy pages that should render a soft-lock/upgrade empty
+ * state instead of erroring on load (matching the IntegrationCard / locked-page pattern). */
+export async function getFeatureTier(
+  ctx: { db: typeof Db; businessId: string },
+  feature: TieredFeature,
+): Promise<"none" | "basic" | "full"> {
+  const planKey = await resolvePlanKey(ctx.db, ctx.businessId);
+  const { limits } = PLAN_CATALOG[planKey];
+  return feature === "analytics" ? limits.analyticsTier : limits.ecommerceTier;
+}

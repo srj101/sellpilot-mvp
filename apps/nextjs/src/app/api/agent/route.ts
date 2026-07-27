@@ -20,7 +20,7 @@ import {
 import { auth } from "~/auth/server";
 import { env } from "~/env";
 import { resolveActiveBusinessId } from "~/lib/resolve-active-business";
-import { searchProductsByImage } from "@acme/api/chromadb";
+import { searchProductsByImage } from "@acme/api/vector-search";
 
 const calculateCouponDiscount = (couponRow: any, subtotal: number) => {
   if (!couponRow) {

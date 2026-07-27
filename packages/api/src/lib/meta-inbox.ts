@@ -46,6 +46,11 @@ export interface InboxThread {
   assignedMemberId: string | null;
   /** "ai" | "human" — whether the AI or a staff member currently owns replies on this thread. */
   handlingMode: string;
+  /** Cached AI-generated conversation summary (see conversationMeta.summary) — kept
+   * fresh automatically by the worker after each AI reply, or on-demand via the
+   * dashboard's "Regenerate" button. Null until the first one's been generated. */
+  summary: string | null;
+  summaryGeneratedAt: Date | null;
 }
 
 export interface InboxActivityItem {
@@ -524,6 +529,8 @@ export function buildInboxData({
         tags: [],
         assignedMemberId: null,
         handlingMode: "ai",
+        summary: null,
+        summaryGeneratedAt: null,
       });
       continue;
     }

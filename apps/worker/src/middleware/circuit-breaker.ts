@@ -28,9 +28,14 @@ export class CircuitBreaker {
   }
 
   /**
-   * Run a function with circuit breaker protection
+   * Run a function with circuit breaker protection. `fn` receives an AbortSignal that
+   * fires the moment the timeout elapses — pass it through to whatever does the real
+   * work (e.g. agent.run(input, { signal })) so a timeout actually cancels the
+   * underlying LLM call instead of abandoning it as an untracked "zombie" that keeps
+   * making tool calls and burning API cost in the background after we've already given
+   * up on it and (on retry) started a second, fully redundant run.
    */
-  async run<T>(fn: () => Promise<T>): Promise<T> {
+  async run<T>(fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
     // Check if circuit should transition from open to half-open
     if (this.state === "open") {
       const now = Date.now();
@@ -103,15 +108,17 @@ export class CircuitBreaker {
   }
 
   private async withTimeout<T>(
-    fn: () => Promise<T>,
+    fn: (signal: AbortSignal) => Promise<T>,
     timeout: number
   ): Promise<T> {
+    const controller = new AbortController();
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
+        controller.abort();
         reject(new TimeoutError(`Operation timed out after ${timeout}ms`));
       }, timeout);
 
-      fn()
+      fn(controller.signal)
         .then((result) => {
           clearTimeout(timer);
           resolve(result);

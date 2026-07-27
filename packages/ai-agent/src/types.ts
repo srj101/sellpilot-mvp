@@ -2,6 +2,13 @@
  * AI Agent Type Definitions
  */
 
+/**
+ * Local mirror of packages/api/src/lib/plans.ts's PlanKey — deliberately duplicated
+ * rather than importing @acme/api, since this package is kept DB/API-agnostic (see
+ * BusinessProfileSnapshot below). Values must stay in sync with PLAN_CATALOG's keys.
+ */
+export type PlanKey = "starter" | "growth" | "pro";
+
 // ============================================
 // Configuration
 // ============================================
@@ -19,6 +26,10 @@ export interface AgentConfig {
   maxTokens?: number;
   /** Enable debug logging */
   debug?: boolean;
+  /** Subscription plan tier — determines which tools are available (e.g. combo offers,
+   * purchase history are excluded for Starter). Defaults to "starter" (most restrictive)
+   * if omitted, never to an unlimited tier. */
+  planKey?: PlanKey;
 }
 
 // ============================================
@@ -36,10 +47,19 @@ export interface ConversationContext {
   platform: "facebook_page" | "instagram" | "whatsapp";
   /** Customer/sender ID */
   customerId: string;
-  /** Customer name if known */
+  /** The customer's real Facebook/Instagram display name (first name), used for a
+   * personal greeting — distinct from whatever delivery name they give at checkout,
+   * which may belong to someone else (gift orders). Not available for WhatsApp. */
   customerName?: string;
+  /** Cached 2-3 sentence AI summary of this conversation, refreshed after each reply —
+   * covers anything said earlier than the raw message history window below can reach
+   * (e.g. an allergy or complaint mentioned 20+ messages ago). May be one turn stale. */
+  conversationSummary?: string;
   /** Connection context for sending messages */
   connectionContext?: ConnectionContext;
+  /** Subscription plan tier, used by tool handlers to resolve per-plan limits at call
+   * time (e.g. purchase-history depth) via getToolContext(). */
+  planKey?: PlanKey;
 }
 
 export interface ConnectionContext {

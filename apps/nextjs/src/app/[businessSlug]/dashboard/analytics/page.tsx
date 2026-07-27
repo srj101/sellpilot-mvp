@@ -22,11 +22,14 @@ export default async function AnalyticsPage({
   const range: Range = isCustom ? "custom" : VALID_RANGES.includes(rawRange as Range) ? (rawRange as Range) : "30d";
 
   const caller = await createCaller(await headers());
-  const summary = await caller.analytics.getSummary({ range, from, to });
+  const [summary, tier] = await Promise.all([
+    caller.analytics.getSummary({ range, from, to }),
+    caller.analytics.getAccessTier(),
+  ]);
 
   return (
     <DashboardShell>
-      <AnalyticsClient range={range} from={from ?? null} to={to ?? null} {...summary} />
+      <AnalyticsClient range={range} from={from ?? null} to={to ?? null} tier={tier} {...summary} />
     </DashboardShell>
   );
 }

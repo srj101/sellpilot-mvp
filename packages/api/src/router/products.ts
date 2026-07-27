@@ -5,7 +5,7 @@ import { z } from "zod/v4";
 import { and, desc, eq, inArray } from "@acme/db";
 import { product, productVariant } from "@acme/db/schema";
 
-import { deleteProductImageFromVectorDb, searchProductsByImage } from "../lib/chromadb";
+import { deleteProductImageFromVectorDb, searchProductsByImage } from "../lib/vector-search";
 import { assertPlanLimit, getProductUsage } from "../lib/plan-limits";
 import { queueProductImageIndexing } from "../lib/queue";
 import { businessScopedProcedure } from "../trpc";

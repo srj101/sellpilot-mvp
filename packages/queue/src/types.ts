@@ -159,6 +159,16 @@ export type TrialExpirySweepJob = Record<string, never>;
  * minutes, not daily, since it's catching a 30-minute delay, not a daily billing cycle. */
 export type ConversationFollowUpJob = Record<string, never>;
 
+/** Fired when a customer confirms COD or completes online payment on the /pay/[token]
+ * checkout page (packages/api/src/router/checkout.ts's confirmCod/markOrderPaid) — the
+ * handler (apps/worker/src/handlers/order-status-notify.ts) sends one confirmation
+ * message back into the chat thread the order originally came from. Deliberately minimal
+ * payload; the handler re-fetches the order fresh rather than trusting a snapshot. */
+export interface OrderStatusNotifyJob {
+  businessId: string;
+  orderId: string;
+}
+
 export type QueueJobMap = {
   "meta-dm-reply": MetaDMReplyJob;
   "meta-comment-reply": MetaCommentReplyJob;
@@ -166,6 +176,7 @@ export type QueueJobMap = {
   "subscription-renewal": SubscriptionRenewalJob;
   "trial-expiry-sweep": TrialExpirySweepJob;
   "conversation-followup": ConversationFollowUpJob;
+  "order-status-notify": OrderStatusNotifyJob;
 };
 
 export type QueueJobName = keyof QueueJobMap;

@@ -11,6 +11,8 @@ import { businessScopedProcedure } from "../trpc";
 const ORDER_STATUSES = ["pending", "confirmed", "paid", "shipped", "delivered", "cancelled", "returned"] as const;
 type OrderStatus = (typeof ORDER_STATUSES)[number];
 
+const CHAT_PLATFORMS = new Set(["facebook_page", "instagram", "whatsapp"]);
+
 const STATUS_MESSAGE: Partial<Record<OrderStatus, (orderNumber: string) => string>> = {
   shipped: (n) => `Good news! Your order #${n} has been shipped and is on its way to you.`,
   delivered: (n) => `Your order #${n} has been delivered. Thank you for shopping with us!`,
@@ -19,26 +21,27 @@ const STATUS_MESSAGE: Partial<Record<OrderStatus, (orderNumber: string) => strin
 };
 
 /**
- * Best-effort notification back into the original chat thread when an order's
- * fulfillment status changes — mirrors inbox.sendReply's exact send + logging pattern so
- * the message shows up in that thread's history too. Failures are swallowed (logged only):
- * a messaging hiccup must never fail the status update itself, and a manually-created
- * order (channel "manual", no real thread) has nowhere to send to in the first place.
+ * Best-effort system message back into a chat thread — shared by the order-status
+ * notifier below and manual order creation. Mirrors inbox.sendReply's exact send +
+ * logging pattern so the message shows up in that thread's history too. Failures are
+ * swallowed (logged only): a messaging hiccup must never fail the mutation that
+ * triggered it, and a thread with no real platform (channel "manual", no matching
+ * connection, etc.) has nowhere to send to in the first place.
  */
-async function notifyCustomerOfStatus(
+async function sendThreadMessage(
   db: typeof Db,
   businessId: string,
-  orderRow: { channel: string | null; threadId: string | null; orderNumber: string },
-  status: OrderStatus,
+  channel: string | null,
+  threadId: string | null,
+  text: string,
+  dedupeKey: string,
 ): Promise<void> {
-  const build = STATUS_MESSAGE[status];
-  if (!build) return;
-  if (!orderRow.channel || !orderRow.threadId) return;
-  if (orderRow.channel !== "facebook_page" && orderRow.channel !== "instagram" && orderRow.channel !== "whatsapp") return;
+  if (!channel || !threadId) return;
+  if (channel !== "facebook_page" && channel !== "instagram" && channel !== "whatsapp") return;
 
-  const platform = orderRow.channel;
-  const separatorIndex = orderRow.threadId.indexOf(":");
-  const recipientId = separatorIndex >= 0 ? orderRow.threadId.slice(separatorIndex + 1) : null;
+  const platform = channel;
+  const separatorIndex = threadId.indexOf(":");
+  const recipientId = separatorIndex >= 0 ? threadId.slice(separatorIndex + 1) : null;
   if (!recipientId) return;
 
   try {
@@ -52,7 +55,6 @@ async function notifyCustomerOfStatus(
     const accessToken = connection.accessToken ?? connection.facebookPageAccessToken ?? connection.whatsappAccessToken;
     if (!accessToken) return;
 
-    const text = build(orderRow.orderNumber);
     const sent = await sendMetaInboxReply({
       platform,
       accessToken,
@@ -62,7 +64,7 @@ async function notifyCustomerOfStatus(
     });
 
     await db.insert(metaWebhookEvent).values({
-      dedupeKey: `order-status:${orderRow.threadId}:${status}:${Date.now()}:${crypto.randomUUID()}`,
+      dedupeKey,
       platform,
       object: platform === "instagram" ? "instagram" : "page",
       eventType: "outbound",
@@ -73,7 +75,7 @@ async function notifyCustomerOfStatus(
       sourceId: sent.messageId ?? null,
       rawPayload: {
         direction: "outbound",
-        threadKey: orderRow.threadId,
+        threadKey: threadId,
         recipientId,
         accountId: connection.platformAccountId,
         platform,
@@ -86,8 +88,44 @@ async function notifyCustomerOfStatus(
       processedAt: new Date(),
     });
   } catch (err) {
-    console.error(`[orders.updateStatus] Failed to notify customer for order ${orderRow.orderNumber}:`, err);
+    console.error(`[sendThreadMessage] Failed to send to thread ${threadId}:`, err);
   }
+}
+
+async function notifyCustomerOfStatus(
+  db: typeof Db,
+  businessId: string,
+  orderRow: { channel: string | null; threadId: string | null; orderNumber: string },
+  status: OrderStatus,
+): Promise<void> {
+  const build = STATUS_MESSAGE[status];
+  if (!build) return;
+  await sendThreadMessage(
+    db,
+    businessId,
+    orderRow.channel,
+    orderRow.threadId,
+    build(orderRow.orderNumber),
+    `order-status:${orderRow.threadId}:${status}:${Date.now()}:${crypto.randomUUID()}`,
+  );
+}
+
+/** Order confirmation message sent into the chat right after a staff member manually
+ * creates an order from the inbox (orders.create below) — the AI already announces its
+ * own orders as part of its normal reply, but a manually-created one needs the same
+ * "here's what I just ordered for you" moment since no AI turn produced it. */
+function buildOrderCreatedMessage(
+  orderNumber: string,
+  items: { name: string; variantTitle: string | null; qty: number }[],
+  total: number,
+  paymentMethod: "cod" | "online",
+  paymentUrl: string | null | undefined,
+): string {
+  const lines = items.map((i) => `- ${i.qty}x ${i.name}${i.variantTitle ? ` (${i.variantTitle})` : ""}`);
+  const base = `Your order #${orderNumber} has been placed!\n${lines.join("\n")}\nTotal: ৳${total.toLocaleString()}`;
+  return paymentMethod === "cod"
+    ? `${base}\nCash on delivery — pay when it arrives.`
+    : `${base}\nComplete your payment here: ${paymentUrl}`;
 }
 
 export const ordersRouter = {
@@ -100,6 +138,9 @@ export const ordersRouter = {
         quantity: z.number().min(1),
         district: z.string().optional(),
         offerCode: z.string().optional(),
+        comboProductId: z.string().optional(),
+        comboVariantId: z.string().optional(),
+        comboQuantity: z.number().min(1).optional(),
       }),
     )
     .query(async ({ ctx, input }) => {
@@ -109,7 +150,10 @@ export const ordersRouter = {
   /**
    * Manual order creation — for when a human agent (not the AI) handled the chat and needs
    * to place the order themselves. Reuses the exact same customer-upsert/pricing/inventory
-   * logic as the AI's automatic checkout (createCustomerAndOrder), just triggered by a person.
+   * logic as the AI's automatic checkout (createCustomerAndOrder), just triggered by a person
+   * — including combo/bundle items and payment method, same as the AI supports. customerName/
+   * phone/address are optional here too: if this thread already has a linked customer (from
+   * an earlier order), omitted fields are filled in from that record automatically.
    */
   create: businessScopedProcedure
     .input(
@@ -119,15 +163,46 @@ export const ordersRouter = {
         productId: z.string(),
         variantId: z.string().optional(),
         quantity: z.number().min(1),
-        customerName: z.string().min(1),
-        phone: z.string().min(1),
-        address: z.string().min(1),
+        customerName: z.string().optional(),
+        phone: z.string().optional(),
+        address: z.string().optional(),
         district: z.string().optional(),
         offerCode: z.string().optional(),
+        comboProductId: z.string().optional(),
+        comboVariantId: z.string().optional(),
+        comboQuantity: z.number().min(1).optional(),
+        paymentMethod: z.enum(["cod", "online"]).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      return createCustomerAndOrder({ userId: ctx.businessOwnerId, businessId: ctx.businessId, ...input });
+      // A manual order placed from an open inbox thread should be tagged with that
+      // thread's real platform (threadId is always `${platform}:${senderId}`, per
+      // packages/messaging/src/platforms/facebook.ts) rather than the generic "manual"
+      // default — otherwise there's no way to send the confirmation message below, or
+      // any later COD/payment notification (order-status-notify), back into the chat.
+      const threadPlatform = input.threadId.split(":")[0] ?? "";
+      const channel = CHAT_PLATFORMS.has(threadPlatform) ? threadPlatform : input.channel;
+
+      const result = await createCustomerAndOrder({
+        userId: ctx.businessOwnerId,
+        businessId: ctx.businessId,
+        ...input,
+        channel,
+      });
+
+      if (result.success && result.orderId) {
+        const items = await ctx.db.select().from(orderItem).where(eq(orderItem.orderId, result.orderId));
+        const text = buildOrderCreatedMessage(
+          result.orderNumber,
+          items.map((i) => ({ name: i.name, variantTitle: i.variantTitle, qty: i.qty })),
+          result.total,
+          result.paymentMethod,
+          result.paymentUrl,
+        );
+        await sendThreadMessage(ctx.db, ctx.businessId, channel, input.threadId, text, `order-created:${result.orderId}`);
+      }
+
+      return result;
     }),
 
   list: businessScopedProcedure.query(async ({ ctx }) => {

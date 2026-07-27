@@ -53,6 +53,7 @@ export class SalesAgentGraph {
   private toolNode: ToolNode;
   private graph: ReturnType<typeof this.buildGraph>;
   private debug: boolean;
+  private planKey: NonNullable<AgentConfig["planKey"]>;
 
   constructor(config: AgentConfig) {
     this.debug = config.debug ?? false;
@@ -65,13 +66,15 @@ export class SalesAgentGraph {
       maxTokens: config.maxTokens ?? 800,
     });
 
-    this.tools = getAllTools();
+    this.planKey = config.planKey ?? "starter";
+    this.tools = getAllTools(this.planKey);
     this.toolNode = new ToolNode(this.tools);
     this.graph = this.buildGraph();
 
     this.log("Agent initialized", {
       model: config.model,
       toolCount: this.tools.length,
+      planKey: this.planKey,
     });
   }
 
@@ -127,7 +130,7 @@ export class SalesAgentGraph {
     return workflow.compile();
   }
 
-  async run(input: AgentInput): Promise<AgentOutput> {
+  async run(input: AgentInput, options?: { signal?: AbortSignal }): Promise<AgentOutput> {
     const startTime = Date.now();
     let llmCalls = 0;
     const toolCalls: ToolCallLog[] = [];
@@ -148,9 +151,21 @@ export class SalesAgentGraph {
     });
 
     try {
+      // Passing signal here is what makes an upstream timeout (see
+      // apps/worker/src/middleware/circuit-breaker.ts) actually cancel the in-flight
+      // LLM call instead of abandoning it as an untracked background request — LangChain
+      // forwards this straight to the underlying fetch.
+      // Captured before invoke() so the post-hoc analysis below can scope itself to only
+      // what THIS run produced — `messages` already includes up to 15 reconstructed
+      // historical turns from buildMessages(), and LangGraph's MessagesAnnotation state
+      // is cumulative (result.messages = everything in, plus everything new). Without
+      // this, llmCalls/tokensUsed/toolCalls all silently double-count every prior turn
+      // of the conversation as if it happened in this invocation.
+      const initialMessageCount = messages.length;
+
       const result = await this.graph.invoke(
         { messages },
-        { recursionLimit: 15 }
+        { recursionLimit: 25, signal: options?.signal }
       );
 
       // Extract response
@@ -181,12 +196,14 @@ export class SalesAgentGraph {
         response = stripMarkdown(response);
       }
 
-      // Count LLM calls and extract tool calls
+      // Count LLM calls and extract tool calls — scoped to only messages THIS invocation
+      // produced (see initialMessageCount above), not the full cumulative conversation.
       let totalPromptTokens = 0;
       let totalCompletionTokens = 0;
       let totalTokens = 0;
 
-      for (const msg of finalMessages) {
+      const newMessages = finalMessages.slice(initialMessageCount);
+      for (const msg of newMessages) {
         if (msg instanceof AIMessage) {
           llmCalls++;
           
@@ -341,10 +358,11 @@ export class SalesAgentGraph {
     }
 
     // System prompt with user context
-    const systemPrompt = `${buildSalesAgentSystemPrompt(profile)}
+    const systemPrompt = `${buildSalesAgentSystemPrompt(profile, input.context.planKey ?? this.planKey)}
 
 Platform: ${input.context.platform}
-${input.context.customerName ? `Customer name: ${input.context.customerName}` : ""}`;
+${input.context.customerName ? `Customer name: ${input.context.customerName}` : ""}
+${input.context.conversationSummary ? `Summary of the conversation so far (may be slightly out of date — the messages below are the current source of truth for anything recent): ${input.context.conversationSummary}` : ""}`;
 
     messages.push(new SystemMessage(systemPrompt));
 
@@ -417,7 +435,7 @@ export class SimpleChatAgent {
     });
   }
 
-  async run(input: AgentInput): Promise<AgentOutput> {
+  async run(input: AgentInput, options?: { signal?: AbortSignal }): Promise<AgentOutput> {
     const startTime = Date.now();
 
     const messages: BaseMessage[] = [
@@ -441,7 +459,7 @@ Never use markdown formatting.`),
     messages.push(new HumanMessage(input.message));
 
     try {
-      const response = await this.llm.invoke(messages);
+      const response = await this.llm.invoke(messages, { signal: options?.signal });
 
       let content = "";
       if (typeof response.content === "string") {

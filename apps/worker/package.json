@@ -17,8 +17,7 @@
     "@acme/auth": "workspace:*",
     "@acme/db": "workspace:*",
     "@acme/messaging": "workspace:*",
-    "@acme/queue": "workspace:*",
-    "@acme/realtime": "workspace:*"
+    "@acme/queue": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "catalog:",

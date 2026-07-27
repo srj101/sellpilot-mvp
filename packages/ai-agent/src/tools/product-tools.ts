@@ -58,7 +58,7 @@ export const searchProductsTool = new DynamicStructuredTool({
 
 export const getProductTool = new DynamicStructuredTool({
   name: "getProduct",
-  description: "Get product details by ID",
+  description: "Get full product details by ID — the result already includes all variants (size/colour, price, stock), so you don't need a separate getProductVariants call after this.",
   schema: z.object({
     id: z.string().describe("Product ID"),
   }),
@@ -73,7 +73,7 @@ export const getProductTool = new DynamicStructuredTool({
 
 export const checkStockTool = new DynamicStructuredTool({
   name: "checkStock",
-  description: "Check product stock availability",
+  description: "Check product stock — result includes variants too. Prefer getProduct instead if you also need the title/description/images.",
   schema: z.object({
     id: z.string().describe("Product ID"),
   }),
@@ -117,7 +117,7 @@ export const listActiveProductsTool = new DynamicStructuredTool({
 
 export const getProductVariantsTool = new DynamicStructuredTool({
   name: "getProductVariants",
-  description: "Get variants for a product",
+  description: "Get variants for a product. Skip this if you already called getProduct or checkStock for the same product in this turn — both already include variants.",
   schema: z.object({
     productId: z.string().describe("Product ID"),
   }),

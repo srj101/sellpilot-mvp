@@ -1,19 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowUpRight, ChevronDown, Plus, Sparkles, Tag as TagIcon, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Plus, Sparkles, Tag as TagIcon, X } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@acme/ui/collapsible";
+import { Skeleton } from "@acme/ui/skeleton";
 import { toast } from "@acme/ui/toast";
 import { cn } from "@acme/ui";
 import { useTRPC } from "~/trpc/react";
 import type { InboxMessage } from "@acme/api/meta-inbox";
 import { CreateOrderSheet } from "./create-order-sheet";
 import { formatCurrency, TAG_COLOR_CLASSES } from "./inbox-utils";
-import { useBusinessSlug } from "~/hooks/use-business-slug";
 
 function Section({
   title,
@@ -28,7 +27,7 @@ function Section({
   badge?: React.ReactNode;
   collapsible?: boolean;
   defaultOpen?: boolean;
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
 
@@ -56,7 +55,7 @@ function Section({
     return (
       <div className="border-b px-4 py-4 last:border-0">
         {header}
-        <div className="mt-2">{children}</div>
+        {children && <div className="mt-2">{children}</div>}
       </div>
     );
   }
@@ -64,7 +63,7 @@ function Section({
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="border-b px-4 py-4 last:border-0">
       {header}
-      <CollapsibleContent className="mt-2">{children}</CollapsibleContent>
+      {children && <CollapsibleContent className="mt-2">{children}</CollapsibleContent>}
     </Collapsible>
   );
 }
@@ -74,14 +73,18 @@ export function ContactPanel({
   customerId,
   contactLabel,
   messages,
+  initialSummary,
 }: {
   threadId: string;
   customerId: string | null;
   contactLabel: string;
   messages: InboxMessage[];
+  /** Cached summary already generated for this thread (kept fresh automatically by the
+   * worker after each AI reply) — seeds the panel so it doesn't show empty just because
+   * "Regenerate" hasn't been clicked yet. */
+  initialSummary: string | null;
 }) {
   const trpc = useTRPC();
-  const businessSlug = useBusinessSlug();
   const [noteText, setNoteText] = useState("");
   const [addingTag, setAddingTag] = useState(false);
   const [newTagLabel, setNewTagLabel] = useState("");
@@ -102,12 +105,19 @@ export function ContactPanel({
   const untagCustomer = useMutation(trpc.inbox.untagCustomer.mutationOptions({ onSuccess: () => contact.refetch() }));
   const generateSummary = useMutation(trpc.inbox.generateSummary.mutationOptions());
 
+  // `messages` is oldest-first (chat order), so reversing puts the most recently shared
+  // image first — page 0 of the 3-at-a-time viewer below always starts on the latest ones.
   const sharedFiles = useMemo(
-    () => messages.filter((m): m is InboxMessage & { imageUrl: string } => Boolean(m.imageUrl)),
+    () => messages.filter((m): m is InboxMessage & { imageUrl: string } => Boolean(m.imageUrl)).reverse(),
     [messages],
   );
+  const [filesPage, setFilesPage] = useState(0);
+  const filesPerPage = 3;
+  const totalFilePages = Math.max(1, Math.ceil(sharedFiles.length / filesPerPage));
+  const clampedFilesPage = Math.min(filesPage, totalFilePages - 1);
+  const visibleFiles = sharedFiles.slice(clampedFilesPage * filesPerPage, clampedFilesPage * filesPerPage + filesPerPage);
 
-  const [summary, setSummary] = useState<string | null>(null);
+  const [summary, setSummary] = useState<string | null>(initialSummary);
 
   function handleAddNote() {
     if (!customerId || !noteText.trim()) return;
@@ -131,18 +141,7 @@ export function ContactPanel({
     setAddingTag(false);
   }
 
-  function handleGenerateSummary() {
-    generateSummary.mutate(
-      {
-        threadId,
-        messages: messages
-          .slice()
-          .reverse()
-          .map((m) => ({ role: m.direction === "inbound" ? ("user" as const) : ("assistant" as const), text: m.text })),
-      },
-      { onSuccess: (r) => setSummary(r.summary), onError: (e) => toast.error(e.message) },
-    );
-  }
+
 
   const cust = contact.data?.customer;
   const usedTagIds = new Set((contact.data?.tags ?? []).map((t) => t.id));
@@ -152,36 +151,41 @@ export function ContactPanel({
       <Section
         title="Order Actions"
         action={
-          <Link href={customerId ? `/${businessSlug}/dashboard/orders?customerId=${customerId}` : `/${businessSlug}/dashboard/orders`}>
-            <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs">
-              Manage Orders <ArrowUpRight className="h-3 w-3" />
-            </Button>
-          </Link>
+          <CreateOrderSheet
+            threadId={threadId}
+            defaultName={cust?.name ?? contactLabel}
+            defaultPhone={cust?.phone ?? undefined}
+            defaultAddress={cust?.address ?? undefined}
+            defaultDistrict={cust?.district ?? undefined}
+          />
         }
-      >
-        <CreateOrderSheet
-          threadId={threadId}
-          defaultName={cust?.name ?? contactLabel}
-          defaultPhone={cust?.phone ?? undefined}
-          defaultAddress={cust?.address ?? undefined}
-          defaultDistrict={cust?.district ?? undefined}
-        />
-      </Section>
+      />
 
       <Section title="Contact Details" collapsible>
-        {!customerId ? (
-          <p className="text-xs text-muted-foreground">No customer record linked yet — one is created automatically the first time an order is placed on this conversation.</p>
-        ) : cust ? (
-          <dl className="space-y-1.5 text-xs">
-            <div className="flex justify-between"><dt className="text-muted-foreground">Name</dt><dd className="font-medium">{cust.name}</dd></div>
-            {cust.phone && <div className="flex justify-between"><dt className="text-muted-foreground">Phone</dt><dd>{cust.phone}</dd></div>}
-            {cust.email && <div className="flex justify-between"><dt className="text-muted-foreground">Email</dt><dd className="truncate">{cust.email}</dd></div>}
-            {cust.address && <div className="flex justify-between gap-4"><dt className="shrink-0 text-muted-foreground">Address</dt><dd className="text-right">{cust.address}</dd></div>}
-            {cust.district && <div className="flex justify-between"><dt className="text-muted-foreground">District</dt><dd>{cust.district}</dd></div>}
-          </dl>
-        ) : (
-          <p className="text-xs text-muted-foreground">Loading...</p>
-        )}
+        <dl className="space-y-1.5 text-xs">
+          {/* contactLabel is already known from the thread itself (no query needed) —
+              shows immediately instead of waiting on the customer-record fetch below. */}
+          <div className="flex justify-between">
+            <dt className="text-muted-foreground">Name</dt>
+            <dd className="font-medium">{cust?.name ?? contactLabel}</dd>
+          </div>
+
+          {!customerId ? (
+            <p className="pt-1 text-muted-foreground">No customer record linked yet — one is created automatically the first time an order is placed on this conversation.</p>
+          ) : contact.isLoading ? (
+            <>
+              <Skeleton className="h-3.5 w-2/3" />
+              <Skeleton className="h-3.5 w-1/2" />
+            </>
+          ) : (
+            <>
+              {cust?.phone && <div className="flex justify-between"><dt className="text-muted-foreground">Phone</dt><dd>{cust.phone}</dd></div>}
+              {cust?.email && <div className="flex justify-between"><dt className="text-muted-foreground">Email</dt><dd className="truncate">{cust.email}</dd></div>}
+              {cust?.address && <div className="flex justify-between gap-4"><dt className="shrink-0 text-muted-foreground">Address</dt><dd className="text-right">{cust.address}</dd></div>}
+              {cust?.district && <div className="flex justify-between"><dt className="text-muted-foreground">District</dt><dd>{cust.district}</dd></div>}
+            </>
+          )}
+        </dl>
       </Section>
 
       <Section
@@ -280,22 +284,49 @@ export function ContactPanel({
       <Section
         title="Conversation Summary"
         collapsible
-        defaultOpen={false}
-        action={
-          <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs" onClick={handleGenerateSummary} disabled={generateSummary.isPending}>
-            <Sparkles className="h-3 w-3" /> {generateSummary.isPending ? "Generating..." : "Regenerate"}
-          </Button>
-        }
+        defaultOpen
+
       >
-        <p className="text-xs text-muted-foreground">{summary ?? "No summary generated yet."}</p>
+        <p className="text-xs text-muted-foreground">{summary ?? "No summary generated yet — one is created automatically after the AI's first reply in this conversation."}</p>
       </Section>
 
-      <Section title="Shared Files">
+      <Section
+        title="Shared Files"
+        action={
+          sharedFiles.length > filesPerPage && (
+            <div className="flex items-center gap-1">
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6"
+                disabled={clampedFilesPage === 0}
+                onClick={() => setFilesPage((p) => Math.max(0, p - 1))}
+                aria-label="Newer files"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <span className="text-[10px] text-muted-foreground">{clampedFilesPage + 1}/{totalFilePages}</span>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6"
+                disabled={clampedFilesPage >= totalFilePages - 1}
+                onClick={() => setFilesPage((p) => Math.min(totalFilePages - 1, p + 1))}
+                aria-label="Older files"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )
+        }
+      >
         {sharedFiles.length === 0 ? (
           <p className="text-xs text-muted-foreground">No images shared in this conversation yet.</p>
         ) : (
           <div className="grid grid-cols-3 gap-2">
-            {sharedFiles.map((m) => (
+            {visibleFiles.map((m) => (
               <a key={m.id} href={m.imageUrl} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden rounded-lg border">
                 <img src={m.imageUrl} alt="Shared attachment" className="h-full w-full object-cover" />
               </a>
