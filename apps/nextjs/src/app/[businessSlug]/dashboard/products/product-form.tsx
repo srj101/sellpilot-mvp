@@ -34,6 +34,7 @@ export function ProductForm({
   const trpc = useTRPC();
   const createProductMutation = useMutation(trpc.products.create.mutationOptions());
   const updateProductMutation = useMutation(trpc.products.update.mutationOptions());
+  const getImageUploadUrl = useMutation(trpc.products.getImageUploadUrl.mutationOptions());
 
   const [title, setTitle] = useState(initialProduct?.title ?? "");
   const [description, setDescription] = useState(
@@ -71,6 +72,7 @@ export function ProductForm({
 
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   // Option input state
   const [newOptionName, setNewOptionName] = useState("");
@@ -128,18 +130,33 @@ export function ProductForm({
     setVariants(updatedVariants);
   }, [options, hasVariants]);
 
-  // Image Upload helper (base64 encode)
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Image Upload helper: upload to S3 and store the public URL
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (typeof reader.result === "string") {
-        setImages((prev) => [...prev, reader.result as string]);
+    setUploadingImage(true);
+    try {
+      const { uploadUrl, publicUrl } = await getImageUploadUrl.mutateAsync({
+        contentType: file.type,
+      });
+
+      const put = await fetch(uploadUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+
+      if (!put.ok) {
+        throw new Error("Failed to upload image to storage");
       }
-    };
-    reader.readAsDataURL(file);
+
+      setImages((prev) => [...prev, publicUrl]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload image");
+    } finally {
+      setUploadingImage(false);
+    }
   };
 
   const handleAddImageUrl = () => {
@@ -335,7 +352,7 @@ export function ProductForm({
               Media
             </h3>
             <p className="text-muted-foreground mb-4 text-xs leading-5">
-              Add product images by URL or upload files. Uploaded files are encoded as Base64 for instant search tests.
+              Add product images by URL or upload files. Uploaded files are stored in S3-compatible storage and saved as public URLs.
             </p>
 
             <div className="grid gap-4">
@@ -356,15 +373,16 @@ export function ProductForm({
                   type="file"
                   accept="image/*"
                   onChange={handleImageUpload}
-                  className="absolute inset-0 cursor-pointer opacity-0"
+                  disabled={uploadingImage}
+                  className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
                 />
                 <div className="space-y-1.5">
                   <Upload className="mx-auto h-8 w-8 text-muted-foreground" />
                   <div className="text-sm font-medium">
-                    Upload image from device
+                    {uploadingImage ? "Uploading..." : "Upload image from device"}
                   </div>
                   <div className="text-muted-foreground text-xs">
-                    Drag and drop or click to choose file
+                    {uploadingImage ? "Please wait while the image uploads" : "Drag and drop or click to choose file"}
                   </div>
                 </div>
               </div>

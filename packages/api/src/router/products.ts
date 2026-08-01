@@ -8,6 +8,7 @@ import { product, productVariant } from "@acme/db/schema";
 import { deleteProductImageFromVectorDb, searchProductsByImage } from "../lib/vector-search";
 import { assertPlanLimit, getProductUsage } from "../lib/plan-limits";
 import { queueProductImageIndexing } from "../lib/queue";
+import { getPresignedUploadUrl, getPublicUrl } from "../lib/s3";
 import { businessScopedProcedure } from "../trpc";
 
 const VariantInput = z.object({
@@ -354,5 +355,22 @@ export const productsRouter = {
         limit: usage.limit,
         planName: usage.planName,
       };
+    }),
+
+  /**
+   * Returns a presigned S3 URL for uploading a product image.
+   * The client uploads the file directly to S3, then stores the returned publicUrl.
+   * Existing Base64 images in the product table are left untouched (Option B).
+   */
+  getImageUploadUrl: businessScopedProcedure
+    .input(z.object({ contentType: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const ext = input.contentType.split("/")[1] ?? "jpg";
+      const key = `product-images/${ctx.businessId}/${crypto.randomUUID()}.${ext}`;
+
+      const uploadUrl = await getPresignedUploadUrl(key, input.contentType);
+      const publicUrl = getPublicUrl(key);
+
+      return { uploadUrl, publicUrl, key };
     }),
 } satisfies TRPCRouterRecord;
