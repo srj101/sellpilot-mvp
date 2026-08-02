@@ -1,15 +1,18 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { useBusinessSlug } from "~/hooks/use-business-slug";
 import { TrendingUp, ArrowUpRight, Plus, CheckCircle2, XCircle, ShoppingCart, DollarSign, Users, ShoppingBag, MessageCircle } from "lucide-react";
 
 import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle, CardDescription } from "@acme/ui/card";
+import { Skeleton } from "@acme/ui/skeleton";
 import { cn } from "@acme/ui";
 
+import { useTRPC } from "~/trpc/react";
 import type { ActivityEvent, DashboardClientProps, SerializedOrder } from "./dashboard-types";
 import { DAY, avatarColor, formatCurrency, initials, trendPct, STATUS_BADGE } from "./dashboard-utils";
 import {
@@ -18,8 +21,36 @@ import {
 } from "./dashboard-widgets";
 import { TrialBanner } from "./trial-banner";
 
-export function DashboardClient({ userName, now, orders, customerCount, recentItems, messageStats }: DashboardClientProps) {
+/** FR-DSH-01 — stats.trends was already computed (see the useMemo below) but never
+ * rendered on any stat card. "vs previous 30 days" rather than the SRS's literal "vs
+ * previous day", since that's what the existing trend math actually compares (the same
+ * current/previous-30-day-window convention Analytics uses) — re-deriving true
+ * day-over-day trends would be a bigger change than this dead-code wire-up. */
+function TrendBadge({ value }: { value: number | null }) {
+  if (value === null) return <p className="mt-1 text-xs text-muted-foreground">No prior data</p>;
+  const positive = value >= 0;
+  return (
+    <p className={cn("mt-1 text-xs", positive ? "text-green-500" : "text-rose-500")}>
+      {positive ? "+" : ""}
+      {value.toFixed(1)}% vs previous 30 days
+    </p>
+  );
+}
+
+export function DashboardClient({ userName }: DashboardClientProps) {
   const businessSlug = useBusinessSlug();
+  const trpc = useTRPC();
+  const [now] = useState(() => Date.now());
+  const { data, isPending } = useQuery(trpc.dashboard.getOverview.queryOptions());
+  const orders: SerializedOrder[] = data?.orders ?? [];
+  const customerCount = data?.customerCount ?? 0;
+  const recentItems = data?.recentItems ?? [];
+  const messageStats = data?.messageStats ?? {
+    total: 0,
+    inbound: 0,
+    outbound: 0,
+    platformBreakdown: { instagram: 0, whatsapp: 0, facebook: 0 },
+  };
   const stats = useMemo(() => {
     const validOrders = orders.filter((o) => o.status !== "cancelled" && o.status !== "returned");
     const totalRevenue = validOrders.reduce((sum, o) => sum + o.total, 0);
@@ -160,10 +191,14 @@ export function DashboardClient({ userName, now, orders, customerCount, recentIt
         <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-white sm:text-3xl">Welcome back, {userName} 👋</h1>
-            <p className="mt-2 text-white/80">
-              You have <span className="font-semibold text-white">{stats.todaysOrderCount} new orders</span> and{" "}
-              <span className="font-semibold text-white">{formatCurrency(stats.todaysRevenue)} revenue</span> today
-            </p>
+            {isPending ? (
+              <Skeleton className="mt-2.5 h-4 w-56 bg-white/20" />
+            ) : (
+              <p className="mt-2 text-white/80">
+                You have <span className="font-semibold text-white">{stats.todaysOrderCount} new orders</span> and{" "}
+                <span className="font-semibold text-white">{formatCurrency(stats.todaysRevenue)} revenue</span> today
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Link href={`/${businessSlug}/dashboard/orders`}>
@@ -197,8 +232,14 @@ export function DashboardClient({ userName, now, orders, customerCount, recentIt
                 <DollarSign className="h-4 w-4" />
               </div>
             </div>
-            <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{formatCurrency(stats.totalRevenue)}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Cumulative platform earnings</p>
+            {isPending ? (
+              <><Skeleton className="mt-3 h-7 w-24" /><Skeleton className="mt-1.5 h-3 w-32" /></>
+            ) : (
+              <>
+                <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{formatCurrency(stats.totalRevenue)}</p>
+                <TrendBadge value={stats.trends.revenue} />
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -211,8 +252,14 @@ export function DashboardClient({ userName, now, orders, customerCount, recentIt
                 <Users className="h-4 w-4" />
               </div>
             </div>
-            <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{customerCount.toLocaleString()}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Unique active contacts</p>
+            {isPending ? (
+              <><Skeleton className="mt-3 h-7 w-16" /><Skeleton className="mt-1.5 h-3 w-32" /></>
+            ) : (
+              <>
+                <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{customerCount.toLocaleString()}</p>
+                <TrendBadge value={stats.trends.customers} />
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -225,8 +272,14 @@ export function DashboardClient({ userName, now, orders, customerCount, recentIt
                 <ShoppingBag className="h-4 w-4" />
               </div>
             </div>
-            <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{stats.totalOrders.toLocaleString()}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Orders placed on channels</p>
+            {isPending ? (
+              <><Skeleton className="mt-3 h-7 w-16" /><Skeleton className="mt-1.5 h-3 w-32" /></>
+            ) : (
+              <>
+                <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{stats.totalOrders.toLocaleString()}</p>
+                <TrendBadge value={stats.trends.orders} />
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -239,8 +292,14 @@ export function DashboardClient({ userName, now, orders, customerCount, recentIt
                 <MessageCircle className="h-4 w-4" />
               </div>
             </div>
-            <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{messageStats.total.toLocaleString()}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Messages received & sent</p>
+            {isPending ? (
+              <><Skeleton className="mt-3 h-7 w-16" /><Skeleton className="mt-1.5 h-3 w-32" /></>
+            ) : (
+              <>
+                <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{messageStats.total.toLocaleString()}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Messages received & sent</p>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -249,7 +308,11 @@ export function DashboardClient({ userName, now, orders, customerCount, recentIt
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="card-hover lg:col-span-2">
           <CardContent className="pt-6">
-            <OverviewChart data={monthlySeries} />
+            {isPending ? (
+              <Skeleton className="h-64 w-full" />
+            ) : (
+              <OverviewChart data={monthlySeries} />
+            )}
           </CardContent>
         </Card>
 
@@ -260,36 +323,50 @@ export function DashboardClient({ userName, now, orders, customerCount, recentIt
             <CardDescription>Percentage breakdown of inbound messages</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* WhatsApp */}
-            <div>
-              <div className="flex justify-between text-sm font-medium mb-1.5">
-                <span>WhatsApp</span>
-                <span className="text-muted-foreground tabular-nums">{waPct}%</span>
-              </div>
-              <div className="h-2.5 rounded-full bg-muted overflow-hidden">
-                <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${waPct}%` }} />
-              </div>
-            </div>
-            {/* Messenger */}
-            <div>
-              <div className="flex justify-between text-sm font-medium mb-1.5">
-                <span>Messenger</span>
-                <span className="text-muted-foreground tabular-nums">{fbPct}%</span>
-              </div>
-              <div className="h-2.5 rounded-full bg-muted overflow-hidden">
-                <div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{ width: `${fbPct}%` }} />
-              </div>
-            </div>
-            {/* Instagram */}
-            <div>
-              <div className="flex justify-between text-sm font-medium mb-1.5">
-                <span>Instagram</span>
-                <span className="text-muted-foreground tabular-nums">{igPct}%</span>
-              </div>
-              <div className="h-2.5 rounded-full bg-muted overflow-hidden">
-                <div className="h-full bg-pink-500 rounded-full transition-all duration-500" style={{ width: `${igPct}%` }} />
-              </div>
-            </div>
+            {isPending ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <div key={i}>
+                  <div className="flex justify-between mb-1.5">
+                    <Skeleton className="h-4 w-16" />
+                    <Skeleton className="h-4 w-8" />
+                  </div>
+                  <Skeleton className="h-2.5 w-full rounded-full" />
+                </div>
+              ))
+            ) : (
+              <>
+                {/* WhatsApp */}
+                <div>
+                  <div className="flex justify-between text-sm font-medium mb-1.5">
+                    <span>WhatsApp</span>
+                    <span className="text-muted-foreground tabular-nums">{waPct}%</span>
+                  </div>
+                  <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${waPct}%` }} />
+                  </div>
+                </div>
+                {/* Messenger */}
+                <div>
+                  <div className="flex justify-between text-sm font-medium mb-1.5">
+                    <span>Messenger</span>
+                    <span className="text-muted-foreground tabular-nums">{fbPct}%</span>
+                  </div>
+                  <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{ width: `${fbPct}%` }} />
+                  </div>
+                </div>
+                {/* Instagram */}
+                <div>
+                  <div className="flex justify-between text-sm font-medium mb-1.5">
+                    <span>Instagram</span>
+                    <span className="text-muted-foreground tabular-nums">{igPct}%</span>
+                  </div>
+                  <div className="h-2.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full bg-pink-500 rounded-full transition-all duration-500" style={{ width: `${igPct}%` }} />
+                  </div>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -311,7 +388,20 @@ export function DashboardClient({ userName, now, orders, customerCount, recentIt
               </CardAction>
             </CardHeader>
             <CardContent className="py-2">
-              {recentOrders.length > 0 ? (
+              {isPending ? (
+                <div className="space-y-3 py-3">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-2.5">
+                      <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <Skeleton className="h-3.5 w-28" />
+                        <Skeleton className="h-3 w-20" />
+                      </div>
+                      <Skeleton className="h-4 w-14 shrink-0" />
+                    </div>
+                  ))}
+                </div>
+              ) : recentOrders.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -381,7 +471,22 @@ export function DashboardClient({ userName, now, orders, customerCount, recentIt
               </CardAction>
             </CardHeader>
             <CardContent className="py-5">
-              {topProducts.length > 0 ? (
+              {isPending ? (
+                <div className="space-y-4">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <Skeleton className="h-7 w-7 shrink-0 rounded-full" />
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <Skeleton className="h-3.5 w-24" />
+                          <Skeleton className="h-3.5 w-12" />
+                        </div>
+                        <Skeleton className="h-1 w-full" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : topProducts.length > 0 ? (
                 <div className="space-y-4">
                   {topProducts.map((p, i) => {
                     const max = Math.max(topProducts[0]?.revenue ?? 1, 1);
@@ -417,7 +522,18 @@ export function DashboardClient({ userName, now, orders, customerCount, recentIt
               <CardTitle>Recent Activity</CardTitle>
             </CardHeader>
             <CardContent className="py-5">
-              <ActivityTimeline events={activity} now={now} />
+              {isPending ? (
+                <div className="space-y-4">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                      <Skeleton className="h-2.5 w-2.5 shrink-0 rounded-full" />
+                      <Skeleton className="h-3.5 w-full max-w-56" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <ActivityTimeline events={activity} now={now} />
+              )}
             </CardContent>
           </Card>
         </div>

@@ -15,6 +15,7 @@ import {
 
 import { sendMetaInboxReply } from "../lib/meta";
 import { buildInboxData } from "../lib/meta-inbox";
+import { getQueueStatus } from "../lib/queue-status";
 import { resolveContactNames } from "../lib/resolve-contact-names";
 import { businessScopedProcedure } from "../trpc";
 
@@ -22,6 +23,10 @@ const CLOSED_ORDER_STATUSES = ["delivered", "cancelled", "returned"];
 const STATUS_VALUES = ["open", "ticket", "resolved", "archived"] as const;
 
 export const inboxRouter = {
+  /** FR-INB-04 — polled by the Inbox page (not pushed live) since a busy signal has no
+   * need for sub-second latency; see queue-status.ts for why this is platform-wide. */
+  getQueueStatus: businessScopedProcedure.query(() => getQueueStatus()),
+
   getInboxData: businessScopedProcedure
     .input(z.object({ threadId: z.string().optional() }))
     .query(async ({ ctx, input }) => {

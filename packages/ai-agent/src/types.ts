@@ -9,6 +9,36 @@
  */
 export type PlanKey = "starter" | "growth" | "pro";
 
+/** Local mirror of PLAN_CATALOG[*].limits.multiProductCartLimit (packages/api/src/lib/plans.ts)
+ * — max distinct line items the agent can add to a single order's cart. */
+export const MULTI_PRODUCT_CART_LIMIT: Record<PlanKey, number> = {
+  starter: 5,
+  growth: 12,
+  pro: 28,
+};
+
+/** Local mirror of PLAN_CATALOG[*].limits.complaintHandling. */
+export const COMPLAINT_HANDLING: Record<PlanKey, "redirect" | "basic_logging"> = {
+  starter: "redirect",
+  growth: "redirect",
+  pro: "basic_logging",
+};
+
+/** Local mirror of PLAN_CATALOG[*].limits.bulkInquiryHandling. */
+export const BULK_INQUIRY_HANDLING: Record<PlanKey, "redirect" | "automated"> = {
+  starter: "redirect",
+  growth: "redirect",
+  pro: "automated",
+};
+
+/** Local mirror of PLAN_CATALOG[*].limits.campaignAutomation — "limited" means only
+ * mentioned to customers with a prior purchase, "full" means mentioned to anyone. */
+export const CAMPAIGN_AUTOMATION: Record<PlanKey, "none" | "limited" | "full"> = {
+  starter: "none",
+  growth: "limited",
+  pro: "full",
+};
+
 // ============================================
 // Configuration
 // ============================================

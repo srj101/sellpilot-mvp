@@ -1,7 +1,7 @@
 import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod";
 
-import { desc, eq, and, inArray, createCustomerAndOrder, quoteOrder } from "@acme/db";
+import { desc, eq, and, inArray, sql, createCustomerAndOrder, quoteOrder } from "@acme/db";
 import type { db as Db } from "@acme/db/client";
 import { metaConnection, metaWebhookEvent, order, orderItem, transaction } from "@acme/db/schema";
 
@@ -129,7 +129,10 @@ function buildOrderCreatedMessage(
 }
 
 export const ordersRouter = {
-  /** Live price/stock preview for the manual order form — same pricing logic the AI agent uses. */
+  /** Live price/stock preview for the manual order form — same pricing logic the AI agent
+   * uses. The form itself is still single-product + one optional combo item (see
+   * create-order-sheet.tsx); translated to quoteOrder's items[] shape here so the
+   * underlying pricing helper only has one calling convention to support. */
   quote: businessScopedProcedure
     .input(
       z.object({
@@ -144,7 +147,12 @@ export const ordersRouter = {
       }),
     )
     .query(async ({ ctx, input }) => {
-      return quoteOrder({ businessId: ctx.businessId, ...input });
+      const { productId, variantId, quantity, comboProductId, comboVariantId, comboQuantity, district, offerCode } = input;
+      const items = [
+        { productId, variantId, quantity },
+        ...(comboProductId ? [{ productId: comboProductId, variantId: comboVariantId, quantity: comboQuantity ?? 1 }] : []),
+      ];
+      return quoteOrder({ businessId: ctx.businessId, items, district, offerCode });
     }),
 
   /**
@@ -182,11 +190,17 @@ export const ordersRouter = {
       // any later COD/payment notification (order-status-notify), back into the chat.
       const threadPlatform = input.threadId.split(":")[0] ?? "";
       const channel = CHAT_PLATFORMS.has(threadPlatform) ? threadPlatform : input.channel;
+      const { productId, variantId, quantity, comboProductId, comboVariantId, comboQuantity, ...rest } = input;
+      const items = [
+        { productId, variantId, quantity },
+        ...(comboProductId ? [{ productId: comboProductId, variantId: comboVariantId, quantity: comboQuantity ?? 1 }] : []),
+      ];
 
       const result = await createCustomerAndOrder({
         userId: ctx.businessOwnerId,
         businessId: ctx.businessId,
-        ...input,
+        ...rest,
+        items,
         channel,
       });
 
@@ -254,7 +268,13 @@ export const ordersRouter = {
 
       const [updated] = await ctx.db
         .update(order)
-        .set({ status: input.status })
+        .set({
+          status: input.status,
+          // COALESCE, not an unconditional overwrite — a later re-confirm of "delivered"
+          // (or any other field edit after delivery) must never reset the review-request
+          // sweep's delay window.
+          deliveredAt: input.status === "delivered" ? sql`COALESCE(${order.deliveredAt}, NOW())` : undefined,
+        })
         .where(and(eq(order.id, input.id), eq(order.businessId, businessId)))
         .returning({ channel: order.channel, threadId: order.threadId, orderNumber: order.orderNumber });
       if (!updated) return { success: false };

@@ -15,6 +15,7 @@ import { cn } from "@acme/ui";
 import { Skeleton } from "@acme/ui/skeleton";
 
 import { PlanGrid } from "~/app/_components/pricing/plan-grid";
+import { ConfirmDialog } from "~/app/[businessSlug]/dashboard/_components/confirm-dialog";
 import { useTRPC } from "~/trpc/react";
 
 function formatCurrency(val: number) {
@@ -69,6 +70,7 @@ export function BillingClient({ businessSlug }: { businessSlug: string }) {
   const qc = useQueryClient();
   const [changePlanOpen, setChangePlanOpen] = useState(false);
   const [busyPlan, setBusyPlan] = useState<PlanKey | null>(null);
+  const [cancelOpen, setCancelOpen] = useState(false);
 
   const { data: current, isPending: currentPending } = useQuery(trpc.subscription.getCurrent.queryOptions());
   const { data: usage, isPending: usagePending } = useQuery(trpc.subscription.getUsage.queryOptions());
@@ -103,6 +105,7 @@ export function BillingClient({ businessSlug }: { businessSlug: string }) {
   const cancelSub = useMutation(
     trpc.subscription.cancel.mutationOptions({
       onSuccess: (result) => {
+        setCancelOpen(false);
         toast.success(`Subscription will end on ${result.effectiveAt ? formatDate(result.effectiveAt) : "your period end"}.`);
         invalidateBilling();
       },
@@ -157,9 +160,10 @@ export function BillingClient({ businessSlug }: { businessSlug: string }) {
   }
 
   function handleCancel() {
-    if (!window.confirm("Cancel your subscription? You'll keep access until the end of your current period, then the business will be locked. Your data is never deleted.")) {
-      return;
-    }
+    setCancelOpen(true);
+  }
+
+  function handleConfirmCancel() {
     cancelSub.mutate();
   }
 
@@ -475,6 +479,17 @@ export function BillingClient({ businessSlug }: { businessSlug: string }) {
           </div>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        title="Cancel subscription?"
+        description="You'll keep access until the end of your current period, then the business will be locked. Your data is never deleted."
+        confirmLabel="Cancel Subscription"
+        destructive
+        loading={cancelSub.isPending}
+        onConfirm={handleConfirmCancel}
+      />
     </div>
   );
 }

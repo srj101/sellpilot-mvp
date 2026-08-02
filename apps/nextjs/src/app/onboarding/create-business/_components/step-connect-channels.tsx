@@ -9,6 +9,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { cn } from "@acme/ui";
 import { Button } from "@acme/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@acme/ui/tabs";
+import { Skeleton } from "@acme/ui/skeleton";
 import { ConnectedPagesList } from "../../../[businessSlug]/dashboard/integrations/_components/connected-pages-list";
 import { WhatsAppConnectButton } from "../../../[businessSlug]/dashboard/integrations/_components/whatsapp-connect-button";
 import {
@@ -51,7 +52,7 @@ export function StepConnectChannels({ businessSlug, onNext }: { businessSlug: st
   const connectError = searchParams.get("error");
   const { data: connections = [], refetch: refetchConnections } = useQuery(trpc.integrations.list.queryOptions());
   const { data: currentBusiness } = useQuery(trpc.business.current.queryOptions());
-  const { data: channelAccess } = useQuery(trpc.integrations.getChannelAccess.queryOptions());
+  const { data: channelAccess, isPending: channelAccessPending } = useQuery(trpc.integrations.getChannelAccess.queryOptions());
   const allowedChannels = new Set(channelAccess?.channels ?? []);
   const lockedMessenger = !!channelAccess && !allowedChannels.has("messenger");
   const lockedInstagram = !!channelAccess && !allowedChannels.has("instagram");
@@ -244,22 +245,28 @@ export function StepConnectChannels({ businessSlug, onNext }: { businessSlug: st
             <div className="space-y-4">
               <div className="flex items-center justify-between rounded-xl border p-5 bg-card text-card-foreground shadow-sm">
                 <div className="flex items-center gap-4">
-                  <div
-                    className={cn(
-                      "flex h-12 w-12 items-center justify-center rounded-full",
-                      lockedWhatsapp ? "bg-muted text-muted-foreground" : "bg-green-500/10 text-green-500",
-                    )}
-                  >
-                    {lockedWhatsapp ? <Lock className="h-5 w-5" /> : <MessageCircle className="h-6 w-6" />}
-                  </div>
+                  {channelAccessPending ? (
+                    <Skeleton className="h-12 w-12 shrink-0 rounded-full" />
+                  ) : (
+                    <div
+                      className={cn(
+                        "flex h-12 w-12 items-center justify-center rounded-full",
+                        lockedWhatsapp ? "bg-muted text-muted-foreground" : "bg-green-500/10 text-green-500",
+                      )}
+                    >
+                      {lockedWhatsapp ? <Lock className="h-5 w-5" /> : <MessageCircle className="h-6 w-6" />}
+                    </div>
+                  )}
                   <div>
                     <h3 className="font-semibold">WhatsApp Business</h3>
                     <p className="text-sm text-muted-foreground">
-                      {lockedWhatsapp ? "Not included in your current plan" : "Automate replies on WhatsApp"}
+                      {channelAccessPending ? "Checking your plan…" : lockedWhatsapp ? "Not included in your current plan" : "Automate replies on WhatsApp"}
                     </p>
                   </div>
                 </div>
-                {lockedWhatsapp ? (
+                {channelAccessPending ? (
+                  <Skeleton className="h-8 w-[100px] rounded-md" />
+                ) : lockedWhatsapp ? (
                   <UpgradeBadge />
                 ) : (
                   <div className="w-[100px]">
@@ -270,22 +277,28 @@ export function StepConnectChannels({ businessSlug, onNext }: { businessSlug: st
 
               <div className="flex items-center justify-between rounded-xl border p-5 bg-card text-card-foreground shadow-sm">
                 <div className="flex items-center gap-4">
-                  <div
-                    className={cn(
-                      "flex h-12 w-12 items-center justify-center rounded-full",
-                      lockedMessenger ? "bg-muted text-muted-foreground" : "bg-blue-500/10 text-blue-500",
-                    )}
-                  >
-                    {lockedMessenger ? <Lock className="h-5 w-5" /> : <Facebook className="h-6 w-6" />}
-                  </div>
+                  {channelAccessPending ? (
+                    <Skeleton className="h-12 w-12 shrink-0 rounded-full" />
+                  ) : (
+                    <div
+                      className={cn(
+                        "flex h-12 w-12 items-center justify-center rounded-full",
+                        lockedMessenger ? "bg-muted text-muted-foreground" : "bg-blue-500/10 text-blue-500",
+                      )}
+                    >
+                      {lockedMessenger ? <Lock className="h-5 w-5" /> : <Facebook className="h-6 w-6" />}
+                    </div>
+                  )}
                   <div>
                     <h3 className="font-semibold">Facebook Messenger</h3>
                     <p className="text-sm text-muted-foreground">
-                      {lockedMessenger ? "Not included in your current plan" : "Reply to comments and DMs"}
+                      {channelAccessPending ? "Checking your plan…" : lockedMessenger ? "Not included in your current plan" : "Reply to comments and DMs"}
                     </p>
                   </div>
                 </div>
-                {lockedMessenger ? (
+                {channelAccessPending ? (
+                  <Skeleton className="h-8 w-[100px] rounded-md" />
+                ) : lockedMessenger ? (
                   <UpgradeBadge />
                 ) : (
                   <Button
@@ -302,22 +315,28 @@ export function StepConnectChannels({ businessSlug, onNext }: { businessSlug: st
 
               <div className="flex items-center justify-between rounded-xl border p-5 bg-card text-card-foreground shadow-sm">
                 <div className="flex items-center gap-4">
-                  <div
-                    className={cn(
-                      "flex h-12 w-12 items-center justify-center rounded-full",
-                      lockedInstagram ? "bg-muted text-muted-foreground" : "bg-pink-500/10 text-pink-500",
-                    )}
-                  >
-                    {lockedInstagram ? <Lock className="h-5 w-5" /> : <Instagram className="h-6 w-6" />}
-                  </div>
+                  {channelAccessPending ? (
+                    <Skeleton className="h-12 w-12 shrink-0 rounded-full" />
+                  ) : (
+                    <div
+                      className={cn(
+                        "flex h-12 w-12 items-center justify-center rounded-full",
+                        lockedInstagram ? "bg-muted text-muted-foreground" : "bg-pink-500/10 text-pink-500",
+                      )}
+                    >
+                      {lockedInstagram ? <Lock className="h-5 w-5" /> : <Instagram className="h-6 w-6" />}
+                    </div>
+                  )}
                   <div>
                     <h3 className="font-semibold">Instagram DM</h3>
                     <p className="text-sm text-muted-foreground">
-                      {lockedInstagram ? "Not included in your current plan" : "Handle Instagram stories and messages"}
+                      {channelAccessPending ? "Checking your plan…" : lockedInstagram ? "Not included in your current plan" : "Handle Instagram stories and messages"}
                     </p>
                   </div>
                 </div>
-                {lockedInstagram ? (
+                {channelAccessPending ? (
+                  <Skeleton className="h-8 w-[100px] rounded-md" />
+                ) : lockedInstagram ? (
                   <UpgradeBadge />
                 ) : (
                   <Button
@@ -334,80 +353,80 @@ export function StepConnectChannels({ businessSlug, onNext }: { businessSlug: st
             </div>
           </div>
 
-          {/* Right Column: Tabbed Interface */}
+          {/* Right Column: single-channel picker while actively connecting one channel,
+              otherwise a tabbed review of everything already connected. Showing all 3 tabs
+              mid-pick (e.g. right after clicking "Connect" on Facebook) added confusing,
+              irrelevant tab-switching to what should be a single focused step. */}
           {showRightPanel && (
             <div className="rounded-2xl border bg-card p-6 shadow-sm flex flex-col h-full max-h-full">
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-                <TabsList className="grid w-full grid-cols-3 mb-6">
-                  <TabsTrigger value="facebook">Facebook</TabsTrigger>
-                  <TabsTrigger value="instagram">Instagram</TabsTrigger>
-                  <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
-                </TabsList>
-
-                {/* Facebook Tab */}
-                <TabsContent value="facebook" className="flex-1 overflow-y-auto outline-none scrollbar-thin">
+              {isPicking && pickerIntent === "facebook" ? (
+                <div className="flex-1 overflow-y-auto outline-none scrollbar-thin">
                   <div className="mb-6">
                     <p className="text-muted-foreground mb-2 text-sm font-medium">Connected Facebook Pages</p>
                     <ConnectedPagesList pages={fbPages} emptyLabel="No Page connected yet." />
                   </div>
-
-                  {isPicking && pickerIntent === "facebook" && (
-                    <div>
-                      <div className="mb-3 flex items-center justify-between gap-2">
-                        <p className="text-muted-foreground text-sm font-medium">Available Pages — click to connect</p>
-                        <form action={cancelMetaSelection}>
-                          <input type="hidden" name="channel" value="facebook" />
-                          <input type="hidden" name="returnTo" value={returnTo} />
-                          <DoneButton />
-                        </form>
-                      </div>
-                      {pickerError ? (
-                        <ErrorState errorMsg={pickerError} />
-                      ) : (
-                        <FacebookPagePicker pages={fbAvailable} connectedIds={fbConnectedIds} returnTo={returnTo} />
-                      )}
+                  <div>
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <p className="text-muted-foreground text-sm font-medium">Available Pages — click to connect</p>
+                      <form action={cancelMetaSelection}>
+                        <input type="hidden" name="channel" value="facebook" />
+                        <input type="hidden" name="returnTo" value={returnTo} />
+                        <DoneButton />
+                      </form>
                     </div>
-                  )}
-                </TabsContent>
-
-                {/* Instagram Tab */}
-                <TabsContent value="instagram" className="flex-1 overflow-y-auto outline-none scrollbar-thin">
+                    {pickerError ? (
+                      <ErrorState errorMsg={pickerError} />
+                    ) : (
+                      <FacebookPagePicker pages={fbAvailable} connectedIds={fbConnectedIds} returnTo={returnTo} />
+                    )}
+                  </div>
+                </div>
+              ) : isPicking && pickerIntent === "instagram" ? (
+                <div className="flex-1 overflow-y-auto outline-none scrollbar-thin">
                   <div className="mb-6">
                     <p className="text-muted-foreground mb-2 text-sm font-medium">Connected Instagram Accounts</p>
                     <ConnectedPagesList pages={igPages} emptyLabel="No Account connected yet." />
                   </div>
-
-                  {isPicking && pickerIntent === "instagram" && (
-                    <div>
-                      <div className="mb-3 flex items-center justify-between gap-2">
-                        <p className="text-muted-foreground text-sm font-medium">Available Accounts — click to connect</p>
-                        <form action={cancelMetaSelection}>
-                          <input type="hidden" name="channel" value="instagram" />
-                          <input type="hidden" name="returnTo" value={returnTo} />
-                          <DoneButton />
-                        </form>
-                      </div>
-                      {pickerError ? (
-                        <ErrorState errorMsg={pickerError} />
-                      ) : (
-                        <InstagramAccountPicker
-                          pages={igAvailable}
-                          connectedIds={igConnectedIds}
-                          returnTo={returnTo}
-                        />
-                      )}
+                  <div>
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <p className="text-muted-foreground text-sm font-medium">Available Accounts — click to connect</p>
+                      <form action={cancelMetaSelection}>
+                        <input type="hidden" name="channel" value="instagram" />
+                        <input type="hidden" name="returnTo" value={returnTo} />
+                        <DoneButton />
+                      </form>
                     </div>
-                  )}
-                </TabsContent>
+                    {pickerError ? (
+                      <ErrorState errorMsg={pickerError} />
+                    ) : (
+                      <InstagramAccountPicker pages={igAvailable} connectedIds={igConnectedIds} returnTo={returnTo} />
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
+                  <TabsList className="grid w-full grid-cols-3 mb-6">
+                    <TabsTrigger value="facebook">Facebook</TabsTrigger>
+                    <TabsTrigger value="instagram">Instagram</TabsTrigger>
+                    <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
+                  </TabsList>
 
-                {/* WhatsApp Tab */}
-                <TabsContent value="whatsapp" className="flex-1 overflow-y-auto outline-none scrollbar-thin">
-                  <div className="mb-6">
+                  <TabsContent value="facebook" className="flex-1 overflow-y-auto outline-none scrollbar-thin">
+                    <p className="text-muted-foreground mb-2 text-sm font-medium">Connected Facebook Pages</p>
+                    <ConnectedPagesList pages={fbPages} emptyLabel="No Page connected yet." />
+                  </TabsContent>
+
+                  <TabsContent value="instagram" className="flex-1 overflow-y-auto outline-none scrollbar-thin">
+                    <p className="text-muted-foreground mb-2 text-sm font-medium">Connected Instagram Accounts</p>
+                    <ConnectedPagesList pages={igPages} emptyLabel="No Account connected yet." />
+                  </TabsContent>
+
+                  <TabsContent value="whatsapp" className="flex-1 overflow-y-auto outline-none scrollbar-thin">
                     <p className="text-muted-foreground mb-2 text-sm font-medium">Connected WhatsApp Accounts</p>
                     <ConnectedPagesList pages={waPages} emptyLabel="No Account connected yet." />
-                  </div>
-                </TabsContent>
-              </Tabs>
+                  </TabsContent>
+                </Tabs>
+              )}
             </div>
           )}
       </div>

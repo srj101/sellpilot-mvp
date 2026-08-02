@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Package,
   Search,
@@ -21,6 +20,7 @@ import {
 import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
 import { Input } from "@acme/ui/input";
+import { Skeleton } from "@acme/ui/skeleton";
 import { toast } from "@acme/ui/toast";
 import { cn } from "@acme/ui";
 import { useTRPC } from "~/trpc/react";
@@ -96,15 +96,12 @@ function channelLabel(channel: string | null) {
   return map[channel] ?? channel;
 }
 
-export function OrdersClient({
-  initialOrders,
-  initialItems,
-}: {
-  initialOrders: Order[];
-  initialItems: OrderItem[];
-}) {
-  const router = useRouter();
+export function OrdersClient() {
   const trpc = useTRPC();
+  const qc = useQueryClient();
+  const { data, isPending } = useQuery(trpc.orders.list.queryOptions());
+  const initialOrders = data?.orders ?? [];
+  const initialItems = data?.items ?? [];
   const updateStatusMutation = useMutation(trpc.orders.updateStatus.mutationOptions());
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -121,7 +118,7 @@ export function OrdersClient({
           ? `Order marked ${newStatus} — customer notified`
           : `Order marked ${newStatus}`,
       );
-      router.refresh();
+      void qc.invalidateQueries({ queryKey: trpc.orders.list.queryKey() });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update order status");
     } finally {
@@ -191,9 +188,13 @@ export function OrdersClient({
             )}
           >
             <p className="text-xs font-medium text-muted-foreground">{s.label}</p>
-            <p className={cn("mt-1 text-2xl font-bold tabular-nums", s.text)}>
-              {s.value}
-            </p>
+            {isPending ? (
+              <Skeleton className="mt-1.5 h-7 w-16" />
+            ) : (
+              <p className={cn("mt-1 text-2xl font-bold tabular-nums", s.text)}>
+                {s.value}
+              </p>
+            )}
           </div>
         ))}
       </div>
@@ -225,7 +226,23 @@ export function OrdersClient({
       </div>
 
       {/* Orders List */}
-      {filtered.length === 0 ? (
+      {isPending ? (
+        <div className="space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 rounded-2xl border bg-card p-4">
+              <Skeleton className="h-10 w-10 shrink-0 rounded-xl" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-28" />
+              </div>
+              <div className="hidden space-y-2 text-right sm:block">
+                <Skeleton className="ml-auto h-5 w-16" />
+                <Skeleton className="ml-auto h-3 w-20" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed py-16">
           <Package className="h-12 w-12 text-muted-foreground/40" />
           <p className="mt-4 text-lg font-medium text-muted-foreground">

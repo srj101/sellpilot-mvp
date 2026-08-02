@@ -28,7 +28,7 @@ import type {
   ToolCallLog,
   ConversationContext,
 } from "./types";
-import { buildSalesAgentSystemPrompt, FALLBACK_RESPONSES } from "./prompts";
+import { buildGreetingInstruction, buildSalesAgentSystemPrompt, FALLBACK_RESPONSES } from "./prompts";
 import { getAllTools, getBusinessHelpers, setConnectionContext, setToolContext } from "./tools/index";
 import { stripMarkdown } from "./sanitize";
 
@@ -357,13 +357,17 @@ export class SalesAgentGraph {
       console.error("[SalesAgentGraph] Failed to fetch business profile for prompt:", err);
     }
 
+    const planKey = input.context.planKey ?? this.planKey;
+
     // System prompt with user context
-    const systemPrompt = `${buildSalesAgentSystemPrompt(profile, input.context.planKey ?? this.planKey)}
+    const systemPrompt = `${buildSalesAgentSystemPrompt(profile, planKey)}
 
 Platform: ${input.context.platform}
 ${input.context.customerName ? `Customer name: ${input.context.customerName}` : ""}
 ${input.context.conversationSummary ? `Summary of the conversation so far (may be slightly out of date — the messages below are the current source of truth for anything recent): ${input.context.conversationSummary}` : ""}
-${input.context.knownCustomer ? `This customer's real on-file delivery details from a previous order in this conversation — use these EXACT values if you need to state or reuse them, never a different name/phone/address: name "${input.context.knownCustomer.name}", phone "${input.context.knownCustomer.phone}", address "${input.context.knownCustomer.address}".` : "No on-file delivery details for this customer yet — this would be their first order in this conversation."}`;
+${input.context.knownCustomer ? `This customer's real on-file delivery details from a previous order in this conversation — use these EXACT values if you need to state or reuse them, never a different name/phone/address: name "${input.context.knownCustomer.name}", phone "${input.context.knownCustomer.phone}", address "${input.context.knownCustomer.address}".` : "No on-file delivery details for this customer yet — this would be their first order in this conversation."}
+
+${buildGreetingInstruction(planKey, Boolean(input.context.knownCustomer))}`;
 
     messages.push(new SystemMessage(systemPrompt));
 

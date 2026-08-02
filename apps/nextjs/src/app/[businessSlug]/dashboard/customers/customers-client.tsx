@@ -2,35 +2,28 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import {
   Search,
   Plus,
   ChevronRight,
-  MoreHorizontal,
 } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
 import { Input } from "@acme/ui/input";
+import { Skeleton } from "@acme/ui/skeleton";
 import { initials, avatarColor, formatCurrency } from "../(home)/_components/dashboard-utils";
 import { useBusinessSlug } from "~/hooks/use-business-slug";
+import { useTRPC } from "~/trpc/react";
 
-type Customer = {
-  id: string;
-  name: string;
-  phone: string | null;
-  email: string | null;
-  address: string | null;
-  district: string | null;
-  country: string | null;
-  totalOrders: number;
-  totalSpent: number;
-  createdAt: string | Date;
-};
-
-export function CustomersClient({ initialCustomers }: { initialCustomers: Customer[] }) {
+export function CustomersClient() {
+  const trpc = useTRPC();
   const businessSlug = useBusinessSlug();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+
+  const { data: customers, isPending } = useQuery(trpc.customers.list.queryOptions());
+  const initialCustomers = customers ?? [];
 
   const filtered = initialCustomers.filter((c) => {
     const s = search.toLowerCase();
@@ -106,7 +99,24 @@ export function CustomersClient({ initialCustomers }: { initialCustomers: Custom
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filtered.map((c) => {
+                {isPending ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <tr key={i}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
+                          <Skeleton className="h-4 w-28" />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-32" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
+                      <td className="px-4 py-3 text-right"><Skeleton className="ml-auto h-4 w-8" /></td>
+                      <td className="px-4 py-3 text-right"><Skeleton className="ml-auto h-4 w-16" /></td>
+                      <td className="px-4 py-3 text-center"><Skeleton className="mx-auto h-5 w-16 rounded-full" /></td>
+                      <td className="px-4 py-3" />
+                    </tr>
+                  ))
+                ) : filtered.map((c) => {
                   const isActive = c.totalOrders > 0;
                   return (
                     <tr key={c.id} className="hover:bg-muted/30 transition-colors group">
@@ -156,7 +166,7 @@ export function CustomersClient({ initialCustomers }: { initialCustomers: Custom
                   );
                 })}
 
-                {filtered.length === 0 && (
+                {!isPending && filtered.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-4 py-16 text-center text-muted-foreground text-sm">
                       No customers match your query.

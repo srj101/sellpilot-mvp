@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Papa from "papaparse";
 import {
   AlertCircle,
@@ -26,9 +26,11 @@ import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
 import { Input } from "@acme/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@acme/ui/dialog";
+import { Skeleton } from "@acme/ui/skeleton";
 import { toast } from "@acme/ui/toast";
 import { cn } from "@acme/ui";
 
+import { ConfirmDialog } from "~/app/[businessSlug]/dashboard/_components/confirm-dialog";
 import { useTRPC } from "~/trpc/react";
 import { ProductForm } from "./product-form";
 
@@ -50,27 +52,22 @@ function pickField(row: Record<string, string>, ...keys: string[]) {
   return undefined;
 }
 
-interface ProductsClientProps {
-  initialProducts?: any[];
-  initialVariants?: any[];
-}
-
-export function ProductsClient({
-  initialProducts = [],
-  initialVariants = [],
-}: ProductsClientProps) {
+export function ProductsClient() {
   const trpc = useTRPC();
+  const qc = useQueryClient();
   const deleteProductMutation = useMutation(trpc.products.delete.mutationOptions());
   const testImageSearchMutation = useMutation(trpc.products.testImageSearch.mutationOptions());
   const bulkCreateMutation = useMutation(trpc.products.bulkCreate.mutationOptions());
   const { data: usage } = useQuery(trpc.products.getUsage.queryOptions());
   const atLimit = usage?.remaining === 0;
-  const [products, setProducts] = useState<any[]>(initialProducts ?? []);
-  const [variants, setVariants] = useState<any[]>(initialVariants ?? []);
+  const { data: productsData, isPending } = useQuery(trpc.products.list.queryOptions());
+  const products = productsData?.products ?? [];
+  const variants = productsData?.variants ?? [];
   const [view, setView] = useState<"list" | "create" | "edit" | "sandbox">(
     "list",
   );
   const [editingProduct, setEditingProduct] = useState<any>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   // CSV bulk import state
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -119,16 +116,18 @@ export function ProductsClient({
     setView("edit");
   };
 
-  const handleDeleteClick = async (productId: string) => {
-    if (confirm("Are you sure you want to delete this product?")) {
-      try {
-        await deleteProductMutation.mutateAsync({ productId });
-        // Refresh local state
-        setProducts((prev) => prev.filter((p) => p.id !== productId));
-        setVariants((prev) => prev.filter((v) => v.productId !== productId));
-      } catch {
-        alert("Failed to delete product");
-      }
+  const handleDeleteClick = (productId: string) => {
+    setDeleteTarget(productId);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteProductMutation.mutateAsync({ productId: deleteTarget });
+      void qc.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
+      setDeleteTarget(null);
+    } catch {
+      alert("Failed to delete product");
     }
   };
 
@@ -510,7 +509,28 @@ export function ProductsClient({
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {products.map((p) => (
+                {isPending && (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <tr key={i}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <Skeleton className="h-10 w-10 shrink-0 rounded-xl" />
+                          <div className="space-y-1.5">
+                            <Skeleton className="h-4 w-32" />
+                            <Skeleton className="h-3 w-44" />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3"><Skeleton className="h-5 w-14 rounded-full" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
+                      <td className="px-4 py-3"><Skeleton className="ml-auto h-4 w-12" /></td>
+                    </tr>
+                  ))
+                )}
+
+                {!isPending && products.map((p) => (
                   <tr
                     key={p.id}
                     className="hover:bg-muted/30 transition-colors"
@@ -583,7 +603,7 @@ export function ProductsClient({
                   </tr>
                 ))}
 
-                {products.length === 0 && (
+                {!isPending && products.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-4 py-16 text-center text-muted-foreground">
                       <div className="flex flex-col items-center justify-center">
@@ -744,6 +764,17 @@ export function ProductsClient({
           )}
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete product?"
+        description="This will permanently remove the product and its variants. This action can't be undone."
+        confirmLabel="Delete"
+        destructive
+        loading={deleteProductMutation.isPending}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }

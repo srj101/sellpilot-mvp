@@ -14,6 +14,13 @@ export interface WorkerConfig {
   openaiBaseUrl?: string;
   openaiModel: string;
 
+  // Voice transcription — separate from the chat model above so the provider can be
+  // swapped (self-hosted Whisper now, OpenAI or anything else later) via env vars only.
+  // Defaults point at the local self-hosted whisper-server container from scripts/dev.sh.
+  transcriptionBaseUrl: string;
+  transcriptionApiKey: string;
+  transcriptionModel: string;
+
   // Meta
   facebookAppSecret: string;
 
@@ -40,6 +47,11 @@ export function loadConfig(): WorkerConfig {
     openaiApiKey: process.env.OPENAI_API_KEY ?? "",
     openaiBaseUrl: process.env.OPENAI_BASE_URL,
     openaiModel: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+
+    // Voice transcription
+    transcriptionBaseUrl: process.env.TRANSCRIPTION_BASE_URL ?? "http://localhost:9000/v1/audio/transcriptions",
+    transcriptionApiKey: process.env.TRANSCRIPTION_API_KEY ?? "local-dev-whisper-key",
+    transcriptionModel: process.env.TRANSCRIPTION_MODEL ?? "whisper-1",
 
     // Meta
     facebookAppSecret: process.env.FACEBOOK_APP_SECRET ?? "",

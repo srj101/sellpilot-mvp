@@ -335,7 +335,22 @@ export const businessRouter = {
       .where(eq(business.id, ctx.businessId))
       .limit(1);
     if (!org) throw new Error("Store not found");
-    return org;
+    // metadata has been written two ways historically — as a bare description string and as
+    // JSON.stringify({ description }) (onboarding create). Normalize both on read so the
+    // settings page never shows raw `{"description":...}` in the description field.
+    let description: string | null = null;
+    if (org.metadata) {
+      try {
+        const parsed = JSON.parse(org.metadata) as unknown;
+        if (typeof parsed === "string") description = parsed;
+        else if (parsed && typeof parsed === "object" && typeof (parsed as { description?: unknown }).description === "string") {
+          description = (parsed as { description: string }).description;
+        } else description = org.metadata;
+      } catch {
+        description = org.metadata;
+      }
+    }
+    return { id: org.id, name: org.name, slug: org.slug, logo: org.logo, metadata: org.metadata, description };
   }),
 
   update: ownerOnlyProcedure

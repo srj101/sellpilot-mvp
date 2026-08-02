@@ -4,6 +4,29 @@ import { business, user } from "./auth-schema";
 import { order, subscription } from "./agent-schema";
 
 /**
+ * Platform-level config, set by a superadmin — distinct from any business's own settings.
+ * Singleton table (exactly one row expected; callers just select the first one). Holds the
+ * SellPilot platform's OWN SSLCommerz merchant credentials, used only for SaaS subscription
+ * billing (business owners paying SellPilot for their plan) — never for customer order
+ * checkout, which uses each business's own credentials on businessProfile instead. Falls
+ * back to the SSLCOMMERZ_STORE_ID/PASSWORD env vars until a superadmin sets this, so nothing
+ * breaks on deploy before the panel is used.
+ *
+ * Sandbox vs. live is deliberately NOT a field here (or on businessProfile) — it's the
+ * SSLCOMMERZ_IS_SANDBOX env var, a deploy-time decision, not something a superadmin or
+ * business owner should be able to flip on a production environment via a UI toggle.
+ */
+export const platformSettings = pgTable("platform_settings", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  sslcommerzStoreId: text("sslcommerz_store_id"),
+  sslcommerzStorePassword: text("sslcommerz_store_password"),
+  updatedAt: timestamp("updated_at")
+    .defaultNow()
+    .$onUpdate(() => new Date())
+    .notNull(),
+});
+
+/**
  * SellPilot billing cards only — never bKash/Nagad (see SELLPILOT_PHASE1_BILLING_PAYMENTS_PLAN.md
  * D5: SaaS billing restricts SSLCommerz to card/bank rails via multi_card_name).
  */
@@ -49,8 +72,12 @@ export const saasInvoice = pgTable(
     invoiceNumber: text("invoice_number").notNull(),
     plan: text("plan").notNull(),
     billingCycle: text("billing_cycle").notNull(),
-    /** Whole taka */
+    /** Whole taka — includes overageAmount below, not just the base plan price */
     amount: integer("amount").notNull(),
+    /** Whole taka, already folded into amount above — broken out separately so the
+     * invoice can show "Plan: X, Overage: Y, Total: X+Y" transparently instead of one
+     * unexplained number (pricing doc: "billed simply and transparently"). */
+    overageAmount: integer("overage_amount").default(0).notNull(),
     /** "paid" | "pending" | "failed" | "refunded" */
     status: text("status").default("pending").notNull(),
     periodStart: timestamp("period_start").notNull(),

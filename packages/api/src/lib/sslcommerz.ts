@@ -4,10 +4,27 @@
  * Delivery does not go through this at all (see router/checkout.ts).
  * https://developer.sslcommerz.com/doc/v4/
  *
- * Reads process.env directly (no zod validation layer here) since this package
- * is shared and doesn't own an app-level env schema — the Next.js app still
- * declares & validates these vars at boot via its own src/env.ts.
+ * Store credentials are ALWAYS passed in explicitly, never read from process.env here — two
+ * completely separate merchant accounts use this module: each business's own store
+ * (customer order checkout, credentials on businessProfile) and the SellPilot platform's own
+ * store (SaaS billing, credentials on platformSettings, superadmin-managed). Mixing those up
+ * would route a business's customer payments into the platform's own account. Callers that
+ * want the platform's credentials (with an env-var fallback until a superadmin sets the DB
+ * row) use resolvePlatformCredentials below instead of reading process.env themselves.
+ *
+ * Sandbox vs. live is the ONE exception — that stays a single SSLCOMMERZ_IS_SANDBOX env var
+ * (deploy-time), not part of either credential set, so it's never something a superadmin or
+ * business owner can flip via a settings UI on a production deploy.
  */
+import { eq } from "@acme/db";
+import type { db as Db } from "@acme/db/client";
+import { platformSettings } from "@acme/db/schema";
+
+export interface SslcommerzCredentials {
+  storeId: string;
+  storePassword: string;
+}
+
 function isSandbox() {
   return process.env.SSLCOMMERZ_IS_SANDBOX !== "false";
 }
@@ -16,8 +33,27 @@ function baseUrl() {
   return isSandbox() ? "https://sandbox.sslcommerz.com" : "https://securepay.sslcommerz.com";
 }
 
-export function isSslcommerzConfigured() {
-  return Boolean(process.env.SSLCOMMERZ_STORE_ID && process.env.SSLCOMMERZ_STORE_PASSWORD);
+export function hasCredentials(
+  creds: Partial<SslcommerzCredentials> | null | undefined,
+): creds is SslcommerzCredentials {
+  return Boolean(creds?.storeId && creds.storePassword);
+}
+
+/** The SellPilot PLATFORM's own SSLCommerz credentials — for SaaS billing only, never a
+ * business's customer checkout (see the header comment above). Superadmin-configured DB row
+ * wins; falls back to the env vars so nothing breaks before that panel is used. Shared by
+ * subscription.ts (router) and subscription-renewal.ts (worker) — the two places that
+ * actually charge a business owner for their SellPilot plan. */
+export async function resolvePlatformCredentials(db: typeof Db): Promise<SslcommerzCredentials> {
+  const [row] = await db.select().from(platformSettings).limit(1);
+  const creds = {
+    storeId: row?.sslcommerzStoreId ?? process.env.SSLCOMMERZ_STORE_ID ?? undefined,
+    storePassword: row?.sslcommerzStorePassword ?? process.env.SSLCOMMERZ_STORE_PASSWORD ?? undefined,
+  };
+  if (!hasCredentials(creds)) {
+    throw new Error("SellPilot's payment gateway isn't configured yet — contact support.");
+  }
+  return creds;
 }
 
 /**
@@ -28,6 +64,7 @@ export function isSslcommerzConfigured() {
 export const CARD_AND_BANK_GATEWAYS = ["visacard", "mastercard", "amexcard", "internetbank"];
 
 export interface InitiatePaymentInput {
+  credentials: SslcommerzCredentials;
   transactionId: string;
   /** Whole taka, not paisa */
   amount: number;
@@ -54,11 +91,7 @@ export type InitiatePaymentResult =
   | { ok: false; reason: string };
 
 export async function initiatePayment(input: InitiatePaymentInput): Promise<InitiatePaymentResult> {
-  const storeId = process.env.SSLCOMMERZ_STORE_ID;
-  const storePassword = process.env.SSLCOMMERZ_STORE_PASSWORD;
-  if (!storeId || !storePassword) {
-    return { ok: false, reason: "SSLCommerz is not configured (missing SSLCOMMERZ_STORE_ID / SSLCOMMERZ_STORE_PASSWORD)." };
-  }
+  const { storeId, storePassword } = input.credentials;
 
   const body = new URLSearchParams({
     store_id: storeId,
@@ -134,10 +167,8 @@ function normalizeMethod(rawCardType: string | undefined): string {
 }
 
 /** Called from checkout.markOrderPaid to verify a payment server-to-server before trusting it. */
-export async function validatePayment(valId: string): Promise<ValidatePaymentResult> {
-  const storeId = process.env.SSLCOMMERZ_STORE_ID;
-  const storePassword = process.env.SSLCOMMERZ_STORE_PASSWORD;
-  if (!storeId || !storePassword) return { valid: false };
+export async function validatePayment(valId: string, credentials: SslcommerzCredentials): Promise<ValidatePaymentResult> {
+  const { storeId, storePassword } = credentials;
 
   const params = new URLSearchParams({
     val_id: valId,

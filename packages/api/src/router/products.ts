@@ -18,10 +18,12 @@ const VariantInput = z.object({
   option2: z.string().optional(),
   option3: z.string().optional(),
   price: z.number(),
-  compareAtPrice: z.number().optional(),
-  sku: z.string().optional(),
+  // Nullable, not just optional — product-form.tsx sends an explicit null (not undefined)
+  // for these when the owner leaves them blank, matching the nullable DB columns.
+  compareAtPrice: z.number().nullable().optional(),
+  sku: z.string().nullable().optional(),
   inventoryQuantity: z.number(),
-  imageUrl: z.string().optional(),
+  imageUrl: z.string().nullable().optional(),
 });
 
 const ProductInput = z.object({

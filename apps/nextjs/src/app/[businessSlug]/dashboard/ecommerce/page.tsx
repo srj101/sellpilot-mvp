@@ -1,13 +1,14 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { ShoppingBag, TrendingUp, Sparkles, AlertTriangle, ArrowUpRight, DollarSign, Percent, Gift, Lock } from "lucide-react";
+import { ShoppingBag, TrendingUp, AlertTriangle, ArrowUpRight, DollarSign, Percent } from "lucide-react";
 
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
 import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@acme/ui/card";
 import { Button } from "@acme/ui/button";
+import { UpgradeBanner } from "../_components/upgrade-banner";
 
 function trendText(value: number | null, suffix: string) {
   if (value === null) return { text: "No prior data", positive: true };
@@ -28,39 +29,14 @@ export default async function EcommercePage({ params }: { params: Promise<{ busi
 
   const { totalSales, totalSalesTrend, totalOrders, totalOrdersTrend, aov, aovTrend, conversionRate, conversionRateTrend, salesSeries, inventoryStatus, promoCodePerformance } = overview;
 
-  if (tier === "none") {
-    return (
-      <DashboardShell>
-        <div className="space-y-6">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">eCommerce Overview</h1>
-            <p className="text-muted-foreground mt-1 text-sm">Sales, inventory, and promo performance for your business.</p>
-          </div>
-          <Card className="card-hover">
-            <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-                <Lock className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <div>
-                <p className="font-semibold text-foreground">eCommerce Overview is a Growth &amp; Pro feature</p>
-                <p className="mt-1 text-sm text-muted-foreground">Upgrade your plan to see sales, inventory, and promo performance in one place.</p>
-              </div>
-              <Link href={`/${businessSlug}/dashboard/pricing`}>
-                <Button className="gap-2">
-                  Upgrade plan
-                  <ArrowUpRight className="h-4 w-4" />
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-        </div>
-      </DashboardShell>
-    );
-  }
-
   return (
     <DashboardShell>
       <div className="space-y-6">
+        {/* UX/QA pass gating pattern (docs/UX_QA_PASS.md): real UI always renders — for
+            Starter this is genuinely real, all-zero data — with this banner on top instead
+            of the old full-page lock replacing everything. */}
+        {tier === "none" && <UpgradeBanner businessSlug={businessSlug} feature="eCommerce Overview" requiredPlan="growth" />}
+
         {/* Header Banner */}
         <div
           className="relative overflow-hidden rounded-2xl p-6 sm:p-8"

@@ -26,10 +26,12 @@ import {
 } from "./handlers/index.js";
 import { runSubscriptionRenewal, runTrialExpirySweep } from "./handlers/subscription-renewal.js";
 import { runConversationFollowUp } from "./handlers/conversation-followup.js";
+import { runReviewRequestSweep } from "./handlers/review-request.js";
 import { handleOrderStatusNotify } from "./handlers/order-status-notify.js";
 
 const DAY_MS = 86_400_000;
 const FIVE_MIN_MS = 5 * 60_000;
+const HOUR_MS = 60 * 60_000;
 
 const config = loadConfig();
 
@@ -97,16 +99,23 @@ async function initializeAIHelpers() {
         getCustomerByPhone: aiHelpers.getCustomerByPhone,
         getCustomerPurchaseHistory: aiHelpers.getCustomerPurchaseHistory,
         confirmCodForThread: aiHelpers.confirmCodForThread,
+        getPendingReviewOrder: aiHelpers.getPendingReviewOrder,
+        submitReview: aiHelpers.submitReview,
       },
       businessHelpers: {
         getBusinessProfile: aiHelpers.getBusinessProfile,
         getOfferByCode: aiHelpers.getOfferByCode,
         getComboOffersForProduct: aiHelpers.getComboOffersForProduct,
         getFAQMatches: aiHelpers.getFAQMatches,
+        escalateToHuman: aiHelpers.escalateToHuman,
+        logComplaint: aiHelpers.logComplaint,
+        routeBulkInquiry: aiHelpers.routeBulkInquiry,
+        getActiveCampaigns: aiHelpers.getActiveCampaigns,
+        hasPriorPurchases: aiHelpers.hasPriorPurchases,
       },
       checkoutHelpers: {
         quoteOrder: aiHelpers.quoteOrder,
-        recordSessionCartItem: aiHelpers.recordSessionCartItem,
+        upsertActiveCart: aiHelpers.upsertActiveCart,
       },
       // Wires up sendProductImageTool (packages/ai-agent/src/tools/media-tools.ts) —
       // previously never provided here, so the tool always failed with "Image sending
@@ -233,6 +242,18 @@ function registerHandlers() {
     { onCompleted: rescheduleConversationFollowUp, onFailed: rescheduleConversationFollowUp },
   );
 
+  // Hourly, not 5-min like abandoned-cart — the delay window here is a full day, so
+  // hourly granularity is more than enough and keeps the sweep's DB load down.
+  const rescheduleReviewRequestSweep = () =>
+    void queue.enqueue("review-request-sweep", {}, { delay: HOUR_MS, jobId: "review-request-sweep-loop" });
+  queue.process(
+    "review-request-sweep",
+    async () => {
+      await runReviewRequestSweep();
+    },
+    { onCompleted: rescheduleReviewRequestSweep, onFailed: rescheduleReviewRequestSweep },
+  );
+
   console.log("[Worker] Job handlers registered");
 }
 
@@ -244,6 +265,7 @@ function scheduleBillingJobs() {
   void queue.enqueue("subscription-renewal", {}, { delay: initialDelayMs, jobId: "subscription-renewal-loop" });
   void queue.enqueue("trial-expiry-sweep", {}, { delay: initialDelayMs, jobId: "trial-expiry-sweep-loop" });
   void queue.enqueue("conversation-followup", {}, { delay: initialDelayMs, jobId: "conversation-followup-loop" });
+  void queue.enqueue("review-request-sweep", {}, { delay: initialDelayMs, jobId: "review-request-sweep-loop" });
 }
 
 // Graceful shutdown

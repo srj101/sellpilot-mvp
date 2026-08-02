@@ -17,6 +17,7 @@ import { ReplyForm } from "./_components/reply-form";
 import { ThreadHeaderActions } from "./_components/thread-header-actions";
 import { ContactPanel } from "./_components/contact-panel";
 import { InboxTabsBar } from "./_components/inbox-tabs-bar";
+import { HighTrafficBanner } from "./_components/high-traffic-banner";
 import {
   avatarColor,
   channelIcon,
@@ -124,6 +125,7 @@ export default async function InboxPage(props: {
     <DashboardShell>
       <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border bg-card">
         <InboxTabsBar threads={data.threads} />
+        <HighTrafficBanner />
 
         <div
           className={cn(

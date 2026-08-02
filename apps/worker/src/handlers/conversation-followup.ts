@@ -7,21 +7,23 @@
  *
  * Tiered per spec §6 "Abandoned Cart Recovery": Starter gets nothing, Growth gets a
  * generic nudge (never references the product), Pro gets a real LLM-personalized message
- * built from the actual cart item recorded by quoteOrderTool (see
- * packages/db/src/helpers/aiHelpers.ts's recordSessionCartItem).
+ * built from the actual active cart (every item, not just one) recorded by quoteOrderTool
+ * (see packages/db/src/helpers/aiHelpers.ts's upsertActiveCart) in the dedicated `cart`
+ * table — agentSession itself only still drives the "is this thread mid-purchase and
+ * quiet long enough" prefilter below, not what to reference in the message.
  */
 import { and, eq, inArray, isNull, lt } from "@acme/db";
 import { db } from "@acme/db/client";
-import { agentSession, businessProfile, metaConnection } from "@acme/db/schema";
-import type { AgentSessionState } from "@acme/db/schema";
+import { agentSession, businessProfile, cart, metaConnection } from "@acme/db/schema";
 import { getBusinessProfile, getComboOffersForProduct, createNotification } from "@acme/db/helpers/aiHelpers";
+import type { ActiveCartItem } from "@acme/db/helpers/aiHelpers";
 import { MessagingService } from "@acme/messaging";
 import type { PlatformConnection, PlatformType } from "@acme/messaging";
 import { createSalesAgent } from "@acme/ai-agent";
 import type { PlanKey } from "@acme/api/plans";
 
 import { loadConfig } from "../config.js";
-import { checkAiTokenAvailability, incrementAiToken } from "../lib/ai-tokens.js";
+import { checkAiConversationAvailability, incrementAiConversation } from "../lib/ai-conversations.js";
 import { getBusinessPlanKeys } from "../lib/plan.js";
 
 const DEFAULT_FOLLOW_UP_DELAY_MIN = 30; // the spec's stated default, and businessProfile's column default
@@ -58,26 +60,29 @@ function buildGenericFollowUpText(): string {
   return "Still there? Happy to help you find the right product and get your order sorted — just reply here.";
 }
 
-/** Pro tier: a real LLM call composing a message from the actual cart item + any live
- * combo incentive for it. Falls back to the generic text on any failure — a nudge should
- * still go out even if personalization fails. */
+/** Pro tier: a real LLM call composing a message from every item in the actual active
+ * cart + any live combo incentive for the first one. Falls back to the generic text on
+ * any failure — a nudge should still go out even if personalization fails. */
 async function generatePersonalizedFollowUp(
   businessId: string,
-  item: NonNullable<AgentSessionState["cart"]>[number],
-): Promise<{ text: string; tokensUsed: number }> {
+  items: ActiveCartItem[],
+): Promise<{ text: string; usedAi: boolean }> {
   try {
+    const primary = items[0]!;
     const [profile, combos] = await Promise.all([
       getBusinessProfile(businessId).catch(() => null),
-      getComboOffersForProduct(businessId, item.productId).catch(() => []),
+      getComboOffersForProduct(businessId, primary.productId).catch(() => []),
     ]);
 
     const combo = combos[0];
     const incentive = combo
       ? `${combo.partnerProductName ?? "a partner product"} — ${combo.type === "fixed" ? `৳${combo.value} off` : `${combo.value}% off`} (offer: ${combo.title})`
       : null;
-    const variantNote = item.variantTitle ? ` (${item.variantTitle})` : "";
+    const itemsDescription = items
+      .map((i) => `"${i.name}${i.variantTitle ? ` (${i.variantTitle})` : ""}" priced at ${i.unitPrice}${i.qty > 1 ? ` (x${i.qty})` : ""}`)
+      .join(items.length > 2 ? ", " : " and ");
 
-    const prompt = `Write ONE short follow-up message (1-2 sentences, plain text, no markdown, no emojis unless it fits naturally) to send a customer on WhatsApp/Messenger/Instagram who was looking at "${item.name}${variantNote}" priced at ${item.unitPrice} but never finished their order. Gently remind them it's still available and invite them to continue — do not sound pushy. ${incentive ? `You may naturally mention this active combo offer if it fits: ${incentive}.` : ""} Match a ${profile?.conversationTone ?? "friendly"} tone for ${profile?.name ?? "the store"}. Never invent any other price, discount, or product detail. Output only the message text — nothing else, no quotes around it.`;
+    const prompt = `Write ONE short follow-up message (1-2 sentences, plain text, no markdown, no emojis unless it fits naturally) to send a customer on WhatsApp/Messenger/Instagram who was looking at ${itemsDescription} but never finished their order. Gently remind them it's still available and invite them to continue — do not sound pushy. ${incentive ? `You may naturally mention this active combo offer if it fits: ${incentive}.` : ""} Match a ${profile?.conversationTone ?? "friendly"} tone for ${profile?.name ?? "the store"}. Never invent any other price, discount, or product detail. Output only the message text — nothing else, no quotes around it.`;
 
     const agent = createSalesAgent({
       apiKey: config.openaiApiKey,
@@ -99,38 +104,48 @@ async function generatePersonalizedFollowUp(
     });
 
     const text = result.response.trim();
-    return { text: text || buildGenericFollowUpText(), tokensUsed: result.tokensUsed?.total ?? 0 };
+    return { text: text || buildGenericFollowUpText(), usedAi: true };
   } catch (err) {
     console.error("[conversation-followup] Personalized message generation failed, using generic fallback:", err);
-    return { text: buildGenericFollowUpText(), tokensUsed: 0 };
+    return { text: buildGenericFollowUpText(), usedAi: false };
   }
 }
 
-async function resolveFollowUpText(businessId: string, planKey: PlanKey, state: AgentSessionState): Promise<{ text: string; tokensUsed: number }> {
-  const item = state.cart?.[0];
+async function resolveFollowUpText(
+  businessId: string,
+  userId: string,
+  threadId: string,
+  planKey: PlanKey,
+): Promise<{ text: string; usedAi: boolean; items: ActiveCartItem[] }> {
+  const [activeCart] = await db
+    .select({ items: cart.items })
+    .from(cart)
+    .where(and(eq(cart.userId, userId), eq(cart.threadId, threadId), eq(cart.status, "active")));
+  const items = activeCart?.items ?? [];
 
-  if (planKey !== "pro" || !item) {
-    // Growth never references the product even if one was recorded; Pro with no
-    // recorded item (customer never got that far) also falls back to the generic text.
-    return { text: buildGenericFollowUpText(), tokensUsed: 0 };
+  if (planKey !== "pro" || items.length === 0) {
+    // Growth never references the cart even if one exists; Pro with an empty/no cart
+    // (customer never got as far as a real price quote) also falls back to generic text.
+    return { text: buildGenericFollowUpText(), usedAi: false, items };
   }
 
-  const hasTokens = await checkAiTokenAvailability(businessId);
-  if (!hasTokens) return { text: buildGenericFollowUpText(), tokensUsed: 0 };
+  const hasConversations = await checkAiConversationAvailability(businessId);
+  if (!hasConversations) return { text: buildGenericFollowUpText(), usedAi: false, items };
 
-  return generatePersonalizedFollowUp(businessId, item);
+  const result = await generatePersonalizedFollowUp(businessId, items);
+  return { ...result, items };
 }
 
-async function sendFollowUp(session: typeof agentSession.$inferSelect, planKey: PlanKey): Promise<boolean> {
+async function sendFollowUp(session: typeof agentSession.$inferSelect, planKey: PlanKey): Promise<{ success: boolean; items: ActiveCartItem[] }> {
   const platform = CHANNEL_TO_PLATFORM[session.channel];
-  if (!platform || !session.senderId) return false;
+  if (!platform || !session.senderId) return { success: false, items: [] };
 
   const [conn] = await db
     .select()
     .from(metaConnection)
     .where(and(eq(metaConnection.businessId, session.businessId), eq(metaConnection.platform, platform)))
     .limit(1);
-  if (!conn?.accessToken) return false;
+  if (!conn?.accessToken) return { success: false, items: [] };
 
   const connection: PlatformConnection = {
     id: conn.id,
@@ -142,7 +157,7 @@ async function sendFollowUp(session: typeof agentSession.$inferSelect, planKey: 
     connectedAt: conn.connectedAt,
   };
 
-  const { text, tokensUsed } = await resolveFollowUpText(session.businessId, planKey, session.state);
+  const { text, usedAi, items } = await resolveFollowUpText(session.businessId, session.userId, session.threadId, planKey);
 
   const result = await messagingService.sendMessage(connection, {
     platform,
@@ -150,13 +165,13 @@ async function sendFollowUp(session: typeof agentSession.$inferSelect, planKey: 
     text,
   });
 
-  if (result.success && tokensUsed > 0) {
-    await incrementAiToken(session.businessId, tokensUsed).catch((err) => {
-      console.error(`[conversation-followup] Failed to increment tokens for ${session.businessId}:`, err);
+  if (result.success && usedAi) {
+    await incrementAiConversation(session.businessId).catch((err) => {
+      console.error(`[conversation-followup] Failed to increment conversation count for ${session.businessId}:`, err);
     });
   }
 
-  return result.success;
+  return { success: result.success, items };
 }
 
 export async function runConversationFollowUp(): Promise<void> {
@@ -207,17 +222,17 @@ export async function runConversationFollowUp(): Promise<void> {
   for (const session of sendable) {
     const planKey = planByBusiness.get(session.businessId) ?? "starter";
     try {
-      const sent = await sendFollowUp(session, planKey);
+      const { success: sent, items } = await sendFollowUp(session, planKey);
       // Mark attempted either way — a dead/revoked connection shouldn't retry forever
       // and risk hammering a recipient every sweep with a message that keeps failing.
       await db.update(agentSession).set({ followUpSentAt: new Date() }).where(eq(agentSession.id, session.id));
       if (sent) {
-        const item = session.state.cart?.[0];
+        const itemNames = items.map((i) => i.name).join(", ");
         await createNotification({
           businessId: session.businessId,
           type: "abandoned_followup_sent",
           title: "Abandoned conversation follow-up sent",
-          body: item ? `Nudged a customer about ${item.name}` : "Nudged a customer who went quiet mid-purchase",
+          body: itemNames ? `Nudged a customer about ${itemNames}` : "Nudged a customer who went quiet mid-purchase",
           link: "/dashboard/inbox",
         }).catch((err) => console.error(`[conversation-followup] Failed to create notification for session ${session.id}:`, err));
       } else {

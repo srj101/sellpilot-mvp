@@ -2,36 +2,32 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import {
   Search,
   FileText,
-  Download,
   Printer,
   CheckCircle,
   Clock,
   AlertTriangle,
   ChevronRight,
-  Plus,
 } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
 import { Input } from "@acme/ui/input";
+import { Skeleton } from "@acme/ui/skeleton";
 import { useBusinessSlug } from "~/hooks/use-business-slug";
+import { useTRPC } from "~/trpc/react";
 import { formatCurrency } from "../(home)/_components/dashboard-utils";
 
-type Order = {
-  id: string;
-  orderNumber: string;
-  status: string;
-  total: number;
-  customerName: string;
-  createdAt: string | Date;
-};
-
-export function InvoicesClient({ orders }: { orders: Order[] }) {
+export function InvoicesClient() {
+  const trpc = useTRPC();
   const businessSlug = useBusinessSlug();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "pending" | "overdue">("all");
+
+  const { data, isPending } = useQuery(trpc.orders.list.queryOptions());
+  const orders = data?.orders ?? [];
 
   const invoices = useMemo(() => {
     const now = new Date().getTime();
@@ -132,7 +128,18 @@ export function InvoicesClient({ orders }: { orders: Order[] }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filtered.map((inv) => (
+                {isPending ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <tr key={i}>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-24" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-28" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-5 w-16 rounded-full" /></td>
+                      <td className="px-4 py-3 text-right"><Skeleton className="ml-auto h-4 w-16" /></td>
+                      <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
+                      <td className="px-4 py-3"><Skeleton className="mx-auto h-4 w-12" /></td>
+                    </tr>
+                  ))
+                ) : filtered.map((inv) => (
                   <tr key={inv.id} className="hover:bg-muted/30 transition-colors group">
                     <td className="px-4 py-3">
                       <Link
@@ -202,7 +209,7 @@ export function InvoicesClient({ orders }: { orders: Order[] }) {
                   </tr>
                 ))}
 
-                {filtered.length === 0 && (
+                {!isPending && filtered.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-4 py-16 text-center text-muted-foreground text-sm">
                       No invoices match your filters.

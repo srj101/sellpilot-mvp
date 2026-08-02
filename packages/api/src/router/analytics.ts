@@ -1,10 +1,12 @@
 import type { TRPCRouterRecord } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
 import { eq, inArray } from "@acme/db";
 import { agentSession, customer, metaWebhookEvent, order, orderItem, pageView, product } from "@acme/db/schema";
 
 import { businessScopedProcedure } from "../trpc";
+import { runCopilotQuery } from "../lib/copilot-agent";
 import { getFeatureTier } from "../lib/plan-limits";
 
 const DAY = 86_400_000;
@@ -24,6 +26,33 @@ export const analyticsRouter = {
   /** Never throws — the page renders a soft-lock empty state for "none" and a widget
    * subset for "basic", instead of erroring on load (see plan-limits.ts's getFeatureTier). */
   getAccessTier: businessScopedProcedure.query(({ ctx }) => getFeatureTier(ctx, "analytics")),
+
+  /** B.8 — Executive AI Copilot. Never throws — same soft-lock pattern as getAccessTier. */
+  getCopilotAccess: businessScopedProcedure.query(({ ctx }) => getFeatureTier(ctx, "copilot")),
+
+  askCopilot: businessScopedProcedure
+    .input(
+      z.object({
+        question: z.string().min(1).max(500),
+        history: z
+          .array(z.object({ role: z.enum(["user", "assistant"]), text: z.string() }))
+          .max(20)
+          .default([]),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tier = await getFeatureTier(ctx, "copilot");
+      if (tier === "none") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "The AI Copilot isn't included in your plan. Upgrade to Growth or Pro to use it." });
+      }
+      const result = await runCopilotQuery(ctx, {
+        businessId: ctx.businessId,
+        tier,
+        question: input.question,
+        history: input.history,
+      });
+      return { answer: result.answer, tier };
+    }),
 
   getSummary: businessScopedProcedure
     .input(
@@ -68,7 +97,7 @@ export const analyticsRouter = {
           .innerJoin(order, eq(orderItem.orderId, order.id))
           .where(eq(order.businessId, businessId)),
         ctx.db
-          .select({ id: order.id, createdAt: order.createdAt, total: order.total })
+          .select({ id: order.id, createdAt: order.createdAt, total: order.total, status: order.status })
           .from(order)
           .where(eq(order.businessId, businessId)),
         ctx.db
@@ -177,6 +206,62 @@ export const analyticsRouter = {
       const currentSessions = sessions.filter((s) => inWindow(s.createdAt.getTime(), windowStart, windowEnd));
       const prevSessions = sessions.filter((s) => inWindow(s.createdAt.getTime(), prevStart, prevEnd));
 
+      // FR-ANA-01/02/03 — Revenue, AOV, and Return Rate, same "exclude cancelled/returned
+      // from revenue" convention the Dashboard home page already uses.
+      const isRevenueEligible = (o: (typeof orders)[number]) => o.status !== "cancelled" && o.status !== "returned";
+      const revenueOf = (rows: typeof orders) => rows.filter(isRevenueEligible).reduce((sum, o) => sum + o.total, 0);
+      const aovOf = (rows: typeof orders) => {
+        const eligible = rows.filter(isRevenueEligible);
+        return eligible.length > 0 ? revenueOf(rows) / eligible.length : 0;
+      };
+      const returnRateOf = (rows: typeof orders) =>
+        rows.length > 0 ? (rows.filter((o) => o.status === "returned").length / rows.length) * 100 : 0;
+
+      const currentRevenue = revenueOf(currentOrders);
+      const prevRevenue = revenueOf(prevOrders);
+      const currentAov = aovOf(currentOrders);
+      const prevAov = aovOf(prevOrders);
+      const currentReturnRate = returnRateOf(currentOrders);
+      const prevReturnRate = returnRateOf(prevOrders);
+
+      const revenueStats = {
+        revenue: currentRevenue,
+        revenueTrend: trendPct(currentRevenue, prevRevenue),
+        orderCount: currentOrders.length,
+        orderCountTrend: trendPct(currentOrders.length, prevOrders.length),
+        aov: currentAov,
+        aovTrend: trendPct(currentAov, prevAov),
+        returnRate: currentReturnRate,
+        returnRateTrend: trendPct(currentReturnRate, prevReturnRate),
+      };
+
+      // Revenue Over Time — same monthly/daily bucketing as dailySeries/chatOrderSeries.
+      const revenueSeries: { label: string; revenue: number }[] = [];
+      if (bucketByMonth) {
+        const cursor = new Date(windowStart);
+        cursor.setDate(1);
+        cursor.setHours(0, 0, 0, 0);
+        while (cursor.getTime() < windowEnd) {
+          const start = cursor.getTime();
+          const end = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1).getTime();
+          revenueSeries.push({
+            label: cursor.toLocaleDateString("en-US", { month: "short" }),
+            revenue: revenueOf(orders.filter((o) => inWindow(o.createdAt.getTime(), start, end))),
+          });
+          cursor.setMonth(cursor.getMonth() + 1);
+        }
+      } else {
+        const totalDays = Math.round(windowMs / DAY);
+        for (let i = 0; i < totalDays; i++) {
+          const dayStart = windowStart + i * DAY;
+          const dayEnd = dayStart + DAY;
+          revenueSeries.push({
+            label: new Date(dayStart).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+            revenue: revenueOf(orders.filter((o) => inWindow(o.createdAt.getTime(), dayStart, dayEnd))),
+          });
+        }
+      }
+
       const chatOrderSeries: { label: string; sessions: number; orders: number }[] = [];
       if (bucketByMonth) {
         const cursor = new Date(windowStart);
@@ -271,6 +356,8 @@ export const analyticsRouter = {
         messagingStats,
         weeklyInquiries,
         topProducts,
+        revenueStats,
+        revenueSeries,
         rangeLabel: { start: formatDate(windowStart), end: formatDate(windowEnd - DAY) },
       };
     }),

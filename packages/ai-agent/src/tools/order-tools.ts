@@ -6,6 +6,7 @@ import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getToolContext } from "./context";
 import type { PlanKey } from "../types";
+import { MULTI_PRODUCT_CART_LIMIT } from "../types";
 
 /** Local mirror of PLAN_CATALOG[*].limits.purchaseHistoryLimit (packages/api/src/lib/plans.ts)
  * — see types.ts's PlanKey comment for why this package doesn't import @acme/api directly.
@@ -17,14 +18,18 @@ const PURCHASE_HISTORY_LIMIT: Record<PlanKey, number | null> = {
   pro: null,
 };
 
+export interface CreateOrderItemInput {
+  productId: string;
+  variantId?: string;
+  quantity: number;
+}
+
 export interface CreateOrderParams {
   userId: string;
   businessId: string;
   threadId: string;
   channel: string;
-  productId: string;
-  variantId?: string;
-  quantity: number;
+  items: CreateOrderItemInput[];
   /** Omit any of these three for a returning customer already linked to this
    * conversation (from an earlier order in the same thread) — the backend fills in
    * whichever are missing from that record. Required on a customer's first order in
@@ -34,10 +39,6 @@ export interface CreateOrderParams {
   address?: string;
   district?: string;
   offerCode?: string;
-  /** Second product the customer agreed to add — e.g. accepting a combo suggestion. */
-  comboProductId?: string;
-  comboVariantId?: string;
-  comboQuantity?: number;
   /** "cod" = order is confirmed immediately, cash collected at delivery, no payment link
    * needed. "online" (default if omitted) = order stays pending until the customer pays
    * via paymentUrl. */
@@ -76,6 +77,13 @@ export interface OrderHelpers {
    * for when a customer already has a payment link but states COD in chat instead of
    * clicking it. Returns success: false with an error if no pending order exists. */
   confirmCodForThread(businessId: string, threadId: string): Promise<ConfirmCodResult>;
+  /** Most recent delivered, not-yet-reviewed order on this thread — null if there isn't
+   * one (already reviewed, or nothing delivered yet). */
+  getPendingReviewOrder(
+    businessId: string,
+    threadId: string,
+  ): Promise<{ orderId: string; orderNumber: string; customerId: string | null; productId: string | null } | null>;
+  submitReview(params: { userId: string; orderId: string; customerId: string | null; productId: string | null; rating: number; comment?: string }): Promise<void>;
 }
 
 let helpers: OrderHelpers | null = null;
@@ -94,19 +102,23 @@ function getHelpers(): OrderHelpers {
 export const createOrderTool = new DynamicStructuredTool({
   name: "createOrder",
   description:
-    "Create a customer order. Only call after the customer confirms the price breakdown AND payment preference (see paymentMethod). If they agreed to a combo (from getComboOffersForProduct), pass the same comboProductId used in the confirmed quoteOrder call. customerName/phone/address can be omitted if this customer already ordered in this conversation — reused automatically. Phone must be real (01XXXXXXXXX or +8801XXXXXXXXX), never a placeholder.",
+    "Create a customer order. Only call after the customer confirms the price breakdown AND payment preference (see paymentMethod). Pass every product they're ordering as one entry in items, including any combo/upsell suggestion they agreed to — use the exact same items used in the confirmed quoteOrder call. customerName/phone/address can be omitted if this customer already ordered in this conversation — reused automatically. Phone must be real (01XXXXXXXXX or +8801XXXXXXXXX), never a placeholder.",
   schema: z.object({
-    productId: z.string().describe("Product ID"),
-    variantId: z.string().optional().describe("Specific variant ID, if the customer chose one"),
-    quantity: z.number().describe("Quantity"),
+    items: z
+      .array(
+        z.object({
+          productId: z.string().describe("Product ID"),
+          variantId: z.string().optional().describe("Specific variant ID, if the customer chose one"),
+          quantity: z.number().describe("Quantity"),
+        }),
+      )
+      .min(1)
+      .describe("Every product being ordered, one entry each — same set as the confirmed quoteOrder call"),
     customerName: z.string().optional().describe("Customer name — omit if already on file from an earlier order in this conversation"),
     phone: z.string().optional().describe("Real BD mobile number, e.g. 01XXXXXXXXX or +8801XXXXXXXXX — never a placeholder. Omit if already on file from an earlier order here."),
     address: z.string().optional().describe("Delivery address — omit if already on file from an earlier order in this conversation"),
     district: z.string().optional().describe("Delivery district/city, used to look up the shipping cost"),
     offerCode: z.string().optional().describe("Discount/offer code the customer provided"),
-    comboProductId: z.string().optional().describe("A second product the customer agreed to add as a combo"),
-    comboVariantId: z.string().optional().describe("Specific variant ID for the combo product, if the customer chose one"),
-    comboQuantity: z.number().optional().describe("Quantity of the combo product, defaults to 1"),
     paymentMethod: z
       .enum(["cod", "online"])
       .optional()
@@ -115,43 +127,31 @@ export const createOrderTool = new DynamicStructuredTool({
       ),
   }),
   func: async (input: unknown) => {
-    const {
-      productId,
-      variantId,
-      quantity,
-      customerName,
-      phone,
-      address,
-      district,
-      offerCode,
-      comboProductId,
-      comboVariantId,
-      comboQuantity,
-      paymentMethod,
-    } = input as {
-      productId: string;
-      variantId?: string;
-      quantity: number;
+    const { items, customerName, phone, address, district, offerCode, paymentMethod } = input as {
+      items: CreateOrderItemInput[];
       customerName?: string;
       phone?: string;
       address?: string;
       district?: string;
       offerCode?: string;
-      comboProductId?: string;
-      comboVariantId?: string;
-      comboQuantity?: number;
       paymentMethod?: "cod" | "online";
     };
-    const { userId, businessId, threadId, platform } = getToolContext();
+    const { userId, businessId, threadId, platform, planKey } = getToolContext();
+
+    const limit = MULTI_PRODUCT_CART_LIMIT[planKey ?? "starter"];
+    if (items.length > limit) {
+      return JSON.stringify({
+        success: false,
+        error: `Too many products for this plan — up to ${limit} products per order are allowed, ${items.length} were given. Ask the customer to pick their top ${limit} instead, or split into separate orders.`,
+      });
+    }
 
     console.log("[Tool] createOrder", {
-      productId,
-      quantity,
+      items,
       customerName,
       phone: phone ? phone.replace(/(\d{3})\d+(\d{2})/, "$1***$2") : phone,
       userId,
       businessId,
-      comboProductId,
       paymentMethod,
     });
 
@@ -160,17 +160,12 @@ export const createOrderTool = new DynamicStructuredTool({
       businessId,
       threadId,
       channel: platform,
-      productId,
-      variantId,
-      quantity,
+      items,
       customerName,
       phone,
       address,
       district,
       offerCode,
-      comboProductId,
-      comboVariantId,
-      comboQuantity,
       paymentMethod,
     });
 
@@ -233,10 +228,42 @@ export const getCustomerPurchaseHistoryTool = new DynamicStructuredTool({
   },
 });
 
+export const submitReviewTool = new DynamicStructuredTool({
+  name: "submitReview",
+  description:
+    "Call when a customer gives feedback or a rating about an order they've already received — whether you asked for it or they volunteered it. If they only gave a comment with no clear star rating, ask them for one (1-5) before calling this — rating is required, never guess it. Do not call this for a NEW complaint/problem (use reportComplaint instead) — this is only for feedback on a completed, delivered order.",
+  schema: z.object({
+    rating: z.number().min(1).max(5).describe("1-5 star rating the customer gave, or your best-effort read of a clearly positive/negative comment ONLY if they refuse to give a number"),
+    comment: z.string().optional().describe("Their feedback text, if any"),
+  }),
+  func: async (input: unknown) => {
+    const { rating, comment } = input as { rating: number; comment?: string };
+    const { userId, businessId, threadId } = getToolContext();
+    console.log("[Tool] submitReview", { businessId, threadId, rating });
+
+    const pending = await getHelpers().getPendingReviewOrder(businessId, threadId);
+    if (!pending) {
+      return JSON.stringify({ success: false, error: "No delivered order awaiting a review on this conversation." });
+    }
+
+    await getHelpers().submitReview({
+      userId,
+      orderId: pending.orderId,
+      customerId: pending.customerId,
+      productId: pending.productId,
+      rating,
+      comment,
+    });
+
+    return JSON.stringify({ success: true, orderNumber: pending.orderNumber });
+  },
+});
+
 export const orderTools = [
   createOrderTool,
   confirmCashOnDeliveryTool,
   trackOrderTool,
   getCustomerByPhoneTool,
   getCustomerPurchaseHistoryTool,
+  submitReviewTool,
 ];

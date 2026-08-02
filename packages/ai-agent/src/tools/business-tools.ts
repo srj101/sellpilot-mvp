@@ -6,6 +6,7 @@ import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getToolContext } from "./context";
 import type { BusinessProfileSnapshot } from "../types";
+import { BULK_INQUIRY_HANDLING, CAMPAIGN_AUTOMATION, COMPLAINT_HANDLING } from "../types";
 
 export interface ComboOffer {
   offerId: string;
@@ -16,12 +17,39 @@ export interface ComboOffer {
   partnerProductName: string | null;
 }
 
+export interface CampaignOffer {
+  offerId: string;
+  title: string;
+  description: string | null;
+  code: string | null;
+  type: string;
+  value: number;
+  minSubtotal: number;
+}
+
 // Type for business helpers (injected at runtime)
 export interface BusinessHelpers {
   getBusinessProfile(businessId: string): Promise<BusinessProfileSnapshot | null>;
   getOfferByCode(businessId: string, code: string): Promise<unknown>;
   getComboOffersForProduct(businessId: string, productId: string): Promise<ComboOffer[]>;
+  /** B.7 — offers flagged for proactive, unprompted mention (festival/seasonal campaigns). */
+  getActiveCampaigns(businessId: string): Promise<CampaignOffer[]>;
+  /** Growth's "limited" campaign targeting rule — only mention to repeat customers. */
+  hasPriorPurchases(businessId: string, threadId: string): Promise<boolean>;
   getFAQMatches(businessId: string, query: string, limit?: number): Promise<unknown[]>;
+  /** FR-AGT-15 auto-escalation — hands the thread to human handling starting with the
+   * customer's next message. */
+  escalateToHuman(userId: string, businessId: string, threadId: string, reason: string): Promise<void>;
+  /** Pro tier's "basic logging + alert" — owner gets notified, AI keeps handling the chat. */
+  logComplaint(businessId: string, customerName: string | undefined, note: string): Promise<void>;
+  /** Pro tier's "automated + contact routing" — owner gets notified, agent gets the
+   * store's support contact back to relay directly. */
+  routeBulkInquiry(
+    businessId: string,
+    threadId: string,
+    customerName: string | undefined,
+    note: string,
+  ): Promise<{ contactEmail: string | null; contactPhone: string | null }>;
 }
 
 let helpers: BusinessHelpers | null = null;
@@ -86,6 +114,29 @@ export const getComboOffersForProductTool = new DynamicStructuredTool({
   },
 });
 
+export const getActiveCampaignsTool = new DynamicStructuredTool({
+  name: "getActiveCampaigns",
+  description: "Call once near the start of a conversation (right after greeting) to check for any active store-wide festival/seasonal campaign offers to proactively mention — this is unprompted, unlike getOfferByCode. May return an empty list, in which case say nothing about campaigns. Never invent or mention a discount not returned here.",
+  schema: z.object({}),
+  func: async () => {
+    const { businessId, threadId, planKey } = getToolContext();
+    const mode = CAMPAIGN_AUTOMATION[planKey ?? "starter"];
+    console.log("[Tool] getActiveCampaigns", { businessId, mode });
+
+    if (mode === "none") return JSON.stringify([]);
+
+    const campaigns = await getHelpers().getActiveCampaigns(businessId);
+    if (campaigns.length === 0) return JSON.stringify([]);
+
+    if (mode === "limited") {
+      const eligible = await getHelpers().hasPriorPurchases(businessId, threadId);
+      if (!eligible) return JSON.stringify([]);
+    }
+
+    return JSON.stringify(campaigns);
+  },
+});
+
 export const getFAQMatchesTool = new DynamicStructuredTool({
   name: "getFAQMatches",
   description: "Search FAQ entries for answers to common questions",
@@ -102,9 +153,58 @@ export const getFAQMatchesTool = new DynamicStructuredTool({
   },
 });
 
+export const reportComplaintTool = new DynamicStructuredTool({
+  name: "reportComplaint",
+  description:
+    "Call when a customer reports a problem with an order: wrong item, damaged item, wants to return or a refund, or delivery is late/missing. Do NOT try to resolve the return/refund yourself — this tool handles it per the store's plan. After calling it, tell the customer what happens next based on the result (escalated vs logged) — never promise a specific refund amount or timeline yourself.",
+  schema: z.object({
+    summary: z.string().describe("One short sentence summarizing the complaint, in English, for the business owner"),
+  }),
+  func: async (input: unknown) => {
+    const { summary } = input as { summary: string };
+    const { userId, businessId, threadId, customerName, planKey } = getToolContext();
+    const mode = COMPLAINT_HANDLING[planKey ?? "starter"];
+    console.log("[Tool] reportComplaint", { businessId, threadId, mode, summary });
+
+    if (mode === "redirect") {
+      await getHelpers().escalateToHuman(userId, businessId, threadId, `Complaint: ${summary}`);
+      return JSON.stringify({ action: "escalated" });
+    }
+
+    await getHelpers().logComplaint(businessId, customerName, summary);
+    return JSON.stringify({ action: "logged" });
+  },
+});
+
+export const reportBulkInquiryTool = new DynamicStructuredTool({
+  name: "reportBulkInquiry",
+  description:
+    "Call when a customer is asking about a large/bulk/wholesale order or reselling (not a normal single-customer purchase). Handles it per the store's plan — after calling it, either tell the customer you're connecting them with the team (escalated), or share the contact info it returns for their wholesale request (routed).",
+  schema: z.object({
+    summary: z.string().describe("One short sentence summarizing what they're asking for, in English, for the business owner"),
+  }),
+  func: async (input: unknown) => {
+    const { summary } = input as { summary: string };
+    const { userId, businessId, threadId, customerName, planKey } = getToolContext();
+    const mode = BULK_INQUIRY_HANDLING[planKey ?? "starter"];
+    console.log("[Tool] reportBulkInquiry", { businessId, threadId, mode, summary });
+
+    if (mode === "redirect") {
+      await getHelpers().escalateToHuman(userId, businessId, threadId, `Bulk/wholesale inquiry: ${summary}`);
+      return JSON.stringify({ action: "escalated" });
+    }
+
+    const contact = await getHelpers().routeBulkInquiry(businessId, threadId, customerName, summary);
+    return JSON.stringify({ action: "routed", ...contact });
+  },
+});
+
 export const businessTools = [
   getBusinessProfileTool,
   getOfferByCodeTool,
   getComboOffersForProductTool,
+  getActiveCampaignsTool,
   getFAQMatchesTool,
+  reportComplaintTool,
+  reportBulkInquiryTool,
 ];

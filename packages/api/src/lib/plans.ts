@@ -20,8 +20,10 @@ export const PLAN_KEYS = ["starter", "growth", "pro"] as const;
 export type PlanKey = (typeof PLAN_KEYS)[number];
 
 export interface PlanLimits {
-  /** null = unlimited (fair use) */
-  aiTokensPerMonth: number | null;
+  /** null = unlimited (fair use). Counted one-per-message, not by token volume — see
+   * ai-conversations.ts. Beyond this, the account isn't cut off; overage is billed per
+   * OVERAGE_RATES below. */
+  aiConversationsPerMonth: number | null;
   products: number;
   /** null = unlimited */
   teamSeats: number | null;
@@ -29,6 +31,10 @@ export interface PlanLimits {
   /** null = unlimited */
   invoices: number | null;
   conversationRetentionDays: number;
+  /** GB of media/attachment storage for conversation history. */
+  storageGb: number;
+  /** Max distinct line items the agent can hold in a single multi-product cart. */
+  multiProductCartLimit: number;
   /** Starter: exact-match answers only. Growth: may upsell within the same product line.
    * Pro: may upsell + proactively cross-sell using combo offers. */
   recommendationTier: "basic" | "upsell" | "advanced";
@@ -41,6 +47,19 @@ export interface PlanLimits {
   purchaseHistoryLimit: number | null;
   analyticsTier: "none" | "basic" | "full";
   ecommerceTier: "none" | "basic" | "full";
+  /** Executive AI Copilot (natural-language analytics Q&A) — separate tier from
+   * analyticsTier because Starter has dashboards but no copilot at all. */
+  copilotTier: "none" | "basic" | "full";
+  /** Campaign & Promo Automation — Growth gets limited/most-purchased-only, Pro gets full. */
+  campaignAutomation: "none" | "limited" | "full";
+  /** Complaint/return/refund handling depth. */
+  complaintHandling: "redirect" | "basic_logging";
+  /** Bulk/wholesale inquiry handling depth. */
+  bulkInquiryHandling: "redirect" | "automated";
+  reviewCollectionEnabled: boolean;
+  personalizedGreetingEnabled: boolean;
+  voiceMessagesEnabled: boolean;
+  whiteLabelEnabled: boolean;
   /** Campaign & Promo Automation — Pro-only creation/editing of offers. */
   offersEnabled: boolean;
 }
@@ -71,64 +90,85 @@ export const PLAN_CATALOG: Record<PlanKey, PlanCatalogEntry> = {
   starter: {
     key: "starter",
     name: "Starter",
-    tagline: "Essential AI selling for a single channel.",
-    prices: cyclePrices(3999),
+    tagline: "For businesses just starting with AI-driven sales.",
+    prices: cyclePrices(4999),
     limits: {
-      aiTokensPerMonth: 150_000,
-      products: 50,
+      aiConversationsPerMonth: 8_000,
+      products: 30,
       teamSeats: 1,
-      channels: ["messenger"],
+      channels: ["messenger", "instagram", "whatsapp"],
       invoices: 5,
-      conversationRetentionDays: 90,
+      conversationRetentionDays: 30,
+      storageGb: 3,
+      multiProductCartLimit: 5,
       recommendationTier: "basic",
       abandonedCartRecovery: "none",
-      purchaseHistoryEnabled: false,
-      purchaseHistoryLimit: 0,
+      purchaseHistoryEnabled: true,
+      purchaseHistoryLimit: 1,
       analyticsTier: "none",
       ecommerceTier: "none",
+      copilotTier: "none",
+      campaignAutomation: "none",
+      complaintHandling: "redirect",
+      bulkInquiryHandling: "redirect",
+      reviewCollectionEnabled: false,
+      personalizedGreetingEnabled: false,
+      voiceMessagesEnabled: false,
+      whiteLabelEnabled: false,
       offersEnabled: false,
     },
     features: [
-      "Messenger channel",
-      "150,000 AI tokens / month",
-      "Up to 50 products",
+      "Messenger + Instagram + WhatsApp",
+      "8,000 AI conversations / month",
+      "Up to 30 products",
       "1 team member",
-      "Image search (Vision)",
+      "30-day conversation history · 3 GB storage",
       "Basic smart recommendations",
-      "90-day conversation history",
+      "Standard revenue & inventory dashboard",
       "5 invoices",
     ],
   },
   growth: {
     key: "growth",
     name: "Growth",
-    tagline: "Multi-channel selling with upselling built in.",
-    prices: cyclePrices(9999),
+    tagline: "For growing businesses ready to scale automation.",
+    prices: cyclePrices(11999),
     limits: {
-      aiTokensPerMonth: 800_000,
-      products: 100,
+      aiConversationsPerMonth: 20_000,
+      products: 90,
       teamSeats: 3,
-      channels: ["messenger", "instagram"],
+      channels: ["messenger", "instagram", "whatsapp"],
       invoices: null,
-      conversationRetentionDays: 180,
+      conversationRetentionDays: 182,
+      storageGb: 10,
+      multiProductCartLimit: 12,
       recommendationTier: "upsell",
       abandonedCartRecovery: "generic",
       purchaseHistoryEnabled: true,
-      purchaseHistoryLimit: 3,
+      purchaseHistoryLimit: 5,
       analyticsTier: "basic",
       ecommerceTier: "basic",
-      offersEnabled: false,
+      copilotTier: "basic",
+      campaignAutomation: "limited",
+      complaintHandling: "redirect",
+      bulkInquiryHandling: "redirect",
+      reviewCollectionEnabled: true,
+      personalizedGreetingEnabled: false,
+      voiceMessagesEnabled: false,
+      whiteLabelEnabled: false,
+      offersEnabled: true,
     },
     features: [
-      "Messenger + Instagram",
-      "800,000 AI tokens / month",
-      "Up to 100 products",
+      "Messenger + Instagram + WhatsApp",
+      "20,000 AI conversations / month",
+      "Up to 90 products",
       "3 team members",
       "Recommendations + upselling",
-      "Multi-product cart",
+      "Multi-product cart (up to 12 items)",
       "Generic abandoned-cart recovery",
-      "Basic customer purchase history",
-      "180-day conversation history",
+      "Basic purchase history (last 5 orders)",
+      "6-month conversation history · 10 GB storage",
+      "Basic analytics + Executive AI Copilot",
       "Unlimited invoices",
     ],
     popular: true,
@@ -136,39 +176,103 @@ export const PLAN_CATALOG: Record<PlanKey, PlanCatalogEntry> = {
   pro: {
     key: "pro",
     name: "Pro",
-    tagline: "The full AI commerce agent, unlimited team.",
-    prices: cyclePrices(24999),
+    tagline: "For established businesses running at full volume.",
+    prices: cyclePrices(17999),
     limits: {
-      aiTokensPerMonth: null,
+      aiConversationsPerMonth: 50_000,
       products: 200,
-      teamSeats: null,
+      teamSeats: 7,
       channels: ["messenger", "instagram", "whatsapp"],
       invoices: null,
-      conversationRetentionDays: 730,
+      conversationRetentionDays: 548,
+      storageGb: 25,
+      multiProductCartLimit: 28,
       recommendationTier: "advanced",
       abandonedCartRecovery: "personalized",
       purchaseHistoryEnabled: true,
       purchaseHistoryLimit: null,
       analyticsTier: "full",
       ecommerceTier: "full",
+      copilotTier: "full",
+      campaignAutomation: "full",
+      complaintHandling: "basic_logging",
+      bulkInquiryHandling: "automated",
+      reviewCollectionEnabled: true,
+      personalizedGreetingEnabled: true,
+      voiceMessagesEnabled: true,
+      whiteLabelEnabled: true,
       offersEnabled: true,
     },
     features: [
-      "WhatsApp + Messenger + Instagram",
-      "Unlimited AI tokens (fair use)",
-      "Up to 200 products",
-      "Unlimited team members",
-      "Advanced recommendations, upselling & cross-selling",
-      "Full AI-personalized abandoned-cart recovery",
+      "Messenger + Instagram + WhatsApp",
+      "50,000 AI conversations / month (fair use)",
+      "Up to 200 products (fair use)",
+      "7 team members",
+      "Recommendations + upselling + cross-selling",
+      "Multi-product cart (up to 28 items)",
+      "AI-personalized abandoned-cart recovery",
       "Personalized returning-customer greetings",
       "Full customer purchase history",
-      "Voice messages (Whisper)",
-      "Campaign & promo automation",
-      "Executive AI copilot analytics",
-      "2-year conversation history",
+      "Voice message support (voice-to-text)",
+      "Full analytics + Full Executive AI Copilot",
+      "Campaign & seasonal promo automation",
+      "Custom branding / white-label",
+      "1.5-year conversation history · 25 GB storage",
+      "Priority, unlimited, dedicated support",
     ],
   },
 };
+
+/** ৳ per unit of overage once a plan's included monthly conversation volume is used up.
+ * Service is never hard-cut mid-cycle (see markUsageOverage in the renewal worker) —
+ * overage is billed at the next invoice, or the account can upgrade instantly. Pro has no
+ * flat overage rate; scale-up happens via PRO_ADD_ONS below instead. */
+export const OVERAGE_RATES: Record<PlanKey, { pricePerBlock: number; blockSize: number } | null> = {
+  starter: { pricePerBlock: 1500, blockSize: 500 },
+  growth: { pricePerBlock: 2000, blockSize: 1000 },
+  pro: null,
+};
+
+/** Usage thresholds that trigger an automatic in-app + email alert (billing plan §"Overage
+ * & Fair-Use Policy"). Expressed as a fraction of the plan's included volume. */
+export const USAGE_ALERT_THRESHOLDS = [0.8, 1] as const;
+
+export interface AddOn {
+  key: string;
+  name: string;
+  price: number;
+  billing: "monthly";
+}
+
+/** Pro-only scale-up add-ons — "Pro pricing scales with volume" cashes out as these,
+ * not a usage-based formula. Add only what's needed, cancel any time. */
+export const PRO_ADD_ONS: AddOn[] = [
+  { key: "extra_conversations_5k", name: "Additional 5,000 AI conversations", price: 3500, billing: "monthly" },
+  { key: "extra_whatsapp_number", name: "Additional WhatsApp Business number", price: 2500, billing: "monthly" },
+];
+
+/** ৳ per single AI conversation at full included volume — shown as the "effective rate"
+ * on the overage/fair-use comparison table. Null when there's no fixed monthly price to
+ * divide (shouldn't happen for the three paid tiers). */
+export function effectiveRatePerConversation(plan: PlanKey, cycle: BillingCycle = "monthly"): number | null {
+  const entry = PLAN_CATALOG[plan];
+  const price = entry.prices[cycle];
+  const volume = entry.limits.aiConversationsPerMonth;
+  if (price === null || !volume) return null;
+  return price / volume;
+}
+
+/** Whole-taka overage charge for a period's usage against a plan's included volume, per
+ * OVERAGE_RATES above. 0 when under the limit, or when the plan has no fixed overage rate
+ * (Pro — "custom scaling", billed via PRO_ADD_ONS instead, never auto-charged here). */
+export function computeOverageAmount(plan: PlanKey, used: number): number {
+  const limit = PLAN_CATALOG[plan].limits.aiConversationsPerMonth;
+  const rate = OVERAGE_RATES[plan];
+  if (limit === null || !rate || used <= limit) return 0;
+  const overageUnits = used - limit;
+  const blocks = Math.ceil(overageUnits / rate.blockSize);
+  return blocks * rate.pricePerBlock;
+}
 
 export function getPlan(key: string): PlanCatalogEntry | undefined {
   return PLAN_CATALOG[key as PlanKey];

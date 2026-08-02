@@ -9,8 +9,6 @@ import {
   HelpCircle,
   FileText,
   Save,
-  ChevronDown,
-  ChevronUp,
   Mail,
   Phone,
   DollarSign,
@@ -26,6 +24,8 @@ import { Button } from "@acme/ui/button";
 import { Input } from "@acme/ui/input";
 import { Label } from "@acme/ui/label";
 import { Badge } from "@acme/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@acme/ui/card";
+import { toast } from "@acme/ui/toast";
 
 import { useTRPC } from "~/trpc/react";
 
@@ -35,6 +35,7 @@ type StoreProfile = {
   slug: string;
   logo: string | null;
   metadata: string | null;
+  description: string | null;
 };
 
 type BusinessProfile = {
@@ -83,47 +84,37 @@ interface SettingsClientProps {
   policies: Policy[];
 }
 
-/* ─── Section wrapper ──────────────────────────────────────────────── */
-function SettingsSection({
+const inputCls = "rounded-lg";
+
+function SectionCard({
   icon: Icon,
   title,
   description,
   children,
-  defaultOpen = false,
 }: {
-  icon: typeof Building2;
+  icon: typeof Store;
   title: string;
   description: string;
   children: React.ReactNode;
-  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
-
   return (
-    <div className="overflow-hidden rounded-2xl border bg-card transition-shadow hover:shadow-sm">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-4 p-5 text-left transition-colors hover:bg-muted/30"
-      >
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-          <Icon className="h-5 w-5 text-primary" />
+    <Card className="card-hover">
+      <CardHeader className="border-b">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+            <Icon className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1">
+            <CardTitle className="text-base font-semibold">{title}</CardTitle>
+            <CardDescription className="mt-0.5 text-sm">{description}</CardDescription>
+          </div>
         </div>
-        <div className="flex-1">
-          <h3 className="text-base font-semibold text-foreground">{title}</h3>
-          <p className="text-sm text-muted-foreground">{description}</p>
-        </div>
-        {open ? (
-          <ChevronUp className="h-5 w-5 text-muted-foreground" />
-        ) : (
-          <ChevronDown className="h-5 w-5 text-muted-foreground" />
-        )}
-      </button>
-      {open && <div className="border-t px-5 py-5">{children}</div>}
-    </div>
+      </CardHeader>
+      <CardContent className="pt-6">{children}</CardContent>
+    </Card>
   );
 }
 
-/* ─── Main settings component ──────────────────────────────────────── */
 export function SettingsClient({
   storeProfile,
   profile,
@@ -134,21 +125,16 @@ export function SettingsClient({
   const router = useRouter();
   const trpc = useTRPC();
   const [saving, setSaving] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
   const upsertProfile = useMutation(trpc.agent.upsertBusinessProfile.mutationOptions());
   const updateStore = useMutation(trpc.business.update.mutationOptions());
   const getUploadUrl = useMutation(trpc.business.getUploadUrl.mutationOptions());
 
-  // Store Profile state
+  // Business Profile state (name/description sync to both business & business_profile)
   const [storeName, setStoreName] = useState(storeProfile.name);
-  const [storeDescription, setStoreDescription] = useState(storeProfile.metadata ?? "");
+  const [storeDescription, setStoreDescription] = useState(storeProfile.description ?? "");
   const [storeLogo, setStoreLogo] = useState<string | null>(storeProfile.logo);
-
-  // Business Profile state
-  const [bpName, setBpName] = useState(profile?.name ?? "");
-  const [bpDescription, setBpDescription] = useState(profile?.description ?? "");
   const [bpCurrency, setBpCurrency] = useState(profile?.currency ?? "BDT");
   const [bpShippingCost, setBpShippingCost] = useState(String(profile?.defaultShippingCost ?? 0));
   const [bpEmail, setBpEmail] = useState(profile?.supportEmail ?? "");
@@ -160,33 +146,41 @@ export function SettingsClient({
   const [preferredLanguage, setPreferredLanguage] = useState(profile?.preferredLanguage ?? "auto");
   const [followUpMinutes, setFollowUpMinutes] = useState(String(profile?.abandonedFollowupMinutes ?? 30));
 
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3000);
-  };
-
-  // Check if store profile inputs differ from database values to enable Save button
-  const isStoreProfileDirty =
+  // Check if profile inputs differ from database values to enable Save button
+  const isBusinessDirty =
     storeName.trim() !== storeProfile.name ||
-    storeDescription.trim() !== (storeProfile.metadata ?? "") ||
-    storeLogo !== storeProfile.logo;
+    storeDescription.trim() !== (storeProfile.description ?? "") ||
+    storeLogo !== storeProfile.logo ||
+    bpCurrency !== (profile?.currency ?? "BDT") ||
+    bpShippingCost !== String(profile?.defaultShippingCost ?? 0) ||
+    bpEmail !== (profile?.supportEmail ?? "") ||
+    bpPhone !== (profile?.supportPhone ?? "");
 
-  const handleSaveStore = async () => {
+  const handleSaveBusiness = async () => {
     if (!storeName.trim()) {
-      showToast("Business name cannot be empty");
+      toast.error("Business name cannot be empty");
       return;
     }
-    setSaving("store");
+    setSaving("business");
     try {
       await updateStore.mutateAsync({
         name: storeName.trim(),
         description: storeDescription.trim() || undefined,
         logo: storeLogo,
       });
-      showToast("Store profile updated successfully!");
+      await upsertProfile.mutateAsync({
+        name: storeName.trim(),
+        description: storeDescription.trim() || undefined,
+        logoUrl: storeLogo ?? undefined,
+        currency: bpCurrency,
+        defaultShippingCost: Number(bpShippingCost),
+        supportEmail: bpEmail,
+        supportPhone: bpPhone,
+      });
+      toast.success("Business profile updated successfully!");
       router.refresh();
     } catch (err: any) {
-      showToast(err.message || "Failed to update store profile");
+      toast.error(err.message || "Failed to update business profile");
     } finally {
       setSaving(null);
     }
@@ -196,24 +190,19 @@ export function SettingsClient({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Support standard image files
     if (!file.type.startsWith("image/")) {
-      showToast("Please upload an image file");
+      toast.error("Please upload an image file");
       return;
     }
 
     setUploading(true);
     try {
-      const res = await getUploadUrl.mutateAsync({
-        contentType: file.type,
-      });
+      const res = await getUploadUrl.mutateAsync({ contentType: file.type });
 
       const uploadRes = await fetch(res.uploadUrl, {
         method: "PUT",
         body: file,
-        headers: {
-          "Content-Type": file.type,
-        },
+        headers: { "Content-Type": file.type },
       });
 
       if (!uploadRes.ok) {
@@ -221,45 +210,27 @@ export function SettingsClient({
       }
 
       setStoreLogo(res.publicUrl);
-      showToast("Logo uploaded successfully!");
+      toast.success("Logo uploaded successfully!");
     } catch (err: any) {
       console.error(err);
-      showToast(err.message || "Error uploading image to S3");
+      toast.error(err.message || "Error uploading image to S3");
     } finally {
       setUploading(false);
     }
   };
 
-  const handleSaveProfile = async () => {
-    setSaving("profile");
-    try {
-      await upsertProfile.mutateAsync({
-        name: bpName,
-        description: bpDescription,
-        currency: bpCurrency,
-        defaultShippingCost: Number(bpShippingCost),
-        supportEmail: bpEmail,
-        supportPhone: bpPhone,
-      });
-      showToast("Business profile saved!");
-      router.refresh();
-    } catch {
-      showToast("Failed to save profile");
-    }
-    setSaving(null);
-  };
-
   const handleSaveAiAgent = async () => {
     const minutes = Number(followUpMinutes);
     if (!Number.isFinite(minutes) || minutes < 1) {
-      showToast("Follow-up delay must be at least 1 minute");
+      toast.error("Follow-up delay must be at least 1 minute");
       return;
     }
     setSaving("ai-agent");
     try {
       await upsertProfile.mutateAsync({
-        name: bpName,
-        description: bpDescription,
+        name: storeName.trim(),
+        description: storeDescription.trim() || undefined,
+        logoUrl: storeLogo ?? undefined,
         currency: bpCurrency,
         defaultShippingCost: Number(bpShippingCost),
         supportEmail: bpEmail,
@@ -269,10 +240,10 @@ export function SettingsClient({
         preferredLanguage: preferredLanguage as "auto" | "bangla" | "english",
         abandonedFollowupMinutes: minutes,
       });
-      showToast("AI Agent settings saved!");
+      toast.success("AI Agent settings saved!");
       router.refresh();
     } catch {
-      showToast("Failed to save AI Agent settings");
+      toast.error("Failed to save AI Agent settings");
     }
     setSaving(null);
   };
@@ -280,35 +251,29 @@ export function SettingsClient({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground mt-1 text-base">
-          Manage your business profile and AI agent context.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Manage your business profile and AI agent context.
+          </p>
+        </div>
       </div>
 
-      {/* Toast */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-4 rounded-xl bg-foreground px-4 py-2.5 text-sm font-medium text-background shadow-lg">
-          {toast}
-        </div>
-      )}
-
-      {/* ─── Store Settings (Top Profile Section) ───────────────── */}
-      <SettingsSection
-        icon={Store}
-        title="Store Profile"
-        description="Configure your active business name, description, and display logo."
-        defaultOpen={true}
+      {/* ─── Business Profile ──────────────────────────────────── */}
+      <SectionCard
+        icon={Building2}
+        title="Business Profile"
+        description="Your business name, logo, contact info, and defaults used by the AI agent."
       >
         <div className="flex flex-col gap-6 md:flex-row">
-          {/* Logo Upload Avatar */}
+          {/* Logo Upload */}
           <div className="flex flex-col items-center gap-3">
-            <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Store Display Image</Label>
+            <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Business Logo</Label>
             <div className="relative group h-28 w-28 shrink-0 overflow-hidden rounded-2xl border bg-muted flex items-center justify-center shadow-inner">
               {storeLogo ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={storeLogo} alt="Store logo" className="h-full w-full object-cover" />
+                <img src={storeLogo} alt="Business logo" className="h-full w-full object-cover" />
               ) : (
                 <div className="text-center">
                   <Store className="h-8 w-8 text-muted-foreground/60 mx-auto" />
@@ -336,144 +301,108 @@ export function SettingsClient({
               </label>
             </div>
             {uploading && (
-              <span className="text-[10px] text-primary animate-pulse font-semibold">Uploading to S3...</span>
+              <span className="text-[10px] text-primary animate-pulse font-semibold">Uploading...</span>
             )}
           </div>
 
-          {/* Text fields */}
+          {/* Fields */}
           <div className="flex-1 space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="store-name">Store Name</Label>
+                <Label htmlFor="store-name">Business Name</Label>
                 <Input
                   id="store-name"
                   value={storeName}
                   onChange={(e) => setStoreName(e.target.value)}
-                  placeholder="My Store"
+                  placeholder="My Business"
+                  className={inputCls}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="store-slug">Store Handle (Slug)</Label>
+                <Label htmlFor="store-slug">Business Handle (Slug)</Label>
                 <Input
                   id="store-slug"
                   value={storeProfile.slug}
                   disabled
-                  className="bg-muted text-muted-foreground cursor-not-allowed"
+                  className="cursor-not-allowed rounded-lg bg-muted text-muted-foreground"
+                />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="store-description">Description</Label>
+                <textarea
+                  id="store-description"
+                  value={storeDescription}
+                  onChange={(e) => setStoreDescription(e.target.value)}
+                  placeholder="Describe your business..."
+                  className="flex min-h-[80px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bp-email" className="flex items-center gap-1.5">
+                  <Mail className="h-3.5 w-3.5" /> Support Email
+                </Label>
+                <Input
+                  id="bp-email"
+                  type="email"
+                  value={bpEmail}
+                  onChange={(e) => setBpEmail(e.target.value)}
+                  placeholder="support@example.com"
+                  className={inputCls}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bp-phone" className="flex items-center gap-1.5">
+                  <Phone className="h-3.5 w-3.5" /> Support Phone
+                </Label>
+                <Input
+                  id="bp-phone"
+                  value={bpPhone}
+                  onChange={(e) => setBpPhone(e.target.value)}
+                  placeholder="+880..."
+                  className={inputCls}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bp-currency">Currency</Label>
+                <Input
+                  id="bp-currency"
+                  value={bpCurrency}
+                  onChange={(e) => setBpCurrency(e.target.value)}
+                  placeholder="BDT"
+                  className={inputCls}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bp-shipping" className="flex items-center gap-1.5">
+                  <DollarSign className="h-3.5 w-3.5" /> Default Shipping Cost
+                </Label>
+                <Input
+                  id="bp-shipping"
+                  type="number"
+                  value={bpShippingCost}
+                  onChange={(e) => setBpShippingCost(e.target.value)}
+                  placeholder="60"
+                  className={inputCls}
                 />
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="store-description">Store Description</Label>
-              <textarea
-                id="store-description"
-                value={storeDescription}
-                onChange={(e) => setStoreDescription(e.target.value)}
-                placeholder="Describe your business profile..."
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            </div>
-
-            <div className="flex justify-end pt-2">
+            <div className="flex justify-end border-t pt-4">
               <Button
-                onClick={handleSaveStore}
-                disabled={!isStoreProfileDirty || saving === "store"}
-                className="gap-2"
+                onClick={handleSaveBusiness}
+                disabled={!isBusinessDirty || saving === "business"}
+                className="gap-2 rounded-lg"
               >
                 <Save className="h-4 w-4" />
-                {saving === "store" ? "Saving..." : "Save Store Profile"}
+                {saving === "business" ? "Saving..." : "Save Business Profile"}
               </Button>
             </div>
           </div>
         </div>
-      </SettingsSection>
+      </SectionCard>
 
-      {/* ─── Business Profile ──────────────────────────────────── */}
-      <SettingsSection
-        icon={Building2}
-        title="Business Profile"
-        description="Your business name, contact info, and defaults used by the AI agent."
-        defaultOpen={false}
-      >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="bp-name">Business Name</Label>
-            <Input
-              id="bp-name"
-              value={bpName}
-              onChange={(e) => setBpName(e.target.value)}
-              placeholder="My Store"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="bp-currency">Currency</Label>
-            <Input
-              id="bp-currency"
-              value={bpCurrency}
-              onChange={(e) => setBpCurrency(e.target.value)}
-              placeholder="BDT"
-            />
-          </div>
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="bp-description">Description</Label>
-            <textarea
-              id="bp-description"
-              value={bpDescription}
-              onChange={(e) => setBpDescription(e.target.value)}
-              placeholder="A brief description of your business..."
-              className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="bp-email" className="flex items-center gap-1.5">
-              <Mail className="h-3.5 w-3.5" /> Support Email
-            </Label>
-            <Input
-              id="bp-email"
-              type="email"
-              value={bpEmail}
-              onChange={(e) => setBpEmail(e.target.value)}
-              placeholder="support@example.com"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="bp-phone" className="flex items-center gap-1.5">
-              <Phone className="h-3.5 w-3.5" /> Support Phone
-            </Label>
-            <Input
-              id="bp-phone"
-              value={bpPhone}
-              onChange={(e) => setBpPhone(e.target.value)}
-              placeholder="+880..."
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="bp-shipping" className="flex items-center gap-1.5">
-              <DollarSign className="h-3.5 w-3.5" /> Default Shipping Cost
-            </Label>
-            <Input
-              id="bp-shipping"
-              type="number"
-              value={bpShippingCost}
-              onChange={(e) => setBpShippingCost(e.target.value)}
-              placeholder="60"
-            />
-          </div>
-        </div>
-        <div className="mt-4 flex justify-end">
-          <Button
-            onClick={handleSaveProfile}
-            disabled={saving === "profile"}
-            className="gap-2"
-          >
-            <Save className="h-4 w-4" />
-            {saving === "profile" ? "Saving..." : "Save Profile"}
-          </Button>
-        </div>
-      </SettingsSection>
-
-      {/* ─── AI Agent ──────────────────────────────────────────── */}
-      <SettingsSection
+      {/* ─── AI Agent ───────────────────────────────────────────── */}
+      <SectionCard
         icon={Bot}
         title="AI Agent"
         description="How the AI sales agent introduces itself, talks, and follows up on abandoned conversations."
@@ -485,7 +414,8 @@ export function SettingsClient({
               id="agent-name"
               value={agentName}
               onChange={(e) => setAgentName(e.target.value)}
-              placeholder={bpName || "Defaults to your store name"}
+              placeholder={storeName || "Defaults to your business name"}
+              className={inputCls}
             />
           </div>
           <div className="space-y-2">
@@ -494,7 +424,7 @@ export function SettingsClient({
               id="agent-tone"
               value={conversationTone}
               onChange={(e) => setConversationTone(e.target.value)}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="friendly">Friendly</option>
               <option value="professional">Professional</option>
@@ -508,7 +438,7 @@ export function SettingsClient({
               id="agent-language"
               value={preferredLanguage}
               onChange={(e) => setPreferredLanguage(e.target.value)}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="auto">Auto-detect (matches customer)</option>
               <option value="bangla">Always Bangla</option>
@@ -526,23 +456,24 @@ export function SettingsClient({
               value={followUpMinutes}
               onChange={(e) => setFollowUpMinutes(e.target.value)}
               placeholder="30"
+              className={inputCls}
             />
           </div>
         </div>
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex justify-end border-t pt-4">
           <Button
             onClick={handleSaveAiAgent}
             disabled={saving === "ai-agent"}
-            className="gap-2"
+            className="gap-2 rounded-lg"
           >
             <Save className="h-4 w-4" />
             {saving === "ai-agent" ? "Saving..." : "Save AI Agent Settings"}
           </Button>
         </div>
-      </SettingsSection>
+      </SectionCard>
 
-      {/* ─── Shipping Rates ────────────────────────────────────── */}
-      <SettingsSection
+      {/* ─── Shipping Rates ─────────────────────────────────────── */}
+      <SectionCard
         icon={Truck}
         title="Shipping Rates"
         description={`${shippingRates.length} district rates configured. The AI uses these to calculate shipping.`}
@@ -558,9 +489,9 @@ export function SettingsClient({
             {shippingRates.map((rate) => (
               <div
                 key={rate.id}
-                className="grid grid-cols-4 items-center gap-4 rounded-xl bg-muted/30 px-3 py-2.5 text-sm"
+                className="grid grid-cols-4 items-center gap-4 rounded-lg bg-muted/30 px-3 py-2.5 text-sm"
               >
-                <span className="font-medium flex items-center gap-1.5">
+                <span className="flex items-center gap-1.5 font-medium">
                   <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
                   {rate.district}
                 </span>
@@ -579,10 +510,10 @@ export function SettingsClient({
             No shipping rates configured yet.
           </p>
         )}
-      </SettingsSection>
+      </SectionCard>
 
-      {/* ─── FAQs ──────────────────────────────────────────────── */}
-      <SettingsSection
+      {/* ─── FAQs ───────────────────────────────────────────────── */}
+      <SectionCard
         icon={HelpCircle}
         title="FAQs"
         description={`${faqs.length} frequently asked questions. The AI agent uses these to answer customer queries.`}
@@ -590,7 +521,7 @@ export function SettingsClient({
         {faqs.length > 0 ? (
           <div className="space-y-3">
             {faqs.map((f) => (
-              <div key={f.id} className="rounded-xl bg-muted/30 p-4">
+              <div key={f.id} className="rounded-lg bg-muted/30 p-4">
                 <p className="text-sm font-semibold text-foreground">
                   Q: {f.question}
                 </p>
@@ -614,10 +545,10 @@ export function SettingsClient({
             No FAQs configured yet.
           </p>
         )}
-      </SettingsSection>
+      </SectionCard>
 
-      {/* ─── Policies ──────────────────────────────────────────── */}
-      <SettingsSection
+      {/* ─── Policies ───────────────────────────────────────────── */}
+      <SectionCard
         icon={FileText}
         title="Policies"
         description={`${policies.length} store policies. These give the AI context about your return, shipping, and warranty rules.`}
@@ -625,7 +556,7 @@ export function SettingsClient({
         {policies.length > 0 ? (
           <div className="space-y-3">
             {policies.map((p) => (
-              <div key={p.id} className="rounded-xl bg-muted/30 p-4">
+              <div key={p.id} className="rounded-lg bg-muted/30 p-4">
                 <div className="flex items-center gap-2">
                   <Badge variant={p.active ? "default" : "secondary"} className="text-[10px] capitalize">
                     {p.type}
@@ -650,7 +581,7 @@ export function SettingsClient({
             No policies configured yet.
           </p>
         )}
-      </SettingsSection>
+      </SectionCard>
     </div>
   );
 }

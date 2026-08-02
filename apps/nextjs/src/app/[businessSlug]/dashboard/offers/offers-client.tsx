@@ -18,6 +18,7 @@ import {
   BadgePercent,
   Lock,
   ArrowUpRight,
+  Megaphone,
 } from "lucide-react";
 
 import { Badge } from "@acme/ui/badge";
@@ -45,6 +46,7 @@ interface Offer {
   createdAt: Date | string;
   comboProductAId?: string | null;
   comboProductBId?: string | null;
+  isCampaign: boolean;
 }
 
 const fieldClass =
@@ -172,6 +174,7 @@ export function OffersClient({ initialOffers, canManage }: { initialOffers: Offe
   const [isCombo, setIsCombo] = useState(false);
   const [comboProductAId, setComboProductAId] = useState("");
   const [comboProductBId, setComboProductBId] = useState("");
+  const [isCampaign, setIsCampaign] = useState(false);
 
   const filtered = useMemo(() => {
     return offers.filter((o) => {
@@ -206,6 +209,7 @@ export function OffersClient({ initialOffers, canManage }: { initialOffers: Offe
     setIsCombo(false);
     setComboProductAId("");
     setComboProductBId("");
+    setIsCampaign(false);
     setIsOpen(true);
   };
 
@@ -222,6 +226,7 @@ export function OffersClient({ initialOffers, canManage }: { initialOffers: Offe
     setIsCombo(Boolean(o.comboProductAId && o.comboProductBId));
     setComboProductAId(o.comboProductAId ?? "");
     setComboProductBId(o.comboProductBId ?? "");
+    setIsCampaign(o.isCampaign);
     setIsOpen(true);
   };
 
@@ -254,6 +259,7 @@ export function OffersClient({ initialOffers, canManage }: { initialOffers: Offe
           endDate: endDate ? new Date(endDate) : null,
           active,
           ...comboFields,
+          isCampaign,
         });
         setOffers(offers.map((o) => (o.id === editingOffer.id ? (updated as unknown as Offer) : o)));
         toast.success("Offer updated");
@@ -268,6 +274,7 @@ export function OffersClient({ initialOffers, canManage }: { initialOffers: Offe
           endDate: endDate ? new Date(endDate) : null,
           active,
           ...comboFields,
+          isCampaign,
         });
         setOffers([created as unknown as Offer, ...offers]);
         toast.success("Offer created");
@@ -416,6 +423,12 @@ export function OffersClient({ initialOffers, canManage }: { initialOffers: Offe
                   </div>
 
                   <h3 className="text-lg font-semibold text-foreground">{o.title}</h3>
+                  {o.isCampaign && (
+                    <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                      <Megaphone className="h-3 w-3" />
+                      Campaign — AI mentions this proactively
+                    </div>
+                  )}
                   {o.description && (
                     <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
                       {o.description}
@@ -652,6 +665,26 @@ export function OffersClient({ initialOffers, canManage }: { initialOffers: Offe
                     className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                   />
                   <Label htmlFor="offer-active">Offer is active and claimable</Label>
+                </div>
+              </div>
+              <div className={cn("flex items-start gap-2.5 rounded-xl border p-4 transition-colors", isCampaign && "border-amber-500/30 bg-amber-500/5")}>
+                <input
+                  id="offer-campaign"
+                  type="checkbox"
+                  checked={isCampaign}
+                  onChange={(e) => setIsCampaign(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                <div className="space-y-0.5">
+                  <Label htmlFor="offer-campaign" className="flex items-center gap-1.5 text-foreground">
+                    <Megaphone className="h-3.5 w-3.5 text-amber-500" />
+                    Feature as campaign
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    The AI will proactively bring this up early in conversations (e.g. a festival/seasonal
+                    promo), instead of waiting for the customer to ask or type a code. Available on Growth
+                    (shown to repeat customers only) and Pro (shown to everyone).
+                  </p>
                 </div>
               </div>
             </div>

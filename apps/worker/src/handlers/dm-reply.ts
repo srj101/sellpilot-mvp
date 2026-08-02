@@ -18,28 +18,32 @@ import { searchProductsByImage } from "@acme/api/vector-search";
 import { getMetaContactName } from "@acme/api/resolve-contact-names";
 import { getConversationSummary, generateAndSaveConversationSummary, getCustomerForThread } from "@acme/db/helpers/aiHelpers";
 
-import { checkAiTokenAvailability, incrementAiToken } from "../lib/ai-tokens.js";
+import { checkAiConversationAvailability, incrementAiConversation } from "../lib/ai-conversations.js";
 import { getBusinessPlanKey } from "../lib/plan.js";
+import { PLAN_CATALOG } from "@acme/api/plans";
 
 import { loadConfig } from "../config.js";
 import { RateLimiter } from "../middleware/rate-limiter.js";
 import { CircuitBreaker } from "../middleware/circuit-breaker.js";
 
 /**
- * Transcribe audio using OpenAI Whisper API
+ * Transcribe audio via any OpenAI-compatible /v1/audio/transcriptions endpoint. Provider
+ * is a pure config swap (TRANSCRIPTION_BASE_URL/API_KEY/MODEL) — self-hosted Whisper
+ * (scripts/dev.sh's local-whisper container) for now, OpenAI's real API or anything else
+ * OpenAI-compatible in production — the request shape never changes.
  */
-async function transcribeAudio(audioUrl: string, apiKey: string): Promise<string> {
+async function transcribeAudio(audioUrl: string, transcription: { baseUrl: string; apiKey: string; model: string }): Promise<string> {
   const response = await fetch(audioUrl);
   if (!response.ok) throw new Error(`Failed to fetch audio: ${response.status}`);
   const audioBuffer = await response.arrayBuffer();
 
   const formData = new FormData();
   formData.append("file", new Blob([audioBuffer]), "audio.ogg");
-  formData.append("model", "whisper-1");
+  formData.append("model", transcription.model);
 
-  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+  const res = await fetch(transcription.baseUrl, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: { Authorization: `Bearer ${transcription.apiKey}` },
     body: formData,
   });
 
@@ -201,10 +205,10 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
     }
   }
 
-  // Check AI token availability for this business subscription
-  const hasTokens = await checkAiTokenAvailability(data.businessId);
-  if (!hasTokens) {
-    console.warn(`[DMReply] Business ${data.businessId} has exhausted their AI tokens.`);
+  // Check AI conversation availability for this business subscription
+  const hasConversations = await checkAiConversationAvailability(data.businessId);
+  if (!hasConversations) {
+    console.warn(`[DMReply] Business ${data.businessId} has exhausted their AI conversations.`);
     // Optionally we could send a fallback message here notifying the customer,
     // but typically it just falls back to human-only mode quietly.
     return;
@@ -298,16 +302,25 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
       ? { name: existingCustomer.name, phone: existingCustomer.phone, address: existingCustomer.address }
       : undefined;
 
-  // Handle voice messages - transcribe first
+  // Handle voice messages - transcribe first. Pro-only per the pricing plan (§6 "Voice
+  // Message Support") — Starter/Growth get a fallback asking them to type instead.
   let messageText = incomingText;
   const audioUrl = incomingAudio?.[0];
   if (!messageText && audioUrl) {
-    try {
-      messageText = await transcribeAudio(audioUrl, config.openaiApiKey);
-      console.log(`[DMReply] Transcribed voice message: ${messageText.slice(0, 100)}`);
-    } catch (err) {
-      console.warn(`[DMReply] Failed to transcribe audio: ${audioUrl}`, err);
-      messageText = "[Voice message - transcription failed]";
+    if (!PLAN_CATALOG[planKey].limits.voiceMessagesEnabled) {
+      messageText = "[Customer sent a voice message. Voice messages aren't available on their current plan — politely ask them to type their question instead.]";
+    } else {
+      try {
+        messageText = await transcribeAudio(audioUrl, {
+          baseUrl: config.transcriptionBaseUrl,
+          apiKey: config.transcriptionApiKey,
+          model: config.transcriptionModel,
+        });
+        console.log(`[DMReply] Transcribed voice message: ${messageText.slice(0, 100)}`);
+      } catch (err) {
+        console.warn(`[DMReply] Failed to transcribe audio: ${audioUrl}`, err);
+        messageText = "[Voice message - transcription failed]";
+      }
     }
   }
 
@@ -377,11 +390,11 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
     if (result.success) {
       console.log(`[DMReply] Reply sent: ${result.messageId}`);
 
-      if (tokensUsed > 0) {
-        await incrementAiToken(data.businessId, tokensUsed).catch(err => {
-          console.error(`[DMReply] Failed to increment tokens for ${data.businessId}:`, err);
-        });
-      }
+      // One AI-generated reply = one billed conversation, regardless of tokensUsed above
+      // (that figure is kept only for cost telemetry logging, not billing).
+      await incrementAiConversation(data.businessId).catch(err => {
+        console.error(`[DMReply] Failed to increment conversation count for ${data.businessId}:`, err);
+      });
 
       // Log the outbound message
       if (outboundLogger) {

@@ -3,6 +3,7 @@
 import { RotateCcw } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
+import { Skeleton } from "@acme/ui/skeleton";
 import { cn } from "@acme/ui";
 
 export interface TransactionRow {
@@ -69,11 +70,19 @@ export function TransactionTable({ rows, isLoading, onRefund, refundingId }: Tra
         </thead>
         <tbody className="divide-y">
           {isLoading ? (
-            <tr>
-              <td colSpan={9} className="py-10 text-center text-xs text-muted-foreground">
-                Loading transactions…
-              </td>
-            </tr>
+            Array.from({ length: 5 }).map((_, i) => (
+              <tr key={i}>
+                <td className="py-3"><Skeleton className="h-4 w-20" /></td>
+                <td className="py-3"><Skeleton className="h-4 w-16" /></td>
+                <td className="py-3"><Skeleton className="h-4 w-24" /></td>
+                <td className="py-3"><Skeleton className="h-4 w-14" /></td>
+                <td className="py-3"><Skeleton className="h-5 w-16 rounded-full" /></td>
+                <td className="py-3 flex justify-end"><Skeleton className="h-4 w-16" /></td>
+                <td className="py-3 flex justify-end"><Skeleton className="h-4 w-12" /></td>
+                <td className="py-3"><Skeleton className="h-4 w-24" /></td>
+                <td className="py-3" />
+              </tr>
+            ))
           ) : rows.length ? (
             rows.map((r) => (
               <tr key={r.id}>

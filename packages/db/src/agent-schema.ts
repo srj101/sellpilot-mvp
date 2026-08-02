@@ -41,6 +41,15 @@ export const businessProfile = pgTable(
     supportEmail: text("support_email"),
     supportPhone: text("support_phone"),
     /**
+     * This business's OWN SSLCommerz merchant credentials — used only for their customers'
+     * order checkout (online payment), never for SellPilot's own SaaS billing (see
+     * platformSettings in billing-schema.ts). Nullable: until an owner sets these, their
+     * customers only see Cash on Delivery at checkout — never a silent fallback to any
+     * shared/platform account, which would route their customers' money to the wrong place.
+     */
+    sslcommerzStoreId: text("sslcommerz_store_id"),
+    sslcommerzStorePassword: text("sslcommerz_store_password"),
+    /**
      * AI agent persona/behavior settings (spec §5.2 Settings > AI Agent tab). All nullable
      * or defaulted so an owner who never opens that tab still gets sane behavior — null
      * agentName falls back to the store name, "auto" language keeps the existing
@@ -99,6 +108,13 @@ export const offer = pgTable(
      */
     comboProductAId: text("combo_product_a_id").references(() => product.id, { onDelete: "cascade" }),
     comboProductBId: text("combo_product_b_id").references(() => product.id, { onDelete: "cascade" }),
+    /**
+     * Flags this offer for proactive, unprompted mention by the AI agent (festival/seasonal
+     * campaigns), as opposed to an ordinary coupon the customer must type or a combo that
+     * only surfaces when its specific product pair comes up. Independent of the combo
+     * fields — a campaign can be code-based, automatic, or a combo, and still be featured.
+     */
+    isCampaign: boolean("is_campaign").default(false).notNull(),
     startDate: timestamp("start_date").defaultNow().notNull(),
     endDate: timestamp("end_date"),
     active: boolean("active").default(true).notNull(),
@@ -200,6 +216,12 @@ export const order = pgTable(
     /** Customer-submitted screenshot for manual bKash/Nagad confirmation via chat */
     paymentScreenshotUrl: text("payment_screenshot_url"),
     paymentConfirmedAt: timestamp("payment_confirmed_at"),
+    /** Set once, the first time status transitions to "delivered" — drives the
+     * review-request sweep's delay window (apps/worker/src/handlers/review-request.ts).
+     * Distinct from updatedAt, which moves on any field change, not just delivery. */
+    deliveredAt: timestamp("delivered_at"),
+    /** Set by the review-request sweep once it's asked — prevents asking twice. */
+    reviewRequestSentAt: timestamp("review_request_sent_at"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
@@ -252,9 +274,10 @@ export const orderItem = pgTable(
 );
 
 /**
- * Live/abandoned carts, one row per in-progress conversation cart. Distinct from
- * agentSession.state.cart (the LLM's working memory) — this is the queryable,
- * relational record used to detect abandonment and drive recovery follow-ups.
+ * Live/abandoned carts, one row per in-progress conversation cart — the multi-item
+ * shopping cart the AI agent builds up via quoteOrder (packages/db/src/helpers/aiHelpers.ts's
+ * upsertActiveCart), and the record the abandoned-cart follow-up sweep
+ * (apps/worker/src/handlers/conversation-followup.ts) reads to know what to reference.
  * status lifecycle: active -> abandoned -> recovered | converted
  */
 export const cart = pgTable(
@@ -378,7 +401,8 @@ export const subscription = pgTable(
       .references(() => business.id, { onDelete: "cascade" }),
     /** "monthly" | "half_yearly" | "yearly" | "lifetime" */
     billingCycle: text("billing_cycle").default("monthly").notNull(),
-    /** Reset by the renewal job each period — whole-number token count, not currency */
+    /** Reset by the renewal job each period — counts one per AI-generated message/reply
+     * sent, not LLM token volume. See apps/worker/src/lib/ai-conversations.ts. */
     aiConversationsUsed: integer("ai_conversations_used").default(0),
     /** "starter" | "growth" | "pro" — must match PLAN_CATALOG keys in api/src/lib/plans.ts */
     plan: text("plan").notNull(),
@@ -399,6 +423,12 @@ export const subscription = pgTable(
     productsUsed: integer("products_used").default(0).notNull(),
     seatsUsed: integer("seats_used").default(1).notNull(),
     usageResetAt: timestamp("usage_reset_at").defaultNow().notNull(),
+    /** Set once per billing period the first time aiConversationsUsed crosses 80%/100% of
+     * the plan's included volume — guards the usage-alert email/notification from firing
+     * on every message once past a threshold. Reset to null alongside aiConversationsUsed
+     * in subscription.ts's markInvoicePaid. */
+    usageAlert80SentAt: timestamp("usage_alert_80_sent_at"),
+    usageAlert100SentAt: timestamp("usage_alert_100_sent_at"),
     /** Consecutive failed renewal charges — drives the 3-strike dunning ladder */
     failedPaymentCount: integer("failed_payment_count").default(0).notNull(),
     cancelledAt: timestamp("cancelled_at"),
@@ -569,15 +599,6 @@ export interface AgentSessionState {
     district?: string;
     customerId?: string;
   };
-  cart?: Array<{
-    productId: string;
-    variantId: string;
-    name: string;
-    variantTitle?: string;
-    quantity: number;
-    unitPrice: number;
-    imageUrl?: string;
-  }>;
   shippingAddress?: string;
   shippingDistrict?: string;
   shippingCost?: number;

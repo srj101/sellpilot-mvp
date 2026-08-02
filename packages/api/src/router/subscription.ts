@@ -8,8 +8,19 @@ import { business, businessMember, order, paymentMethod, product, saasInvoice, s
 
 import type { BillingCycle, PlanKey } from "../lib/plans";
 import { BILLING_CYCLES, CYCLE_META, PLAN_CATALOG, PLAN_KEYS, priceForCycle } from "../lib/plans";
-import { CARD_AND_BANK_GATEWAYS, initiatePayment, validatePayment } from "../lib/sslcommerz";
+import { CARD_AND_BANK_GATEWAYS, initiatePayment, resolvePlatformCredentials as resolvePlatformCredentialsRaw, validatePayment } from "../lib/sslcommerz";
 import { businessScopedProcedure, ownerOnlyProcedure, publicProcedure } from "../trpc";
+
+/** Thin TRPCError wrapper around sslcommerz.ts's shared resolvePlatformCredentials (also
+ * used by the worker's subscription-renewal job) so a missing platform gateway surfaces as
+ * a proper tRPC error here instead of a raw Error. */
+async function resolvePlatformCredentials(db: typeof Db) {
+  try {
+    return await resolvePlatformCredentialsRaw(db);
+  } catch (err) {
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err instanceof Error ? err.message : "Payment gateway error." });
+  }
+}
 
 const PlanKeySchema = z.enum(PLAN_KEYS);
 const BillingCycleSchema = z.enum(BILLING_CYCLES);
@@ -131,7 +142,7 @@ export const subscriptionRouter = {
     const pct = (used: number, limit: number | null) => (limit === null ? null : Math.min(100, Math.round((used / limit) * 100)));
 
     return {
-      aiConversations: { used: sub?.aiConversationsUsed ?? 0, limit: limits.aiTokensPerMonth, pct: pct(sub?.aiConversationsUsed ?? 0, limits.aiTokensPerMonth) },
+      aiConversations: { used: sub?.aiConversationsUsed ?? 0, limit: limits.aiConversationsPerMonth, pct: pct(sub?.aiConversationsUsed ?? 0, limits.aiConversationsPerMonth) },
       products: { used: productsUsed, limit: limits.products, pct: pct(productsUsed, limits.products) },
       seats: { used: seatsUsed, limit: limits.teamSeats, pct: pct(seatsUsed, limits.teamSeats) },
       invoices: { used: invoicesUsed, limit: limits.invoices, pct: pct(invoicesUsed, limits.invoices) },
@@ -170,6 +181,7 @@ export const subscriptionRouter = {
 
       const base = `${appUrl()}/api/billing`;
       const result = await initiatePayment({
+        credentials: await resolvePlatformCredentials(ctx.db),
         transactionId: invoice.id,
         amount,
         customerName: ctx.session.user.name,
@@ -271,6 +283,7 @@ export const subscriptionRouter = {
 
       const base = `${appUrl()}/api/billing`;
       const result = await initiatePayment({
+        credentials: await resolvePlatformCredentials(ctx.db),
         transactionId: invoice.id,
         amount: chargeNow,
         customerName: ctx.session.user.name,
@@ -331,6 +344,7 @@ export const subscriptionRouter = {
     const base = `${appUrl()}/api/billing`;
     const verificationRef = `pm_setup_${ctx.businessId}_${Date.now()}`;
     const result = await initiatePayment({
+      credentials: await resolvePlatformCredentials(ctx.db),
       transactionId: verificationRef,
       amount: 10,
       customerName: ctx.session.user.name,
@@ -385,6 +399,7 @@ export const subscriptionRouter = {
 
       const base = `${appUrl()}/api/billing`;
       const result = await initiatePayment({
+        credentials: await resolvePlatformCredentials(ctx.db),
         transactionId: invoice.id,
         amount: invoice.amount,
         customerName: ctx.session.user.name,
@@ -429,7 +444,7 @@ export const subscriptionRouter = {
   markInvoicePaid: publicProcedure
     .input(z.object({ tranId: z.string(), valId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const result = await validatePayment(input.valId);
+      const result = await validatePayment(input.valId, await resolvePlatformCredentials(ctx.db));
       if (!result.valid || result.transactionId !== input.tranId) return { ok: false as const };
 
       // Card-verification charge from addPaymentMethod — not a real invoice.
@@ -485,6 +500,8 @@ export const subscriptionRouter = {
           cancelledAt: null,
           aiConversationsUsed: 0,
           usageResetAt: new Date(),
+          usageAlert80SentAt: null,
+          usageAlert100SentAt: null,
         })
         .where(eq(subscription.businessId, invoice.businessId));
 

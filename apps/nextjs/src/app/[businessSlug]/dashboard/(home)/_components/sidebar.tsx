@@ -130,15 +130,8 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "Account",
     items: [
-      {
-        href: "/dashboard/settings",
-        icon: Settings,
-        label: "Settings",
-        submenu: [
-          { href: "/dashboard/settings/profile", label: "Profile" },
-          { href: "/dashboard/settings/password", label: "Password" },
-        ],
-      },
+      { href: "/dashboard/settings", icon: Settings, label: "Settings" },
+      { href: "/dashboard/settings/profile", icon: User, label: "Profile" },
       { href: "/dashboard/notifications", icon: Bell, label: "Notifications" },
     ],
   },

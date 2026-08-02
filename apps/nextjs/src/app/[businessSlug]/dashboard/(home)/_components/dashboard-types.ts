@@ -10,8 +10,8 @@ export interface SerializedOrder {
   customerName: string;
   customerPhone: string | null;
   channel: string | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: string | Date;
+  updatedAt: string | Date;
   [key: string]: unknown;
 }
 
@@ -36,13 +36,6 @@ export interface RecentOrderItem {
 
 export interface DashboardClientProps {
   userName: string;
-  now: number;
-  orders: SerializedOrder[];
-  productCount: number;
-  customerCount: number;
-  activeOfferCount: number;
-  recentItems: RecentOrderItem[];
-  messageStats: MessageStats;
 }
 
 export interface ActivityEvent {

@@ -14,6 +14,7 @@ import { metaConnection, metaWebhookEvent } from "@acme/db/schema";
 
 import { env } from "~/env";
 import { triggerInboxBroadcast } from "~/lib/inbox-broadcast";
+import { classifyMessagePriority, QUEUE_PRIORITY } from "~/lib/message-priority";
 import { createQueue, type MetaDMReplyJob } from "@acme/queue";
 
 export const runtime = "nodejs";
@@ -310,9 +311,13 @@ export async function POST(req: NextRequest) {
       };
 
       try {
+        const hasMedia = Boolean(job.incomingMessage.imageUrls?.length || job.incomingMessage.audioUrls?.length);
+        const priority = QUEUE_PRIORITY[classifyMessagePriority(job.incomingMessage.text, hasMedia)];
+
         await queue.enqueue("meta-dm-reply", job, {
           attempts: 3,
           backoff: { type: "exponential", delay: 2000 },
+          priority,
         });
         console.log("[OpenWA Webhook] Enqueued DM reply job:", dedupeKey);
       } catch (err) {

@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Building2,
   ChevronRight,
+  CreditCard,
   ExternalLink,
   Search,
   Shield,
@@ -16,7 +17,9 @@ import {
 import { Button } from "@acme/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@acme/ui/card";
 import { toast } from "@acme/ui/toast";
+import { cn } from "@acme/ui";
 import { useTRPC } from "~/trpc/react";
+import { PlatformPaymentSettings } from "./platform-payment-settings";
 
 type UserRow = {
   id: string;
@@ -32,6 +35,7 @@ export function SuperadminClient({ initialUsers }: { initialUsers: UserRow[] }) 
   const trpc = useTRPC();
   const [search, setSearch] = useState("");
   const [selectedUser, setSelectedUser] = useState<UserRow | null>(null);
+  const [tab, setTab] = useState<"users" | "payments">("users");
 
   const setBanStatus = useMutation(
     trpc.superadmin.setBanStatus.mutationOptions({
@@ -56,6 +60,33 @@ export function SuperadminClient({ initialUsers }: { initialUsers: UserRow[] }) 
   );
 
   return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-1 rounded-lg border bg-card p-1 w-fit">
+        <button
+          type="button"
+          onClick={() => setTab("users")}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+            tab === "users" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Users className="h-4 w-4" /> Users
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("payments")}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+            tab === "payments" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <CreditCard className="h-4 w-4" /> Payment Settings
+        </button>
+      </div>
+
+      {tab === "payments" ? (
+        <PlatformPaymentSettings />
+      ) : (
     <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
       {/* Left: User list */}
       <div className="space-y-4">
@@ -278,6 +309,8 @@ export function SuperadminClient({ initialUsers }: { initialUsers: UserRow[] }) 
           </>
         )}
       </div>
+    </div>
+      )}
     </div>
   );
 }

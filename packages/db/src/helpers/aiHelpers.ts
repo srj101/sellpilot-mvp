@@ -5,15 +5,16 @@ import { publishNotificationEvent } from "@acme/queue";
 import {
   agentSession,
   businessProfile,
+  cart,
   customer,
   faq,
   notification,
   offer,
   order,
   orderItem,
+  review,
   shippingRate,
 } from "../agent-schema";
-import type { AgentSessionState } from "../agent-schema";
 import { transaction } from "../billing-schema";
 import { db } from "../client";
 import { conversationMeta } from "../inbox-schema";
@@ -307,6 +308,60 @@ export async function getComboOffersForProduct(businessId: string, productId: st
   });
 }
 
+/**
+ * Live offers flagged for proactive, unprompted mention (festival/seasonal campaigns) —
+ * B.7. Distinct from getComboOffersForProduct (product-triggered) and getOfferByCode
+ * (customer-triggered): the agent surfaces these on its own initiative, so tier-gating
+ * and the "limited" targeting rule are applied by the calling tool, not here.
+ */
+export async function getActiveCampaigns(businessId: string) {
+  const now = new Date();
+  const rows = await db
+    .select()
+    .from(offer)
+    .where(
+      and(
+        eq(offer.businessId, businessId),
+        eq(offer.isCampaign, true),
+        eq(offer.active, true),
+        lte(offer.startDate, now),
+        or(isNull(offer.endDate), gte(offer.endDate, now)),
+      ),
+    )
+    .orderBy(desc(offer.createdAt));
+
+  return rows.map((r) => ({
+    offerId: r.id,
+    title: r.title,
+    description: r.description,
+    code: r.code,
+    type: r.type,
+    value: r.value,
+    minSubtotal: r.minSubtotal,
+  }));
+}
+
+/**
+ * Whether this thread's linked customer has any prior order with this business — powers
+ * Growth's "limited (most-purchased customers only)" campaign-mention rule. Same
+ * thread→customer resolution as getCustomerPurchaseHistory, just a cheap existence check
+ * instead of fetching the list.
+ */
+export async function hasPriorPurchases(businessId: string, threadId: string): Promise<boolean> {
+  const [meta] = await db
+    .select({ customerId: conversationMeta.customerId })
+    .from(conversationMeta)
+    .where(and(eq(conversationMeta.businessId, businessId), eq(conversationMeta.threadId, threadId)));
+  if (!meta?.customerId) return false;
+
+  const [row] = await db
+    .select({ id: order.id })
+    .from(order)
+    .where(and(eq(order.businessId, businessId), eq(order.customerId, meta.customerId)))
+    .limit(1);
+  return Boolean(row);
+}
+
 // Shipping cost for a district, falling back to the business's default shipping cost.
 export async function getShippingCost(businessId: string, district?: string) {
   if (district) {
@@ -371,87 +426,105 @@ async function resolveProductVariant(businessId: string, productId: string, vari
   return { error: null, product: p, variant };
 }
 
-// Price a line item, optionally paired with a second combo product — unit price(s),
-// offer/compare-at price, combo discount, shipping, and total. Use this instead of having
-// the model do price arithmetic itself.
-export async function quoteOrder(params: {
-  businessId: string;
+export interface CartItemInput {
   productId: string;
   variantId?: string;
   quantity: number;
-  district?: string;
-  offerCode?: string;
-  /** Second product to price alongside the first, e.g. a combo/bundle suggestion the
-   * customer agreed to. If a live combo offer matches this exact pair, its discount is
-   * applied instead of offerCode — a combo and a typed coupon never stack. */
-  comboProductId?: string;
-  comboVariantId?: string;
-  comboQuantity?: number;
-}) {
-  const { businessId, productId, variantId, quantity, district, offerCode, comboProductId, comboVariantId, comboQuantity } = params;
+}
 
-  const empty = {
-    productId: "",
-    variantId: "",
-    productTitle: "",
-    variantTitle: null as string | null,
-    imageUrl: null as string | null,
-    unitPrice: 0,
-    compareAtPrice: null as number | null,
-    quantity,
-    comboProductTitle: null as string | null,
-    comboUnitPrice: null as number | null,
-    comboQuantity: null as number | null,
-    subtotal: 0,
-    discountAmount: 0,
-    shippingCost: 0,
-    estimatedShippingDays: null as number | null,
-    total: 0,
-    currency: "USD",
-  };
+export interface ResolvedLineItem {
+  productId: string;
+  variantId: string;
+  productTitle: string;
+  variantTitle: string | null;
+  imageUrl: string | null;
+  unitPrice: number;
+  compareAtPrice: number | null;
+  inventoryQuantity: number;
+  quantity: number;
+  lineTotal: number;
+}
 
-  const main = await resolveProductVariant(businessId, productId, variantId);
-  if (main.error) return { ...empty, productTitle: main.product?.title ?? "", error: main.error };
-  const { product: p, variant } = main;
-
-  let combo: Awaited<ReturnType<typeof resolveProductVariant>> | null = null;
-  if (comboProductId) {
-    combo = await resolveProductVariant(businessId, comboProductId, comboVariantId);
-    if (combo.error) return { ...empty, productTitle: p.title, error: `Combo product: ${combo.error}` };
+/** Shared by quoteOrder and createCustomerAndOrder — resolves every line item, sums the
+ * subtotal, and applies whichever discount rule fits: exactly two items checks for a live
+ * combo offer on that exact pair (a combo and a typed coupon never stack); anything else
+ * falls back to a flat offerCode discount against the whole subtotal. Combo offers are
+ * inherently pairwise (offer.comboProductAId/comboProductBId), so they only ever apply to
+ * a 2-item cart — 3+ items is a plain multi-product order, coupon-only. */
+async function resolveAndPriceItems(
+  businessId: string,
+  items: CartItemInput[],
+  offerCode?: string,
+): Promise<{ items: ResolvedLineItem[]; subtotal: number; discountAmount: number; error?: string }> {
+  const resolved: ResolvedLineItem[] = [];
+  for (const it of items) {
+    const r = await resolveProductVariant(businessId, it.productId, it.variantId);
+    if (r.error) {
+      const label = r.product?.title ? `"${r.product.title}"` : `product ${it.productId}`;
+      return { items: [], subtotal: 0, discountAmount: 0, error: `${label}: ${r.error}` };
+    }
+    resolved.push({
+      productId: r.product.id,
+      variantId: r.variant.id,
+      productTitle: r.product.title,
+      variantTitle: r.variant.title,
+      imageUrl: r.variant.imageUrl ?? r.product.images?.[0] ?? null,
+      unitPrice: r.variant.price,
+      compareAtPrice: r.variant.compareAtPrice ?? null,
+      inventoryQuantity: r.variant.inventoryQuantity ?? 0,
+      quantity: it.quantity,
+      lineTotal: r.variant.price * it.quantity,
+    });
   }
 
-  const mainSubtotal = variant.price * quantity;
-  const comboQty = comboQuantity ?? 1;
-  const comboSubtotal = combo?.variant ? combo.variant.price * comboQty : 0;
-  const subtotal = mainSubtotal + comboSubtotal;
+  const subtotal = resolved.reduce((sum, i) => sum + i.lineTotal, 0);
 
   let discountAmount = 0;
-  if (combo?.variant) {
-    const [comboOffer] = await db.select().from(offer).where(liveComboOfferWhere(businessId, productId, comboProductId!, new Date()));
+  if (resolved.length === 2) {
+    const [comboOffer] = await db
+      .select()
+      .from(offer)
+      .where(liveComboOfferWhere(businessId, resolved[0]!.productId, resolved[1]!.productId, new Date()));
     discountAmount = calculateDiscount(comboOffer, subtotal);
   } else if (offerCode) {
     const [coupon] = await db.select().from(offer).where(liveOfferWhere(businessId, offerCode, new Date()));
     discountAmount = calculateDiscount(coupon, subtotal);
   }
 
+  return { items: resolved, subtotal, discountAmount };
+}
+
+// Price a cart of one or more line items — unit prices, combo/coupon discount, shipping,
+// and total. Use this instead of having the model do price arithmetic itself.
+export async function quoteOrder(params: {
+  businessId: string;
+  items: CartItemInput[];
+  district?: string;
+  offerCode?: string;
+}) {
+  const { businessId, items, district, offerCode } = params;
+  const priced = await resolveAndPriceItems(businessId, items, offerCode);
+  if (priced.error) {
+    return {
+      items: [] as ResolvedLineItem[],
+      subtotal: 0,
+      discountAmount: 0,
+      shippingCost: 0,
+      estimatedShippingDays: null as number | null,
+      total: 0,
+      currency: "USD",
+      error: priced.error,
+    };
+  }
+
   const { cost: shippingCost, estimatedDays } = await getShippingCost(businessId, district);
-  const total = Math.max(0, subtotal + shippingCost - discountAmount);
+  const total = Math.max(0, priced.subtotal + shippingCost - priced.discountAmount);
   const profile = await getBusinessProfile(businessId);
 
   return {
-    productId: p.id,
-    variantId: variant.id,
-    productTitle: p.title,
-    variantTitle: variant.title,
-    imageUrl: variant.imageUrl ?? p.images?.[0] ?? null,
-    unitPrice: variant.price,
-    compareAtPrice: variant.compareAtPrice ?? null,
-    quantity,
-    comboProductTitle: combo?.product?.title ?? null,
-    comboUnitPrice: combo?.variant?.price ?? null,
-    comboQuantity: combo?.variant ? comboQty : null,
-    subtotal,
-    discountAmount,
+    items: priced.items,
+    subtotal: priced.subtotal,
+    discountAmount: priced.discountAmount,
     shippingCost,
     estimatedShippingDays: estimatedDays,
     total,
@@ -459,15 +532,13 @@ export async function quoteOrder(params: {
   };
 }
 
-// Create a customer + order, optionally with a second combo product as a paired line item.
+// Create a customer + order with one or more line items.
 export async function createCustomerAndOrder(params: {
   userId: string;
   businessId: string;
   threadId: string;
   channel: string;
-  productId: string;
-  variantId?: string;
-  quantity: number;
+  items: CartItemInput[];
   /** Omit any of these three for a returning customer already linked to this
    * conversation (from an earlier order in the same thread) — missing ones are filled
    * in automatically from that record. Required if this is the first order in this
@@ -477,47 +548,21 @@ export async function createCustomerAndOrder(params: {
   address?: string;
   district?: string;
   offerCode?: string;
-  /** Second product the customer agreed to add — e.g. accepting a combo suggestion. If a
-   * live combo offer matches this exact pair, its discount applies instead of offerCode. */
-  comboProductId?: string;
-  comboVariantId?: string;
-  comboQuantity?: number;
   /** "cod" = order is inserted already confirmed, cash collected at delivery — mirrors
    * checkout.ts's confirmCod end state exactly. "online"/undefined = today's behavior
    * (pending, payment link). */
   paymentMethod?: "cod" | "online";
 }) {
-  const {
-    userId,
-    businessId,
-    threadId,
-    channel,
-    productId,
-    variantId,
-    quantity,
-    district,
-    offerCode,
-    comboProductId,
-    comboVariantId,
-    comboQuantity,
-    paymentMethod,
-  } = params;
+  const { userId, businessId, threadId, channel, items, district, offerCode, paymentMethod } = params;
   let { customerName, phone, address } = params;
 
-  const main = await resolveProductVariant(businessId, productId, variantId);
-  if (main.error) return { success: false, error: main.error };
-  const { product: p, variant } = main;
-  if ((variant.inventoryQuantity ?? 0) < quantity)
-    return { success: false, error: "Insufficient stock" };
+  if (items.length === 0) return { success: false, error: "No items to order" };
 
-  let combo: Awaited<ReturnType<typeof resolveProductVariant>> | null = null;
-  const comboQty = comboQuantity ?? 1;
-  if (comboProductId) {
-    combo = await resolveProductVariant(businessId, comboProductId, comboVariantId);
-    if (combo.error) return { success: false, error: `Combo product: ${combo.error}` };
-    if ((combo.variant.inventoryQuantity ?? 0) < comboQty)
-      return { success: false, error: "Insufficient stock for combo product" };
-  }
+  const priced = await resolveAndPriceItems(businessId, items, offerCode);
+  if (priced.error) return { success: false, error: priced.error };
+
+  const insufficient = priced.items.find((i) => i.inventoryQuantity < i.quantity);
+  if (insufficient) return { success: false, error: `Insufficient stock: ${insufficient.productTitle}` };
 
   // Reuse the customer already linked to this conversation (from an earlier order in
   // the same thread) for whichever of name/phone/address were omitted, instead of
@@ -545,25 +590,16 @@ export async function createCustomerAndOrder(params: {
   const cust = await upsertCustomerByPhone(userId, businessId, { name: customerName, phone: normalizedPhone, address });
   if (!cust) return { success: false, error: "Unable to create customer" };
 
-  const mainSubtotal = variant.price * quantity;
-  const comboSubtotal = combo?.variant ? combo.variant.price * comboQty : 0;
-  const subtotal = mainSubtotal + comboSubtotal;
-
-  let discountAmount = 0;
-  if (combo?.variant) {
-    const [comboOffer] = await db.select().from(offer).where(liveComboOfferWhere(businessId, productId, comboProductId!, new Date()));
-    discountAmount = calculateDiscount(comboOffer, subtotal);
-  } else if (offerCode) {
-    const [coupon] = await db.select().from(offer).where(liveOfferWhere(businessId, offerCode, new Date()));
-    discountAmount = calculateDiscount(coupon, subtotal);
-  }
-
+  const { subtotal, discountAmount } = priced;
   const { cost: shippingCost } = await getShippingCost(businessId, district);
   const total = Math.max(0, subtotal + shippingCost - discountAmount);
   // Generated regardless of paymentMethod — cheap, and a COD order still benefits from
   // having a live link on file if the customer changes their mind later.
   const { paymentToken, paymentUrl } = buildPaymentLink();
   const isCod = paymentMethod === "cod";
+  // A combo-offer discount (exactly 2 items) is never a typed coupon — same distinction
+  // the old main/combo code made via couponCode: combo?.variant ? null : offerCode.
+  const isComboDiscount = priced.items.length === 2 && discountAmount > 0 && !offerCode;
 
   const [created] = await db
     .insert(order)
@@ -584,7 +620,7 @@ export async function createCustomerAndOrder(params: {
       customerPhone: phone,
       shippingAddress: address,
       shippingDistrict: district ?? null,
-      couponCode: combo?.variant ? null : (offerCode ?? null),
+      couponCode: isComboDiscount ? null : (offerCode ?? null),
       channel,
       threadId,
       paymentToken,
@@ -607,40 +643,23 @@ export async function createCustomerAndOrder(params: {
     });
   }
 
-  await db.insert(orderItem).values({
-    orderId: created.id,
-    productId,
-    variantId: variant.id,
-    name: p.title,
-    variantTitle: variant.title,
-    qty: quantity,
-    unitPrice: variant.price,
-    lineTotal: variant.price * quantity,
-    imageUrl: variant.imageUrl,
-  });
-
-  await db
-    .update(productVariant)
-    .set({ inventoryQuantity: (variant.inventoryQuantity ?? 0) - quantity })
-    .where(eq(productVariant.id, variant.id));
-
-  if (combo?.variant && combo.product) {
+  for (const item of priced.items) {
     await db.insert(orderItem).values({
       orderId: created.id,
-      productId: comboProductId,
-      variantId: combo.variant.id,
-      name: combo.product.title,
-      variantTitle: combo.variant.title,
-      qty: comboQty,
-      unitPrice: combo.variant.price,
-      lineTotal: combo.variant.price * comboQty,
-      imageUrl: combo.variant.imageUrl,
+      productId: item.productId,
+      variantId: item.variantId,
+      name: item.productTitle,
+      variantTitle: item.variantTitle,
+      qty: item.quantity,
+      unitPrice: item.unitPrice,
+      lineTotal: item.lineTotal,
+      imageUrl: item.imageUrl,
     });
 
     await db
       .update(productVariant)
-      .set({ inventoryQuantity: (combo.variant.inventoryQuantity ?? 0) - comboQty })
-      .where(eq(productVariant.id, combo.variant.id));
+      .set({ inventoryQuantity: item.inventoryQuantity - item.quantity })
+      .where(eq(productVariant.id, item.variantId));
   }
 
   await linkConversationToCustomer(userId, businessId, threadId, cust.id);
@@ -648,16 +667,16 @@ export async function createCustomerAndOrder(params: {
   // Covers both the AI's own order creation and the manual "Create Order" sheet — this
   // is the one function both paths funnel through, so notifying here means every order
   // gets one regardless of which path created it.
+  const itemsSummary = priced.items.map((i) => `${i.productTitle} × ${i.quantity}`).join(", ");
   await createNotification({
     businessId,
     type: "order_created",
     title: `New order #${created.orderNumber}`,
-    body: `${p.title} × ${quantity} — ৳${created.total.toLocaleString()} (${customerName})`,
+    body: `${itemsSummary} — ৳${created.total.toLocaleString()} (${customerName})`,
     link: "/dashboard/orders",
   }).catch((err) => console.error("[createCustomerAndOrder] Failed to create notification:", err));
 
-  // Mark this thread's session (if recordSessionCartItem ever created one, from an
-  // earlier quoteOrder call) as no longer "abandoned mid-purchase" — RECOVERABLE_STEPS
+  // Mark this thread's session as no longer "abandoned mid-purchase" — RECOVERABLE_STEPS
   // in the abandoned-follow-up sweep excludes "order_placed" specifically so a customer
   // who already completed their order doesn't get nudged about it afterward. Without
   // this, the session would stay stuck at "cart_active" forever.
@@ -674,6 +693,18 @@ export async function createCustomerAndOrder(params: {
     }
   } catch (err) {
     console.error("[createCustomerAndOrder] Failed to mark session as order_placed:", err);
+  }
+
+  // Best-effort: the matching cart (if any — quoteOrder may never have been called, e.g.
+  // a repeat customer who just re-orders) moves out of "active" so the abandoned-cart
+  // sweep never targets an already-converted order.
+  try {
+    await db
+      .update(cart)
+      .set({ status: "converted", convertedOrderId: created.id })
+      .where(and(eq(cart.userId, userId), eq(cart.threadId, threadId), eq(cart.status, "active")));
+  } catch (err) {
+    console.error("[createCustomerAndOrder] Failed to mark cart converted:", err);
   }
 
   return {
@@ -715,6 +746,41 @@ export async function getOrdersForThread(businessId: string, threadId: string) {
       .filter((i) => i.orderId === o.id)
       .map((i) => ({ name: i.name, variantTitle: i.variantTitle, qty: i.qty, lineTotal: i.lineTotal })),
   }));
+}
+
+/**
+ * Most recent delivered order on this thread that hasn't been reviewed yet — the order
+ * the agent should attach a customer's feedback to when they reply with a review
+ * (submitReview below), whether or not the review-request sweep prompted it.
+ */
+export async function getPendingReviewOrder(businessId: string, threadId: string) {
+  const [pending] = await db
+    .select({ id: order.id, orderNumber: order.orderNumber, customerId: order.customerId })
+    .from(order)
+    .where(and(eq(order.businessId, businessId), eq(order.threadId, threadId), eq(order.status, "delivered")))
+    .orderBy(desc(order.deliveredAt));
+  if (!pending) return null;
+
+  const [existingReview] = await db.select({ id: review.id }).from(review).where(eq(review.orderId, pending.id));
+  if (existingReview) return null;
+
+  const [firstItem] = await db.select({ productId: orderItem.productId }).from(orderItem).where(eq(orderItem.orderId, pending.id)).limit(1);
+
+  return { orderId: pending.id, orderNumber: pending.orderNumber, customerId: pending.customerId, productId: firstItem?.productId ?? null };
+}
+
+/** Stores a customer's review against a specific delivered order — the `review` table
+ * itself is the collection mechanism (spec §6 "Review & Feedback Collection"), no
+ * separate dashboard surface exists for it yet. */
+export async function submitReview(params: {
+  userId: string;
+  orderId: string;
+  customerId: string | null;
+  productId: string | null;
+  rating: number;
+  comment?: string;
+}): Promise<void> {
+  await db.insert(review).values(params);
 }
 
 /**
@@ -813,6 +879,71 @@ export async function getConversationHandlingMode(businessId: string, threadId: 
     .from(conversationMeta)
     .where(and(eq(conversationMeta.businessId, businessId), eq(conversationMeta.threadId, threadId)));
   return meta?.handlingMode === "human" ? "human" : "ai";
+}
+
+/**
+ * Auto-escalation (FR-AGT-15) — hands a thread over to human handling the same way the
+ * dashboard's manual "Take over" button does (inbox.ts's setHandlingMode), just triggered
+ * by the agent itself (reportComplaint/reportBulkInquiry tools) instead of a staff click.
+ * Takes effect starting with the customer's NEXT message — dm-reply.ts already checks
+ * handling mode before generating each reply, so this turn's own reply still completes.
+ */
+export async function escalateToHuman(userId: string, businessId: string, threadId: string, reason: string): Promise<void> {
+  await db
+    .insert(conversationMeta)
+    .values({ userId, businessId, threadId, handlingMode: "human" })
+    .onConflictDoUpdate({
+      target: [conversationMeta.businessId, conversationMeta.threadId],
+      set: { handlingMode: "human" },
+    });
+
+  await createNotification({
+    businessId,
+    type: "complaint_escalated",
+    title: "Conversation escalated to you",
+    body: reason,
+    link: "/dashboard/inbox",
+  }).catch((err) => console.error("[escalateToHuman] Failed to create notification:", err));
+}
+
+/** Pro tier's "basic logging + alert" (spec §6 Complaint/Return/Refund Handling) — the AI
+ * keeps handling the conversation itself; this just makes sure the owner sees it. The
+ * notification row IS the log — no separate complaints table for a "basic" tier. */
+export async function logComplaint(businessId: string, customerName: string | undefined, note: string): Promise<void> {
+  await createNotification({
+    businessId,
+    type: "complaint_logged",
+    title: "Complaint logged",
+    body: customerName ? `${customerName}: ${note}` : note,
+    link: "/dashboard/inbox",
+  });
+}
+
+/** Pro tier's "automated + contact routing" (spec §6 Bulk/Wholesale Inquiry Handling) —
+ * alerts the owner and hands the agent the store's own support contact to relay directly,
+ * rather than escalating the thread. Reuses businessProfile's existing support fields
+ * instead of a dedicated wholesale-contact column — nothing in the spec asks for a
+ * separate one. */
+export async function routeBulkInquiry(
+  businessId: string,
+  threadId: string,
+  customerName: string | undefined,
+  note: string,
+): Promise<{ contactEmail: string | null; contactPhone: string | null }> {
+  const [profile] = await db
+    .select({ supportEmail: businessProfile.supportEmail, supportPhone: businessProfile.supportPhone })
+    .from(businessProfile)
+    .where(eq(businessProfile.businessId, businessId));
+
+  await createNotification({
+    businessId,
+    type: "bulk_inquiry_routed",
+    title: "Bulk/wholesale inquiry",
+    body: customerName ? `${customerName}: ${note}` : note,
+    link: "/dashboard/inbox",
+  }).catch((err) => console.error("[routeBulkInquiry] Failed to create notification:", err));
+
+  return { contactEmail: profile?.supportEmail ?? null, contactPhone: profile?.supportPhone ?? null };
 }
 
 // Get offer by code
@@ -1008,23 +1139,58 @@ const CHANNEL_FROM_PLATFORM: Record<string, string> = {
   whatsapp: "whatsapp",
 };
 
+export interface ActiveCartItem {
+  productId: string;
+  /** Matches cart.items' column type exactly (packages/db/src/agent-schema.ts) — optional
+   * there, though in practice always populated by the time upsertActiveCart is called
+   * (quoteOrder always resolves a concrete variant before returning). */
+  variantId?: string;
+  name: string;
+  variantTitle?: string;
+  qty: number;
+  unitPrice: number;
+  imageUrl?: string;
+}
+
 /**
- * Records the product the customer just got a real price for as the session's single
- * tracked cart item — powers the abandoned-cart follow-up job (see
- * apps/worker/src/handlers/conversation-followup.ts), which otherwise has nothing to
- * reference. Deliberately single-item (replaces, not appends) — multi-item cart is a
- * separate, not-yet-built feature. Upserts the agentSession row since nothing else in
- * the live DM flow creates one yet.
+ * Records the full set of items the customer just got a real price for as the thread's
+ * active cart (the `cart` table — see its schema comment) — powers the abandoned-cart
+ * follow-up job (apps/worker/src/handlers/conversation-followup.ts), which otherwise has
+ * nothing to reference. Replaces (not appends) the cart's item list each call, since
+ * quoteOrder is always called with the customer's full current selection, not a delta.
+ *
+ * Also upserts the agentSession row — unrelated to cart storage now, but nothing else in
+ * the live DM flow creates that row, and the abandoned-follow-up sweep's prefilter still
+ * relies on its currentStep/lastMessageAt.
  */
-export async function recordSessionCartItem(
+export async function upsertActiveCart(
   userId: string,
   businessId: string,
   platform: string,
   threadId: string,
   senderId: string | undefined,
-  item: NonNullable<AgentSessionState["cart"]>[number],
+  items: ActiveCartItem[],
 ): Promise<void> {
   const channel = CHANNEL_FROM_PLATFORM[platform] ?? platform;
+  const subtotal = items.reduce((sum, i) => sum + i.unitPrice * i.qty, 0);
+
+  await db
+    .insert(cart)
+    .values({ userId, customerId: null, channel, threadId, items, subtotal, status: "active" })
+    .onConflictDoUpdate({
+      target: [cart.userId, cart.threadId],
+      set: {
+        items,
+        subtotal,
+        status: "active",
+        lastActivityAt: new Date(),
+        // Re-arm the follow-up sweep: a customer who was nudged, came back, and got a
+        // fresh quote is a new abandonment episode if they go quiet again, and deserves
+        // its own follow-up rather than being silently skipped forever because the flag
+        // from last time was never cleared.
+        reminderSentAt: null,
+      },
+    });
 
   const [existing] = await db
     .select({ id: agentSession.id, state: agentSession.state })
@@ -1032,18 +1198,12 @@ export async function recordSessionCartItem(
     .where(and(eq(agentSession.businessId, businessId), eq(agentSession.threadId, threadId)));
 
   if (existing) {
-    const nextState: AgentSessionState = { ...existing.state, cart: [item], currentStep: "cart_active" };
     await db
       .update(agentSession)
       .set({
-        state: nextState,
+        state: { ...existing.state, currentStep: "cart_active" },
         lastMessageAt: new Date(),
         senderId: senderId ?? undefined,
-        // Re-arm the follow-up sweep: followUpSentAt means "already nudged for this
-        // quiet period," not "nudged once, ever" — a customer who was nudged, came
-        // back, and got a fresh quote is a new abandonment episode if they go quiet
-        // again, and deserves its own follow-up rather than being silently skipped
-        // forever because the flag from last time was never cleared.
         followUpSentAt: null,
       })
       .where(eq(agentSession.id, existing.id));
@@ -1056,7 +1216,7 @@ export async function recordSessionCartItem(
     channel,
     threadId,
     senderId,
-    state: { cart: [item], currentStep: "cart_active" },
+    state: { currentStep: "cart_active" },
   });
 }
 
@@ -1104,6 +1264,8 @@ export const aiHelpers = {
   checkProductStock,
   createCustomerAndOrder,
   getOrdersForThread,
+  getPendingReviewOrder,
+  submitReview,
   confirmCodForThread,
   getCustomerPurchaseHistory,
   getCustomerByPhone,
@@ -1116,11 +1278,16 @@ export const aiHelpers = {
   getConversationHistory,
   logOutboundMessage,
   quoteOrder,
-  recordSessionCartItem,
+  upsertActiveCart,
   getShippingCost,
   getConversationHandlingMode,
+  escalateToHuman,
+  logComplaint,
+  routeBulkInquiry,
   getConversationSummary,
   generateAndSaveConversationSummary,
   getCustomerForThread,
   createNotification,
+  getActiveCampaigns,
+  hasPriorPurchases,
 };

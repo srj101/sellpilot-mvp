@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Bell, CheckCheck } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
+import { Skeleton } from "@acme/ui/skeleton";
 import { cn } from "@acme/ui";
 import { useTRPC } from "~/trpc/react";
 import { useBusinessSlug } from "~/hooks/use-business-slug";
@@ -22,13 +23,12 @@ interface Notification {
   createdAt: Date;
 }
 
-export function NotificationsClient({ initialNotifications }: { initialNotifications: Notification[] }) {
+export function NotificationsClient() {
   const trpc = useTRPC();
   const businessSlug = useBusinessSlug();
 
-  const { data: notifications } = useQuery({
+  const { data: notifications, isPending } = useQuery({
     ...trpc.notifications.list.queryOptions({ limit: 50 }),
-    initialData: initialNotifications,
     // Lightweight polling while this page is open — the sidebar bell already gets
     // instant updates over the live SSE stream, this just keeps the list itself
     // reasonably fresh without opening a second SSE connection (which would double
@@ -39,10 +39,29 @@ export function NotificationsClient({ initialNotifications }: { initialNotificat
   const markRead = useMutation(trpc.notifications.markRead.mutationOptions());
   const markAllRead = useMutation(trpc.notifications.markAllRead.mutationOptions());
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const unreadCount = (notifications ?? []).filter((n) => !n.read).length;
 
   function handleOpen(n: Notification) {
     if (!n.read) markRead.mutate({ id: n.id });
+  }
+
+  if (isPending) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-4 w-24" />
+        <div className="divide-y overflow-hidden rounded-2xl border bg-card">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex items-start gap-3 px-4 py-3.5">
+              <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <Skeleton className="h-4 w-1/2" />
+                <Skeleton className="h-3 w-3/4" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -65,7 +84,7 @@ export function NotificationsClient({ initialNotifications }: { initialNotificat
         )}
       </div>
 
-      {notifications.length === 0 ? (
+      {(notifications ?? []).length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border bg-card py-16 text-center">
           <Bell className="h-8 w-8 text-muted-foreground/50" />
           <p className="mt-3 text-sm font-medium text-foreground">No notifications yet</p>
@@ -75,7 +94,7 @@ export function NotificationsClient({ initialNotifications }: { initialNotificat
         </div>
       ) : (
         <div className="divide-y overflow-hidden rounded-2xl border bg-card">
-          {notifications.map((n) => {
+          {(notifications ?? []).map((n) => {
             const Icon = NOTIFICATION_TYPE_ICON[n.type] ?? Bell;
             const content = (
               <div

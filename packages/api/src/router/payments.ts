@@ -2,10 +2,10 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod/v4";
 
 import { and, desc, eq, ilike, or } from "@acme/db";
-import { order, transaction } from "@acme/db/schema";
+import { businessProfile, order, transaction } from "@acme/db/schema";
 
-import { isSslcommerzConfigured } from "../lib/sslcommerz";
-import { businessScopedProcedure } from "../trpc";
+import { hasCredentials } from "../lib/sslcommerz";
+import { businessScopedProcedure, ownerOnlyProcedure } from "../trpc";
 
 const DAY = 86_400_000;
 const RANGE_DAYS = { "7d": 7, "30d": 30, "90d": 90, "1y": 365 } as const;
@@ -25,10 +25,46 @@ function inWindow(ms: number, start: number, end: number) {
  */
 export const paymentsRouter = {
   /** One "Online" status covering card/bank/bKash/Nagad (all one SSLCommerz gateway) —
-   * there's nothing to connect per-rail, see billing plan S5-C. */
-  getGatewayStatus: businessScopedProcedure.query(() => {
-    return { online: isSslcommerzConfigured(), cod: true };
+   * there's nothing to connect per-rail, see billing plan S5-C. Per-business now, not a
+   * global env check — each business's own SSLCommerz store, see checkout.ts. */
+  getGatewayStatus: businessScopedProcedure.query(async ({ ctx }) => {
+    const profile = await ctx.db.query.businessProfile.findFirst({ where: eq(businessProfile.businessId, ctx.businessId) });
+    return {
+      online: hasCredentials({
+        storeId: profile?.sslcommerzStoreId ?? undefined,
+        storePassword: profile?.sslcommerzStorePassword ?? undefined,
+      }),
+      cod: true,
+    };
   }),
+
+  /** This business's own SSLCommerz store — owner-only, since it's a real merchant
+   * credential. Never returns the password itself, just whether one's set. */
+  getGatewayCredentials: ownerOnlyProcedure.query(async ({ ctx }) => {
+    const profile = await ctx.db.query.businessProfile.findFirst({ where: eq(businessProfile.businessId, ctx.businessId) });
+    return {
+      storeId: profile?.sslcommerzStoreId ?? "",
+      hasPassword: Boolean(profile?.sslcommerzStorePassword),
+    };
+  }),
+
+  updateGatewayCredentials: ownerOnlyProcedure
+    .input(
+      z.object({
+        storeId: z.string().min(1),
+        // Optional: leave blank on an update to keep the existing stored password.
+        storePassword: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const profile = await ctx.db.query.businessProfile.findFirst({ where: eq(businessProfile.businessId, ctx.businessId) });
+      const storePassword = input.storePassword?.trim() || profile?.sslcommerzStorePassword || null;
+      await ctx.db
+        .update(businessProfile)
+        .set({ sslcommerzStoreId: input.storeId, sslcommerzStorePassword: storePassword })
+        .where(eq(businessProfile.businessId, ctx.businessId));
+      return { success: true };
+    }),
 
   getSummary: businessScopedProcedure
     .input(

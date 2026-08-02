@@ -3,11 +3,26 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
 import { eq, createNotification } from "@acme/db";
+import type { db as Db } from "@acme/db/client";
 import { businessProfile, order, orderItem, pageView, transaction } from "@acme/db/schema";
 
 import { enqueueOrderStatusNotify } from "../lib/notify-queue";
-import { initiatePayment, isSslcommerzConfigured, validatePayment } from "../lib/sslcommerz";
+import { getPlanFeatureEnabled } from "../lib/plan-limits";
+import { hasCredentials, initiatePayment, validatePayment } from "../lib/sslcommerz";
 import { publicProcedure } from "../trpc";
+
+/** This order's OWN business's SSLCommerz credentials — never the platform's (see
+ * sslcommerz.ts's header comment). Returns null if the business hasn't set theirs up yet. */
+async function getBusinessSslcommerzCredentials(db: typeof Db, businessId: string) {
+  const profile = await db.query.businessProfile.findFirst({ where: eq(businessProfile.businessId, businessId) });
+  if (!hasCredentials({ storeId: profile?.sslcommerzStoreId ?? undefined, storePassword: profile?.sslcommerzStorePassword ?? undefined })) {
+    return null;
+  }
+  return {
+    storeId: profile!.sslcommerzStoreId!,
+    storePassword: profile!.sslcommerzStorePassword!,
+  };
+}
 
 /**
  * Public (unauthenticated) procedures for the customer-facing /pay/[token] checkout
@@ -26,7 +41,7 @@ export const checkoutRouter = {
         throw new TRPCError({ code: "NOT_FOUND", message: "Order not found." });
       }
 
-      const [items, profile, [view]] = await Promise.all([
+      const [items, profile, [view], whiteLabelEnabled] = await Promise.all([
         ctx.db.select().from(orderItem).where(eq(orderItem.orderId, orderRow.id)),
         ctx.db.query.businessProfile.findFirst({ where: eq(businessProfile.businessId, orderRow.businessId) }),
         ctx.db
@@ -41,10 +56,13 @@ export const checkoutRouter = {
             district: orderRow.shippingDistrict,
           })
           .returning(),
+        getPlanFeatureEnabled({ db: ctx.db, businessId: orderRow.businessId }, "whiteLabel"),
       ]);
 
       return {
         businessName: profile?.name ?? "Your order",
+        // Pro-only (B.9) — the merchant's own logo on their customers' checkout page.
+        logoUrl: whiteLabelEnabled ? (profile?.logoUrl ?? null) : null,
         order: {
           orderNumber: orderRow.orderNumber,
           status: orderRow.status,
@@ -65,7 +83,10 @@ export const checkoutRouter = {
           lineTotal: i.lineTotal,
         })),
         pageViewId: view?.id ?? null,
-        sslcommerzConfigured: isSslcommerzConfigured(),
+        sslcommerzConfigured: hasCredentials({
+          storeId: profile?.sslcommerzStoreId ?? undefined,
+          storePassword: profile?.sslcommerzStorePassword ?? undefined,
+        }),
       };
     }),
 
@@ -120,9 +141,15 @@ export const checkoutRouter = {
         return { ok: false as const, reason: "This order has already been processed." };
       }
 
+      const credentials = await getBusinessSslcommerzCredentials(ctx.db, orderRow.businessId);
+      if (!credentials) {
+        return { ok: false as const, reason: "Online payment isn't set up for this store yet — please choose Cash on Delivery." };
+      }
+
       const appUrl = process.env.APP_URL ?? "http://localhost:3000";
       const base = `${appUrl}/api/payments/sslcommerz`;
       const result = await initiatePayment({
+        credentials,
         transactionId: input.token,
         amount: orderRow.total,
         customerName: orderRow.customerName,
@@ -143,11 +170,14 @@ export const checkoutRouter = {
   markOrderPaid: publicProcedure
     .input(z.object({ tranId: z.string(), valId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const result = await validatePayment(input.valId);
-      if (!result.valid || result.transactionId !== input.tranId) return { ok: false };
-
       const orderRow = await ctx.db.query.order.findFirst({ where: eq(order.paymentToken, input.tranId) });
       if (!orderRow) return { ok: false };
+
+      const credentials = await getBusinessSslcommerzCredentials(ctx.db, orderRow.businessId);
+      if (!credentials) return { ok: false };
+
+      const result = await validatePayment(input.valId, credentials);
+      if (!result.valid || result.transactionId !== input.tranId) return { ok: false };
 
       // The real rail (bkash/nagad/card/internetbank), not the flat "sslcommerz" string —
       // see billing plan D8. Without this the Payments page can never show a per-method

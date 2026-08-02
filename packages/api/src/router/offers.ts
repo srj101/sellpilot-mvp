@@ -62,6 +62,7 @@ export const offersRouter = {
         active: z.boolean().default(true),
         comboProductAId: z.string().nullable().optional(),
         comboProductBId: z.string().nullable().optional(),
+        isCampaign: z.boolean().default(false),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -93,6 +94,7 @@ export const offersRouter = {
         active: z.boolean(),
         comboProductAId: z.string().nullable().optional(),
         comboProductBId: z.string().nullable().optional(),
+        isCampaign: z.boolean(),
       }),
     )
     .mutation(async ({ ctx, input }) => {

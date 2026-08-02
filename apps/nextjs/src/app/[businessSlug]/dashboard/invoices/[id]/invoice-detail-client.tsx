@@ -21,6 +21,7 @@ import {
 import { Button } from "@acme/ui/button";
 import { useTRPC } from "~/trpc/react";
 import { useBusinessSlug } from "~/hooks/use-business-slug";
+import { ConfirmDialog } from "~/app/[businessSlug]/dashboard/_components/confirm-dialog";
 import { formatCurrency } from "../../(home)/_components/dashboard-utils";
 
 type OrderItem = {
@@ -64,6 +65,7 @@ export function InvoiceDetailClient({ invoice }: { invoice: InvoiceDetail }) {
 
   const [status, setStatus] = useState(invoice.status);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Automatically trigger print dialog if print parameter exists
   useEffect(() => {
@@ -92,15 +94,18 @@ export function InvoiceDetailClient({ invoice }: { invoice: InvoiceDetail }) {
     }
   };
 
-  const handleDelete = async () => {
-    if (confirm("Are you sure you want to delete this invoice/order?")) {
-      try {
-        await deleteMutation.mutateAsync({ id: invoice.id });
-        router.push(`/${businessSlug}/dashboard/invoices`);
-        router.refresh();
-      } catch (err) {
-        alert("Failed to delete invoice");
-      }
+  const handleDelete = () => {
+    setDeleteOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    try {
+      await deleteMutation.mutateAsync({ id: invoice.id });
+      setDeleteOpen(false);
+      router.push(`/${businessSlug}/dashboard/invoices`);
+      router.refresh();
+    } catch (err) {
+      alert("Failed to delete invoice");
     }
   };
 
@@ -324,6 +329,17 @@ export function InvoiceDetailClient({ invoice }: { invoice: InvoiceDetail }) {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete invoice?"
+        description="This will permanently delete this invoice and its order. This action can't be undone."
+        confirmLabel="Delete"
+        destructive
+        loading={deleteMutation.isPending}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }

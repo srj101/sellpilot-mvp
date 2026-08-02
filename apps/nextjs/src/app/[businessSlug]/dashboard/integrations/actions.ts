@@ -498,11 +498,43 @@ export async function saveSelectedPage(formData: FormData) {
       forceReconnect,
     });
 
-    // Deliberately keep the temp token + intent cookies alive here (instead
-    // of clearing them) so the picker stays open — the user can keep
-    // clicking "Use this Page" on more Pages without re-authenticating each
-    // time. They're cleared when the user explicitly cancels/finishes via
-    // cancelMetaSelection, or expire on their own after 10 minutes.
+    // Keep the temp token + intent cookies alive by default so the picker stays open —
+    // the user can keep clicking "Use this Page" on more Pages without re-authenticating.
+    // BUT if this was the only unconnected Page/account available, there's nothing left to
+    // pick — auto-finish (same cookie clearing as cancelMetaSelection) instead of forcing
+    // an extra "Done" click on top of "Use this Page" for the common one-Page case.
+    try {
+      const tempToken = cookieStore.get("meta_temp_user_token")?.value;
+      if (tempToken) {
+        const { getPagesWithInstagram } = await import("@acme/api/meta");
+        const response = await getPagesWithInstagram(tempToken, "facebook");
+        const allPages = response.data ?? [];
+        const connectedRows = await db
+          .select({ platformAccountId: metaConnection.platformAccountId })
+          .from(metaConnection)
+          .where(
+            and(
+              eq(metaConnection.businessId, businessId),
+              eq(metaConnection.platform, intent === "facebook" ? "facebook_page" : "instagram"),
+            ),
+          );
+        const connectedIds = new Set(connectedRows.map((r) => r.platformAccountId));
+        const stillAvailable =
+          intent === "facebook"
+            ? allPages.filter((p) => p.id !== "no_page" && !connectedIds.has(p.id))
+            : allPages.filter((p) => p.instagram_business_account && !connectedIds.has(p.instagram_business_account.id));
+        if (stillAvailable.length === 0) {
+          cookieStore.delete("meta_temp_user_token");
+          cookieStore.delete("meta_channel_intent");
+          cookieStore.delete("meta_channel_state");
+          cookieStore.delete("meta_channel_store_slug");
+        }
+      }
+    } catch (err) {
+      // Best-effort — if this check fails, the picker just stays open (the original
+      // always-keep-open behavior) and the user can still finish via the Done button.
+      console.error("Failed to check remaining Meta pages for auto-finish:", err);
+    }
   } catch (err) {
     console.error("Failed to save selected Meta connections:", err);
     redirect(returnTo ? `${returnTo}&error=save_failed` : `/${businessSlug}/dashboard/integrations/${targetPage}?error=save_failed`);

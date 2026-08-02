@@ -15,6 +15,7 @@ import { formatCurrency } from "./pay-utils";
 export function PayClient({
   token,
   businessName,
+  logoUrl,
   order,
   items,
   pageViewId,
@@ -23,6 +24,7 @@ export function PayClient({
 }: {
   token: string;
   businessName: string;
+  logoUrl: string | null;
   order: OrderSummary;
   items: OrderItemSummary[];
   pageViewId: string | null;
@@ -84,6 +86,14 @@ export function PayClient({
   return (
     <div className="mx-auto min-h-dvh max-w-lg space-y-4 bg-muted/30 px-4 py-8">
       <div className="text-center">
+        {logoUrl && (
+          // eslint-disable-next-line @next/next/no-img-element -- merchant-supplied external URL, not a local/optimizable asset
+          <img
+            src={logoUrl}
+            alt={businessName}
+            className="mx-auto mb-2 h-12 w-12 rounded-full border bg-background object-contain shadow-sm"
+          />
+        )}
         <p className="text-sm font-semibold text-muted-foreground">{businessName}</p>
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Order #{order.orderNumber}</h1>
       </div>

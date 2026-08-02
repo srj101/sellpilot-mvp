@@ -6,22 +6,15 @@
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getToolContext } from "./context";
+import { MULTI_PRODUCT_CART_LIMIT } from "../types";
 
-export interface QuoteOrderParams {
-  businessId: string;
+export interface QuoteOrderItemInput {
   productId: string;
   variantId?: string;
   quantity: number;
-  district?: string;
-  offerCode?: string;
-  /** Second product to price alongside the first — e.g. a combo suggestion the customer
-   * agreed to. A live combo offer for this exact pair applies instead of offerCode. */
-  comboProductId?: string;
-  comboVariantId?: string;
-  comboQuantity?: number;
 }
 
-export interface QuoteOrderResult {
+export interface QuotedLineItem {
   productId: string;
   variantId: string;
   productTitle: string;
@@ -30,9 +23,18 @@ export interface QuoteOrderResult {
   unitPrice: number;
   compareAtPrice: number | null;
   quantity: number;
-  comboProductTitle: string | null;
-  comboUnitPrice: number | null;
-  comboQuantity: number | null;
+  lineTotal: number;
+}
+
+export interface QuoteOrderParams {
+  businessId: string;
+  items: QuoteOrderItemInput[];
+  district?: string;
+  offerCode?: string;
+}
+
+export interface QuoteOrderResult {
+  items: QuotedLineItem[];
   subtotal: number;
   discountAmount: number;
   shippingCost: number;
@@ -45,15 +47,15 @@ export interface QuoteOrderResult {
 export interface CheckoutHelpers {
   quoteOrder(params: QuoteOrderParams): Promise<QuoteOrderResult>;
   /** Best-effort — a failure here must never break the customer-facing quote response.
-   * Records the last priced item as the session's tracked cart item, consumed by the
-   * abandoned-cart follow-up job. */
-  recordSessionCartItem?(
+   * Records the full current cart (every item just priced together) as the thread's
+   * active cart, consumed by the abandoned-cart follow-up job. */
+  upsertActiveCart?(
     userId: string,
     businessId: string,
     platform: string,
     threadId: string,
     senderId: string | undefined,
-    item: { productId: string; variantId: string; name: string; variantTitle?: string; imageUrl?: string; quantity: number; unitPrice: number },
+    items: { productId: string; variantId: string; name: string; variantTitle?: string; imageUrl?: string; qty: number; unitPrice: number }[],
   ): Promise<void>;
 }
 
@@ -73,55 +75,58 @@ function getHelpers(): CheckoutHelpers {
 export const quoteOrderTool = new DynamicStructuredTool({
   name: "quoteOrder",
   description:
-    "Get the real price breakdown before the customer commits: regular/offer price, shipping for their district, and total. Always call before quoting a price or creating an order — never calculate totals yourself. If they agreed to a combo from getComboOffersForProduct, pass it as comboProductId so the discount is priced in for real.",
+    "Get the real price breakdown before the customer commits: regular/offer price, shipping for their district, and total. Always call before quoting a price or creating an order — never calculate totals yourself. Pass every product the customer currently wants as one entry in items, including any combo/upsell suggestion they agreed to (from getComboOffersForProduct) — always pass the customer's FULL current selection, not just what's new since the last call.",
   schema: z.object({
-    productId: z.string().describe("Product ID"),
-    variantId: z.string().optional().describe("Specific variant ID, if the customer chose one"),
-    quantity: z.number().describe("Quantity"),
+    items: z
+      .array(
+        z.object({
+          productId: z.string().describe("Product ID"),
+          variantId: z.string().optional().describe("Specific variant ID, if the customer chose one"),
+          quantity: z.number().describe("Quantity"),
+        }),
+      )
+      .min(1)
+      .describe("Every product the customer currently wants, one entry each — their full cart, not a delta"),
     district: z.string().optional().describe("Delivery district/city, used to look up shipping cost"),
     offerCode: z.string().optional().describe("Discount/offer code the customer provided"),
-    comboProductId: z.string().optional().describe("A second product the customer agreed to add as a combo, from getComboOffersForProduct's partnerProductId"),
-    comboVariantId: z.string().optional().describe("Specific variant ID for the combo product, if the customer chose one"),
-    comboQuantity: z.number().optional().describe("Quantity of the combo product, defaults to 1"),
   }),
   func: async (input: unknown) => {
-    const { productId, variantId, quantity, district, offerCode, comboProductId, comboVariantId, comboQuantity } = input as {
-      productId: string;
-      variantId?: string;
-      quantity: number;
+    const { items, district, offerCode } = input as {
+      items: QuoteOrderItemInput[];
       district?: string;
       offerCode?: string;
-      comboProductId?: string;
-      comboVariantId?: string;
-      comboQuantity?: number;
     };
-    const { userId, businessId, threadId, platform, customerId } = getToolContext();
-    console.log("[Tool] quoteOrder", { businessId, productId, variantId, quantity, district, comboProductId });
-    const result = await getHelpers().quoteOrder({
-      businessId,
-      productId,
-      variantId,
-      quantity,
-      district,
-      offerCode,
-      comboProductId,
-      comboVariantId,
-      comboQuantity,
-    });
+    const { userId, businessId, threadId, platform, customerId, planKey } = getToolContext();
+    const limit = MULTI_PRODUCT_CART_LIMIT[planKey ?? "starter"];
+    if (items.length > limit) {
+      return JSON.stringify({
+        error: `Too many products for this plan — up to ${limit} products per order are allowed, ${items.length} were given. Ask the customer to pick their top ${limit} instead, or split into separate orders.`,
+      });
+    }
 
-    if (!result.error && result.variantId) {
+    console.log("[Tool] quoteOrder", { businessId, items, district });
+    const result = await getHelpers().quoteOrder({ businessId, items, district, offerCode });
+
+    if (!result.error && result.items.length > 0) {
       // Best-effort: powers the abandoned-cart follow-up job, must never fail the quote itself.
       getHelpers()
-        .recordSessionCartItem?.(userId, businessId, platform, threadId, customerId, {
-          productId: result.productId,
-          variantId: result.variantId,
-          name: result.productTitle,
-          variantTitle: result.variantTitle ?? undefined,
-          imageUrl: result.imageUrl ?? undefined,
-          quantity: result.quantity,
-          unitPrice: result.unitPrice,
-        })
-        .catch((err) => console.error("[Tool] recordSessionCartItem failed:", err));
+        .upsertActiveCart?.(
+          userId,
+          businessId,
+          platform,
+          threadId,
+          customerId,
+          result.items.map((i) => ({
+            productId: i.productId,
+            variantId: i.variantId,
+            name: i.productTitle,
+            variantTitle: i.variantTitle ?? undefined,
+            imageUrl: i.imageUrl ?? undefined,
+            qty: i.quantity,
+            unitPrice: i.unitPrice,
+          })),
+        )
+        .catch((err) => console.error("[Tool] upsertActiveCart failed:", err));
     }
 
     return JSON.stringify(result);

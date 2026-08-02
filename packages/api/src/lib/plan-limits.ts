@@ -114,21 +114,28 @@ export async function getPlanChannels(ctx: { db: typeof Db; businessId: string }
   return { plan: planKey, channels: PLAN_CATALOG[planKey].limits.channels };
 }
 
-type BooleanFeature = "offers";
+type BooleanFeature = "offers" | "whiteLabel";
 
 const FEATURE_LABEL: Record<BooleanFeature, string> = {
   offers: "Offers & Promotions",
+  whiteLabel: "Custom branding / white-label",
 };
 
+function isFeatureEnabled(limits: (typeof PLAN_CATALOG)[PlanKey]["limits"], feature: BooleanFeature): boolean {
+  if (feature === "offers") return limits.offersEnabled;
+  if (feature === "whiteLabel") return limits.whiteLabelEnabled;
+  return false;
+}
+
 /** Feature gate for plan-exclusive capabilities that aren't a countable resource (unlike
- * assertPlanLimit) or a channel — currently just Offers (Pro-only). Mirrors
- * assertChannelAllowed's throw shape so the upgrade-message wording stays consistent. */
+ * assertPlanLimit) or a channel — Offers and white-label branding (both Pro-only, except
+ * offers which Growth also has). Mirrors assertChannelAllowed's throw shape so the
+ * upgrade-message wording stays consistent. */
 export async function assertPlanFeature(ctx: { db: typeof Db; businessId: string }, feature: BooleanFeature): Promise<void> {
   const planKey = await resolvePlanKey(ctx.db, ctx.businessId);
   const { limits, name } = PLAN_CATALOG[planKey];
 
-  const enabled = feature === "offers" ? limits.offersEnabled : false;
-  if (!enabled) {
+  if (!isFeatureEnabled(limits, feature)) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: `${name} doesn't include ${FEATURE_LABEL[feature]}. Upgrade your plan to use it.`,
@@ -141,10 +148,10 @@ export async function assertPlanFeature(ctx: { db: typeof Db; businessId: string
 export async function getPlanFeatureEnabled(ctx: { db: typeof Db; businessId: string }, feature: BooleanFeature): Promise<boolean> {
   const planKey = await resolvePlanKey(ctx.db, ctx.businessId);
   const { limits } = PLAN_CATALOG[planKey];
-  return feature === "offers" ? limits.offersEnabled : false;
+  return isFeatureEnabled(limits, feature);
 }
 
-type TieredFeature = "analytics" | "ecommerce";
+type TieredFeature = "analytics" | "ecommerce" | "copilot";
 
 /** Never throws — for read-heavy pages that should render a soft-lock/upgrade empty
  * state instead of erroring on load (matching the IntegrationCard / locked-page pattern). */
@@ -154,5 +161,7 @@ export async function getFeatureTier(
 ): Promise<"none" | "basic" | "full"> {
   const planKey = await resolvePlanKey(ctx.db, ctx.businessId);
   const { limits } = PLAN_CATALOG[planKey];
-  return feature === "analytics" ? limits.analyticsTier : limits.ecommerceTier;
+  if (feature === "analytics") return limits.analyticsTier;
+  if (feature === "ecommerce") return limits.ecommerceTier;
+  return limits.copilotTier;
 }

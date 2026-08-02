@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { MessageSquare, Forward, Activity, Heart, ArrowUpRight, Lock } from "lucide-react";
+import { MessageSquare, Forward, Activity, Heart, DollarSign, ShoppingCart, RotateCcw } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@acme/ui/card";
 import { RANGES } from "./analytics-utils";
+import { CopilotWidget } from "../../_components/copilot-widget";
+import { UpgradeBanner } from "../../_components/upgrade-banner";
 import { useBusinessSlug } from "~/hooks/use-business-slug";
 
 interface ChatOrderPoint {
@@ -40,10 +42,26 @@ interface CityRow {
   pct: number;
 }
 
-function trendLabel(value: number | null, suffix: string) {
+interface RevenueStats {
+  revenue: number;
+  revenueTrend: number | null;
+  orderCount: number;
+  orderCountTrend: number | null;
+  aov: number;
+  aovTrend: number | null;
+  returnRate: number;
+  returnRateTrend: number | null;
+}
+
+interface RevenuePoint {
+  label: string;
+  revenue: number;
+}
+
+function trendLabel(value: number | null, suffix: string, invert = false) {
   if (value === null) return { text: "No prior data", positive: true };
-  const positive = value >= 0;
-  return { text: `${positive ? "+" : ""}${value.toFixed(1)}% ${suffix}`, positive };
+  const positive = invert ? value <= 0 : value >= 0;
+  return { text: `${value >= 0 ? "+" : ""}${value.toFixed(1)}% ${suffix}`, positive };
 }
 
 export function AnalyticsClient({
@@ -51,21 +69,27 @@ export function AnalyticsClient({
   from,
   to,
   tier,
+  copilotTier,
   chatOrderSeries,
   messagingStats,
   weeklyInquiries,
   topProducts,
   customersByCity,
+  revenueStats,
+  revenueSeries,
 }: {
   range: string;
   from: string | null;
   to: string | null;
   tier: "none" | "basic" | "full";
+  copilotTier: "none" | "basic" | "full";
   chatOrderSeries: ChatOrderPoint[];
   messagingStats: MessagingStats;
   weeklyInquiries: WeeklyInquiries;
   topProducts: TopProductRow[];
   customersByCity: CityRow[];
+  revenueStats: RevenueStats;
+  revenueSeries: RevenuePoint[];
 }) {
   const businessSlug = useBusinessSlug();
   // Format currency helper
@@ -73,34 +97,6 @@ export function AnalyticsClient({
 
   // Weekly inquiries daily counts
   const inquiryDays = weeklyInquiries.days;
-
-  if (tier === "none") {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
-          <p className="text-muted-foreground mt-1 text-sm">Detailed performance graphs and metrics for your business.</p>
-        </div>
-        <Card className="card-hover">
-          <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-              <Lock className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <div>
-              <p className="font-semibold text-foreground">Analytics is a Growth &amp; Pro feature</p>
-              <p className="mt-1 text-sm text-muted-foreground">Upgrade your plan to see performance graphs and metrics for your business.</p>
-            </div>
-            <Link href={`/${businessSlug}/dashboard/pricing`}>
-              <Button className="gap-2">
-                Upgrade plan
-                <ArrowUpRight className="h-4 w-4" />
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -122,6 +118,130 @@ export function AnalyticsClient({
           </div>
         </div>
       </div>
+
+      {/* UX/QA pass gating pattern (docs/UX_QA_PASS.md): the page below always renders its
+          real UI — for Starter this is genuinely real, all-zero data, not a fake sample —
+          with this banner on top instead of the old full-page lock replacing everything. */}
+      {tier === "none" && <UpgradeBanner businessSlug={businessSlug} feature="Analytics" requiredPlan="growth" />}
+
+      {/* FR-ANA-01/02/03: Revenue, Orders, AOV, Return Rate — available at both Growth &
+          Pro, per the SRS's plain "Analytics screen displays Total Revenue, Total Orders,
+          Average Order Value... Return Rate" requirement (no tier split called out there). */}
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="card-hover p-5">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-muted-foreground">Revenue</p>
+            <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-600 dark:text-emerald-400">
+              <DollarSign className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{formatCurrency(revenueStats.revenue)}</p>
+          {(() => {
+            const t = trendLabel(revenueStats.revenueTrend, "vs previous period");
+            return <p className={`mt-1 text-xs ${t.positive ? "text-green-500" : "text-rose-500"}`}>{t.text}</p>;
+          })()}
+        </Card>
+
+        <Card className="card-hover p-5">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-muted-foreground">Total Orders</p>
+            <div className="rounded-xl bg-blue-500/10 p-2 text-blue-500">
+              <ShoppingCart className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{revenueStats.orderCount.toLocaleString()}</p>
+          {(() => {
+            const t = trendLabel(revenueStats.orderCountTrend, "vs previous period");
+            return <p className={`mt-1 text-xs ${t.positive ? "text-green-500" : "text-rose-500"}`}>{t.text}</p>;
+          })()}
+        </Card>
+
+        <Card className="card-hover p-5">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-muted-foreground">Average Order Value</p>
+            <div className="rounded-xl bg-violet-500/10 p-2 text-violet-500">
+              <Activity className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{formatCurrency(revenueStats.aov)}</p>
+          {(() => {
+            const t = trendLabel(revenueStats.aovTrend, "vs previous period");
+            return <p className={`mt-1 text-xs ${t.positive ? "text-green-500" : "text-rose-500"}`}>{t.text}</p>;
+          })()}
+        </Card>
+
+        <Card className="card-hover p-5">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-muted-foreground">Return Rate</p>
+            <div className="rounded-xl bg-rose-500/10 p-2 text-rose-500">
+              <RotateCcw className="h-4 w-4" />
+            </div>
+          </div>
+          <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{revenueStats.returnRate.toFixed(1)}%</p>
+          {(() => {
+            // Inverted: a drop in return rate is the good direction, unlike every other trend here.
+            const t = trendLabel(revenueStats.returnRateTrend, "vs previous period", true);
+            return <p className={`mt-1 text-xs ${t.positive ? "text-green-500" : "text-rose-500"}`}>{t.text}</p>;
+          })()}
+        </Card>
+      </div>
+
+      {/* Revenue Over Time — SRS's "Revenue Trend" requirement */}
+      <Card className="card-hover">
+        <CardHeader>
+          <CardTitle>Revenue Over Time</CardTitle>
+          <CardDescription>Total revenue per {range === "1y" ? "month" : "day"} in the selected range</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {revenueSeries.every((d) => d.revenue === 0) ? (
+            <p className="py-16 text-center text-sm text-muted-foreground">No revenue in this range yet</p>
+          ) : (
+            (() => {
+              const svgWidth = 1000;
+              const svgHeight = 200;
+              const maxVal = Math.max(...revenueSeries.map((d) => d.revenue), 1);
+              const showEveryLabel = revenueSeries.length <= 14;
+
+              const points = revenueSeries.map((d, i) => {
+                const x = revenueSeries.length > 1 ? (i / (revenueSeries.length - 1)) * svgWidth : 0;
+                const y = svgHeight - (d.revenue / maxVal) * (svgHeight - 40) - 20;
+                return { x, y, label: d.label, revenue: d.revenue };
+              });
+              const path = `M ${points.map((p) => `${p.x},${p.y}`).join(" L ")}`;
+
+              return (
+                <div className="relative h-[240px] w-full pt-6">
+                  <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} className="w-full h-[200px] overflow-visible">
+                    <line x1="0" y1={20} x2={svgWidth} y2={20} stroke="currentColor" className="text-border" strokeOpacity="0.2" strokeDasharray="4 4" />
+                    <line x1="0" y1={70} x2={svgWidth} y2={70} stroke="currentColor" className="text-border" strokeOpacity="0.2" strokeDasharray="4 4" />
+                    <line x1="0" y1={120} x2={svgWidth} y2={120} stroke="currentColor" className="text-border" strokeOpacity="0.2" strokeDasharray="4 4" />
+                    <line x1="0" y1={170} x2={svgWidth} y2={170} stroke="currentColor" className="text-border" strokeOpacity="0.2" strokeDasharray="4 4" />
+                    <line x1="0" y1={svgHeight} x2={svgWidth} y2={svgHeight} stroke="currentColor" className="text-border" strokeOpacity="0.4" />
+
+                    <path d={path} fill="none" stroke="#10b981" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+
+                    {points.map((p, idx) => (
+                      <circle key={idx} cx={p.x} cy={p.y} r="4" fill="#10b981" stroke="#ffffff" strokeWidth="1.5" className="cursor-pointer hover:r-6 transition-all">
+                        <title>{`${p.label}: ${formatCurrency(p.revenue)}`}</title>
+                      </circle>
+                    ))}
+                  </svg>
+
+                  <div className="absolute inset-x-0 bottom-0 flex justify-between px-2 text-[10px] text-muted-foreground font-semibold">
+                    {points.map((p, i) => (
+                      <span key={i} className="text-center w-8 truncate">
+                        {showEveryLabel || i % Math.ceil(points.length / 14) === 0 ? p.label : ""}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()
+          )}
+        </CardContent>
+      </Card>
+
+      <CopilotWidget tier={copilotTier} />
 
       {/* Segment 1: Chat Sessions & Orders Line Chart — Pro only */}
       {tier === "full" && (

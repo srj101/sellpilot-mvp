@@ -21,6 +21,7 @@ import { metaConnection, metaWebhookEvent } from "@acme/db/schema";
 
 import { env } from "~/env";
 import { triggerInboxBroadcast } from "~/lib/inbox-broadcast";
+import { classifyMessagePriority, QUEUE_PRIORITY } from "~/lib/message-priority";
 
 import {
   MessagingService,
@@ -238,9 +239,13 @@ export async function POST(req: NextRequest) {
             accountId: getAccountId(event.platform, connection),
           };
 
+          const hasMedia = Boolean(job.incomingMessage.imageUrls?.length || job.incomingMessage.audioUrls?.length);
+          const priority = QUEUE_PRIORITY[classifyMessagePriority(job.incomingMessage.text, hasMedia)];
+
           queue.enqueue("meta-dm-reply", job, {
             attempts: 3,
             backoff: { type: "exponential", delay: 2000 },
+            priority,
           }).catch((err) => console.error(`[Webhook] Failed to enqueue DM job: ${event.eventId}`, err));
         } else if (type === "comment" && event.message) {
           const job: MetaCommentReplyJob = {

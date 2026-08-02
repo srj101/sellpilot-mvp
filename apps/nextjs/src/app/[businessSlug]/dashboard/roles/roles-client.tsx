@@ -29,7 +29,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@acme
 import { Button } from "@acme/ui/button";
 import { toast } from "@acme/ui/toast";
 import { cn } from "@acme/ui";
+import { UpgradeBanner } from "../_components/upgrade-banner";
 import { useTRPC } from "~/trpc/react";
+import { useBusinessSlug } from "~/hooks/use-business-slug";
 
 /* ─── Constants & Icon Mapping ───────────────────────────────────────── */
 
@@ -132,8 +134,10 @@ function TabBar({
 
 export function RolesClient() {
   const trpc = useTRPC();
+  const businessSlug = useBusinessSlug();
   const rolesQuery = useQuery(trpc.roles.list.queryOptions());
   const membersQuery = useQuery(trpc.roles.listMembers.queryOptions());
+  const usageQuery = useQuery(trpc.subscription.getUsage.queryOptions());
 
   const createRole = useMutation(trpc.roles.create.mutationOptions({
     onSuccess: () => { rolesQuery.refetch(); toast.success("Role created successfully"); },
@@ -170,6 +174,8 @@ export function RolesClient() {
   const roles = (rolesQuery.data ?? []) as RoleRow[];
   const members = membersQuery.data?.members ?? [];
   const invitations = membersQuery.data?.invitations ?? [];
+  const seats = usageQuery.data?.seats;
+  const seatsAtLimit = seats !== undefined && seats.limit !== null && seats.used >= seats.limit;
 
   function togglePermission(cell: string) {
     setNewRole((prev) => ({
@@ -201,18 +207,6 @@ export function RolesClient() {
 
   const isLoading = rolesQuery.isLoading || membersQuery.isLoading;
 
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <div className="h-14 animate-pulse rounded-xl bg-muted/40" />
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div className="h-48 animate-pulse rounded-2xl bg-muted/40" />
-          <div className="h-48 animate-pulse rounded-2xl bg-muted/40" />
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       {/* ── Page Header & Inline Actions ── */}
@@ -237,14 +231,23 @@ export function RolesClient() {
             </Button>
           )}
           {tab === "team" && !showInvite && membersQuery.data?.canManageTeam && (
-            <Button
-              onClick={() => setShowInvite(true)}
-              size="sm"
-              className="bg-primary hover:bg-primary/95 text-primary-foreground font-semibold"
-            >
-              <UserPlus className="mr-1.5 h-4 w-4" />
-              Invite Member
-            </Button>
+            <div className="flex items-center gap-2.5">
+              {seats && (
+                <span className="text-xs font-medium text-muted-foreground">
+                  {seats.used}/{seats.limit ?? "∞"} seats used
+                </span>
+              )}
+              <Button
+                onClick={() => setShowInvite(true)}
+                size="sm"
+                disabled={seatsAtLimit}
+                title={seatsAtLimit ? "You've hit your team seat limit — upgrade to invite more" : undefined}
+                className="bg-primary hover:bg-primary/95 text-primary-foreground font-semibold"
+              >
+                <UserPlus className="mr-1.5 h-4 w-4" />
+                Invite Member
+              </Button>
+            </div>
           )}
         </div>
       </div>
@@ -259,10 +262,19 @@ export function RolesClient() {
         />
       </div>
 
+      {/* UX/QA pass loading pattern (docs/UX_QA_PASS.md): header/tab-bar above always
+          render immediately — only this data-dependent region skeletons. */}
+      {isLoading ? (
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="h-48 animate-pulse rounded-2xl bg-muted/40" />
+          <div className="h-48 animate-pulse rounded-2xl bg-muted/40" />
+        </div>
+      ) : (
+        <>
       {/* ══════════ TAB: Roles ══════════ */}
       {tab === "roles" && (
         <div className="space-y-6 animate-in fade-in-50 duration-300">
-          
+
           {/* Create custom role */}
           {showCreate && (
             <Card className="overflow-hidden border border-border bg-card/60 shadow-lg backdrop-blur-sm">
@@ -436,7 +448,11 @@ export function RolesClient() {
       {/* ══════════ TAB: Team Members ══════════ */}
       {tab === "team" && (
         <div className="space-y-6 animate-in fade-in-50 duration-300">
-          
+
+          {seatsAtLimit && (
+            <UpgradeBanner businessSlug={businessSlug} feature="More team seats" requiredPlan="growth" />
+          )}
+
           {/* Quick Metrics Header */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -655,6 +671,8 @@ export function RolesClient() {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

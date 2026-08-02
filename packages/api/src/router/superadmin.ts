@@ -2,7 +2,7 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod/v4";
 
 import { eq } from "@acme/db";
-import { businessMember, business, user } from "@acme/db/schema";
+import { businessMember, business, platformSettings, user } from "@acme/db/schema";
 
 import { superadminProcedure } from "../trpc";
 
@@ -124,6 +124,47 @@ export const superadminRouter = {
         })
         .where(eq(user.id, input.userId));
 
+      return { success: true };
+    }),
+
+  /**
+   * The PLATFORM's own SSLCommerz credentials — for SaaS billing only (business owners
+   * paying SellPilot for their plan). Never used for any business's own customer checkout,
+   * which reads that business's own credentials on businessProfile instead (see
+   * checkout.ts / payments.ts). Never returns the password itself, just whether it's set —
+   * same "don't echo secrets back" convention as anywhere else credentials are stored.
+   */
+  getPaymentSettings: superadminProcedure.query(async ({ ctx }) => {
+    const [row] = await ctx.db.select().from(platformSettings).limit(1);
+    return {
+      storeId: row?.sslcommerzStoreId ?? "",
+      hasPassword: Boolean(row?.sslcommerzStorePassword),
+    };
+  }),
+
+  updatePaymentSettings: superadminProcedure
+    .input(
+      z.object({
+        storeId: z.string().min(1),
+        // Optional: leave blank on an update to keep the existing stored password.
+        storePassword: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [existing] = await ctx.db.select().from(platformSettings).limit(1);
+      const storePassword = input.storePassword?.trim() || existing?.sslcommerzStorePassword || null;
+
+      if (existing) {
+        await ctx.db
+          .update(platformSettings)
+          .set({ sslcommerzStoreId: input.storeId, sslcommerzStorePassword: storePassword })
+          .where(eq(platformSettings.id, existing.id));
+      } else {
+        await ctx.db.insert(platformSettings).values({
+          sslcommerzStoreId: input.storeId,
+          sslcommerzStorePassword: storePassword,
+        });
+      }
       return { success: true };
     }),
 } satisfies TRPCRouterRecord;

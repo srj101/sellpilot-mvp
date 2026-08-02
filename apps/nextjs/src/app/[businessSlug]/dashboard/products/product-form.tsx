@@ -266,7 +266,14 @@ export function ProductForm({
       }
       onSave();
     } catch (err: any) {
-      setError(err?.message ?? "An error occurred while saving the product");
+      // Prefer the server's already-flattened zodError (packages/api/src/trpc.ts's
+      // errorFormatter) over err.message, which for a validation failure is a raw,
+      // unreadable JSON array of Zod issues — not something to show an owner directly.
+      // z.flattenError only buckets single-level paths into fieldErrors; anything nested
+      // (e.g. variants.0.compareAtPrice) lands in formErrors instead, so check both.
+      const zodError = err?.data?.zodError as { fieldErrors?: Record<string, string[]>; formErrors?: string[] } | undefined;
+      const friendlyError = zodError && (Object.values(zodError.fieldErrors ?? {}).flat()[0] ?? zodError.formErrors?.[0]);
+      setError(friendlyError ?? (typeof err?.message === "string" && !err.message.trim().startsWith("[") ? err.message : "An error occurred while saving the product"));
     } finally {
       setIsSaving(false);
     }

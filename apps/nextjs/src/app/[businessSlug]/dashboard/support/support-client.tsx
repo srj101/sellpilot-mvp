@@ -1,39 +1,46 @@
 "use client";
 
-import { useState } from "react";
-import { Clock, AlertCircle, CheckCircle2 } from "lucide-react";
+import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
+import { Clock, CheckCircle2, Inbox } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@acme/ui/card";
-import { Badge } from "@acme/ui/badge";
+import { Skeleton } from "@acme/ui/skeleton";
+import { useTRPC } from "~/trpc/react";
+import { useBusinessSlug } from "~/hooks/use-business-slug";
 
+function formatDate(date: Date | string) {
+  return new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+/**
+ * "Tickets" aren't a separate entity — they're Inbox conversations a staff member flagged
+ * via conversationMeta.status = "ticket" (see thread-header-actions.tsx's "Mark as Ticket").
+ * This page used to show hardcoded fake data (same 3 tickets for every business, forever);
+ * it now reads the same inbox.getInboxData threads the Inbox page itself uses, filtered to
+ * that status, and links back into the Inbox to actually work a ticket — no separate
+ * ticket-creation flow exists because tickets are created by flagging a real conversation.
+ */
 export function SupportClient() {
-  const [tickets, setTickets] = useState([
-    { id: "TK-4820", subject: "WhatsApp connection failing intermittently", customer: "Abir Rahman", status: "Open", priority: "High", date: "Jul 19, 2026" },
-    { id: "TK-4781", subject: "Billing receipt not showing discount promo", customer: "Farhana Islam", status: "In Progress", priority: "Medium", date: "Jul 18, 2026" },
-    { id: "TK-4512", subject: "Refund request for double billing", customer: "Imran Khan", status: "Resolved", priority: "Low", date: "Jul 15, 2026" },
-  ]);
+  const trpc = useTRPC();
+  const businessSlug = useBusinessSlug();
+  const { data, isPending } = useQuery(trpc.inbox.getInboxData.queryOptions({}));
+
+  const threads = data?.threads ?? [];
+  const tickets = threads.filter((t) => t.status === "ticket");
+  const resolvedCount = threads.filter((t) => t.status === "resolved").length;
 
   return (
     <div className="space-y-6">
       {/* Status breakdown cards */}
-      <div className="grid gap-6 sm:grid-cols-3">
+      <div className="grid gap-6 sm:grid-cols-2">
         <Card className="card-hover p-5 flex items-center gap-4">
           <div className="rounded-xl bg-amber-500/10 p-3 text-amber-500 shrink-0">
             <Clock className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-sm font-medium text-muted-foreground">Pending Tickets</p>
-            <p className="text-2xl font-bold text-foreground">2</p>
-          </div>
-        </Card>
-
-        <Card className="card-hover p-5 flex items-center gap-4">
-          <div className="rounded-xl bg-blue-500/10 p-3 text-blue-500 shrink-0">
-            <AlertCircle className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">In Progress</p>
-            <p className="text-2xl font-bold text-foreground">1</p>
+            <p className="text-sm font-medium text-muted-foreground">Active Tickets</p>
+            {isPending ? <Skeleton className="mt-1 h-7 w-10" /> : <p className="text-2xl font-bold text-foreground">{tickets.length}</p>}
           </div>
         </Card>
 
@@ -42,8 +49,8 @@ export function SupportClient() {
             <CheckCircle2 className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-sm font-medium text-muted-foreground">Resolved Tickets</p>
-            <p className="text-2xl font-bold text-foreground">24</p>
+            <p className="text-sm font-medium text-muted-foreground">Resolved Conversations</p>
+            {isPending ? <Skeleton className="mt-1 h-7 w-10" /> : <p className="text-2xl font-bold text-foreground">{resolvedCount}</p>}
           </div>
         </Card>
       </div>
@@ -52,51 +59,53 @@ export function SupportClient() {
       <Card className="card-hover">
         <CardHeader className="border-b py-4">
           <CardTitle>Active Tickets</CardTitle>
-          <CardDescription>Follow up on customer inquiries and issues</CardDescription>
+          <CardDescription>Conversations flagged as tickets from the Inbox — click one to open and reply.</CardDescription>
         </CardHeader>
         <CardContent className="py-2">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-muted-foreground">
-                  <th className="py-3 font-medium">Ticket ID</th>
-                  <th className="py-3 font-medium">Subject</th>
-                  <th className="py-3 font-medium">Customer</th>
-                  <th className="py-3 font-medium">Priority</th>
-                  <th className="py-3 font-medium">Status</th>
-                  <th className="py-3 text-right font-medium">Last Updated</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {tickets.map((t) => (
-                  <tr key={t.id}>
-                    <td className="py-3 font-mono font-semibold text-foreground">{t.id}</td>
-                    <td className="py-3 font-medium text-foreground">{t.subject}</td>
-                    <td className="py-3 text-muted-foreground">{t.customer}</td>
-                    <td className="py-3">
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                        t.priority === "High" ? "bg-rose-500/10 text-rose-500" :
-                        t.priority === "Medium" ? "bg-amber-500/10 text-amber-500" :
-                        "bg-blue-500/10 text-blue-500"
-                      }`}>
-                        {t.priority}
-                      </span>
-                    </td>
-                    <td className="py-3">
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                        t.status === "Open" ? "bg-rose-500/10 text-rose-500" :
-                        t.status === "In Progress" ? "bg-blue-500/10 text-blue-500" :
-                        "bg-green-500/10 text-green-500"
-                      }`}>
-                        {t.status}
-                      </span>
-                    </td>
-                    <td className="py-3 text-right text-muted-foreground">{t.date}</td>
+          {isPending ? (
+            <div className="space-y-3 py-4">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : tickets.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-12 text-center">
+              <Inbox className="h-8 w-8 text-muted-foreground/40" />
+              <div>
+                <p className="font-medium text-foreground">No active tickets</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Mark a conversation as a ticket from the Inbox to track it here.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-muted-foreground">
+                    <th className="py-3 font-medium">Customer</th>
+                    <th className="py-3 font-medium">Channel</th>
+                    <th className="py-3 font-medium">Summary</th>
+                    <th className="py-3 text-right font-medium">Last Updated</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y">
+                  {tickets.map((t) => (
+                    <tr key={t.id}>
+                      <td className="py-3 font-medium text-foreground">
+                        <Link href={`/${businessSlug}/dashboard/inbox?thread=${t.id}`} className="hover:underline">
+                          {t.contactLabel}
+                        </Link>
+                      </td>
+                      <td className="py-3 capitalize text-muted-foreground">{t.platform.replace("_", " ")}</td>
+                      <td className="py-3 max-w-xs truncate text-muted-foreground">{t.summary ?? "No summary yet"}</td>
+                      <td className="py-3 text-right text-muted-foreground">{formatDate(t.lastMessageAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

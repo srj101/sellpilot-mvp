@@ -12,8 +12,8 @@ import { and, eq } from "@acme/db";
 import { db } from "@acme/db/client";
 import { business, businessMember, saasInvoice, subscription, user } from "@acme/db/schema";
 import type { BillingCycle, PlanKey } from "@acme/api/plans";
-import { CYCLE_META, PLAN_CATALOG, priceForCycle } from "@acme/api/plans";
-import { CARD_AND_BANK_GATEWAYS, initiatePayment } from "@acme/api/sslcommerz";
+import { computeOverageAmount, CYCLE_META, PLAN_CATALOG, priceForCycle } from "@acme/api/plans";
+import { CARD_AND_BANK_GATEWAYS, initiatePayment, resolvePlatformCredentials } from "@acme/api/sslcommerz";
 import { sendEmail } from "@acme/auth/email";
 
 const DAY_MS = 86_400_000;
@@ -40,6 +40,7 @@ async function generatePayLink(invoice: { id: string; amount: number; plan: stri
   try {
     const base = `${appUrl()}/api/billing`;
     const result = await initiatePayment({
+      credentials: await resolvePlatformCredentials(db),
       transactionId: invoice.id,
       amount: invoice.amount,
       customerName: ownerName,
@@ -72,7 +73,13 @@ async function getOwnerName(businessId: string): Promise<string> {
   return ownerUser?.name ?? "Business owner";
 }
 
-async function notifyOwner(businessId: string, kind: "renewal_due" | "reminder" | "cancelled", amount: number | null, payUrl?: string) {
+async function notifyOwner(
+  businessId: string,
+  kind: "renewal_due" | "reminder" | "cancelled",
+  amount: number | null,
+  payUrl?: string,
+  overageAmount?: number,
+) {
   const [biz] = await db.select({ name: business.name, slug: business.slug }).from(business).where(eq(business.id, businessId)).limit(1);
   const [owner] = await db
     .select({ userId: businessMember.userId })
@@ -87,11 +94,12 @@ async function notifyOwner(businessId: string, kind: "renewal_due" | "reminder" 
   const billingUrl = `${appUrl()}/${biz.slug}/dashboard/billing`;
   const payLink = payUrl ?? billingUrl;
   const amountStr = amount ? ` of ৳${amount.toLocaleString("en-US")}` : "";
+  const overageNote = overageAmount ? ` (includes ৳${overageAmount.toLocaleString("en-US")} in AI-conversation overage from last period)` : "";
 
   const copy: Record<typeof kind, { subject: string; body: string }> = {
     renewal_due: {
       subject: `Action needed: confirm your SellPilot payment${amountStr}`,
-      body: `Your ${biz.name} subscription has renewed and needs payment confirmation${amountStr}. Pay now to keep your AI agent selling without interruption: ${payLink}`,
+      body: `Your ${biz.name} subscription has renewed and needs payment confirmation${amountStr}${overageNote}. Pay now to keep your AI agent selling without interruption: ${payLink}`,
     },
     reminder: {
       subject: "Reminder: your SellPilot subscription payment is still due",
@@ -126,7 +134,12 @@ async function processOne(sub: typeof subscription.$inferSelect) {
   if (!existingInvoice) {
     const effectivePlan = (sub.pendingPlan ?? sub.plan) as PlanKey;
     const cycle = sub.billingCycle as BillingCycle;
-    const amount = priceForCycle(effectivePlan, cycle) ?? sub.amount;
+    const baseAmount = priceForCycle(effectivePlan, cycle) ?? sub.amount;
+    // Billed against the plan actually used during the period that just ended (sub.plan),
+    // not effectivePlan — a mid-cycle upgrade shouldn't retroactively erase overage run up
+    // on the old, lower-volume plan.
+    const overageAmount = computeOverageAmount(sub.plan as PlanKey, sub.aiConversationsUsed ?? 0);
+    const amount = baseAmount + overageAmount;
     const periodStart = sub.currentPeriodEnd;
     const periodEnd = new Date(periodStart);
     periodEnd.setMonth(periodEnd.getMonth() + (CYCLE_META[cycle].months || 12));
@@ -139,6 +152,7 @@ async function processOne(sub: typeof subscription.$inferSelect) {
         plan: effectivePlan,
         billingCycle: cycle,
         amount,
+        overageAmount,
         status: "pending",
         periodStart,
         periodEnd,
@@ -153,7 +167,7 @@ async function processOne(sub: typeof subscription.$inferSelect) {
     const payUrl = newInvoice
       ? await generatePayLink({ id: newInvoice.id, amount, plan: effectivePlan }, await getOwnerName(businessId))
       : undefined;
-    await notifyOwner(businessId, "renewal_due", amount, payUrl);
+    await notifyOwner(businessId, "renewal_due", amount, payUrl, overageAmount);
     return;
   }
 

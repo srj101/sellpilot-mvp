@@ -23,6 +23,7 @@ export {
 export {
   businessTools,
   getComboOffersForProductTool,
+  getActiveCampaignsTool,
   setBusinessHelpers,
   getBusinessHelpers,
   type BusinessHelpers,
@@ -45,7 +46,7 @@ export {
 
 import { productTools } from "./product-tools";
 import { orderTools, getCustomerPurchaseHistoryTool } from "./order-tools";
-import { businessTools, getComboOffersForProductTool } from "./business-tools";
+import { businessTools, getComboOffersForProductTool, getActiveCampaignsTool } from "./business-tools";
 import { checkoutTools } from "./checkout-tools";
 import { mediaTools } from "./media-tools";
 import type { PlanKey } from "../types";
@@ -53,13 +54,15 @@ import type { PlanKey } from "../types";
 const STARTER_EXCLUDED_TOOL_NAMES = new Set<string>([
   getComboOffersForProductTool.name,
   getCustomerPurchaseHistoryTool.name,
+  getActiveCampaignsTool.name,
 ]);
 
 /**
  * Get all available tools for a given plan tier. Starter is excluded from the
  * combo-offer tool (the upsell/cross-sell mechanism — see prompts.ts's
- * RECOMMENDATION_INSTRUCTIONS, Starter is "basic only") and from purchase-history
- * lookups (Growth+ only, see plans.ts's purchaseHistoryEnabled).
+ * RECOMMENDATION_INSTRUCTIONS, Starter is "basic only"), from purchase-history
+ * lookups (Growth+ only, see plans.ts's purchaseHistoryEnabled), and from campaign
+ * automation (Growth+ only, see plans.ts's campaignAutomation — "none" for Starter).
  * Omitting planKey keeps the old unrestricted behavior (defensive default for any
  * caller that hasn't been updated to pass one).
  */

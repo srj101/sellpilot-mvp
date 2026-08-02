@@ -31,6 +31,7 @@ export default async function PayPage({
     <PayClient
       token={token}
       businessName={data.businessName}
+      logoUrl={data.logoUrl}
       order={data.order}
       items={data.items}
       pageViewId={data.pageViewId}
