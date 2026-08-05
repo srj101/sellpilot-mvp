@@ -52,6 +52,16 @@ function pickField(row: Record<string, string>, ...keys: string[]) {
   return undefined;
 }
 
+function StockBadge({ status, qty }: { status: "in_stock" | "low_stock" | "out_of_stock"; qty: number }) {
+  if (status === "out_of_stock") {
+    return <Badge variant="destructive">Out of Stock</Badge>;
+  }
+  if (status === "low_stock") {
+    return <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20">Low Stock ({qty} left)</Badge>;
+  }
+  return <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">{qty} in stock</Badge>;
+}
+
 export function ProductsClient() {
   const trpc = useTRPC();
   const qc = useQueryClient();
@@ -60,7 +70,9 @@ export function ProductsClient() {
   const bulkCreateMutation = useMutation(trpc.products.bulkCreate.mutationOptions());
   const { data: usage } = useQuery(trpc.products.getUsage.queryOptions());
   const atLimit = usage?.remaining === 0;
-  const { data: productsData, isPending } = useQuery(trpc.products.list.queryOptions());
+
+  const [filterStatus, setFilterStatus] = useState<"all" | "in_stock" | "low_stock" | "out_of_stock">("all");
+  const { data: productsData, isPending } = useQuery(trpc.products.list.queryOptions({ filterStatus }));
   const products = productsData?.products ?? [];
   const variants = productsData?.variants ?? [];
   const [view, setView] = useState<"list" | "create" | "edit" | "sandbox">(
@@ -495,86 +507,108 @@ export function ProductsClient() {
         </div>
       ) : (
         /* PRODUCT CATALOG LISTING */
-        <div className="rounded-[var(--radius-card-lg,20px)] border border-border bg-card shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/40 text-left">
-                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Product</th>
-                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Status</th>
-                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Price</th>
-                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Stock</th>
-                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Variants</th>
-                  <th className="px-4 py-3 text-xs font-medium text-muted-foreground text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {isPending && (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i}>
+        <div className="space-y-4">
+          <div className="flex items-center gap-1 border-b pb-2 text-xs">
+            {(["all", "in_stock", "low_stock", "out_of_stock"] as const).map((st) => (
+              <button
+                key={st}
+                type="button"
+                onClick={() => setFilterStatus(st)}
+                className={cn(
+                  "rounded-lg px-3 py-1.5 font-medium transition-colors capitalize",
+                  filterStatus === st
+                    ? "bg-primary text-primary-foreground shadow-2xs"
+                    : "text-muted-foreground hover:bg-muted/50"
+                )}
+              >
+                {st.replace(/_/g, " ")}
+              </button>
+            ))}
+          </div>
+
+          <div className="rounded-[var(--radius-card-lg,20px)] border border-border bg-card shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/40 text-left">
+                    <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Product</th>
+                    <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Status</th>
+                    <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Price</th>
+                    <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Stock</th>
+                    <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Variants</th>
+                    <th className="px-4 py-3 text-xs font-medium text-muted-foreground text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {isPending && (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i}>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <Skeleton className="h-10 w-10 shrink-0 rounded-xl" />
+                            <div className="space-y-1.5">
+                              <Skeleton className="h-4 w-32" />
+                              <Skeleton className="h-3 w-44" />
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3"><Skeleton className="h-5 w-14 rounded-full" /></td>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
+                        <td className="px-4 py-3"><Skeleton className="ml-auto h-4 w-12" /></td>
+                      </tr>
+                    ))
+                  )}
+
+                  {!isPending && products.map((p) => (
+                    <tr
+                      key={p.id}
+                      className="hover:bg-muted/30 transition-colors"
+                    >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <Skeleton className="h-10 w-10 shrink-0 rounded-xl" />
-                          <div className="space-y-1.5">
-                            <Skeleton className="h-4 w-32" />
-                            <Skeleton className="h-3 w-44" />
+                          <div className="bg-background h-10 w-10 shrink-0 overflow-hidden rounded-xl border shadow-sm">
+                            {p.images && p.images[0] ? (
+                              <img
+                                src={p.images[0]}
+                                alt={p.title}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                                <ImageIcon className="h-4 w-4" />
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-sm font-semibold text-foreground">
+                              {p.title}
+                            </div>
+                            <div className="text-muted-foreground line-clamp-1 max-w-xs text-xs">
+                              {p.description || "No description"}
+                            </div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3"><Skeleton className="h-5 w-14 rounded-full" /></td>
-                      <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
-                      <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
-                      <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
-                      <td className="px-4 py-3"><Skeleton className="ml-auto h-4 w-12" /></td>
-                    </tr>
-                  ))
-                )}
-
-                {!isPending && products.map((p) => (
-                  <tr
-                    key={p.id}
-                    className="hover:bg-muted/30 transition-colors"
-                  >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="bg-background h-10 w-10 shrink-0 overflow-hidden rounded-xl border shadow-sm">
-                          {p.images && p.images[0] ? (
-                            <img
-                              src={p.images[0]}
-                              alt={p.title}
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-                              <ImageIcon className="h-4 w-4" />
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <div className="text-sm font-semibold text-foreground">
-                            {p.title}
-                          </div>
-                          <div className="text-muted-foreground line-clamp-1 max-w-xs text-xs">
-                            {p.description || "No description"}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                        p.status === "active"
-                          ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                          : "bg-gray-500/10 text-gray-500"
-                      }`}>
-                        {p.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm font-semibold text-foreground">
-                      {getProductPriceRange(p.id)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">
-                      {getProductTotalStock(p.id)} in stock
-                    </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          p.status === "active"
+                            ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                            : "bg-gray-500/10 text-gray-500"
+                        }`}>
+                          {p.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm font-semibold text-foreground">
+                        {getProductPriceRange(p.id)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <StockBadge
+                          status={(p as any).stockStatus ?? "in_stock"}
+                          qty={(p as any).totalInventoryQuantity ?? getProductTotalStock(p.id)}
+                        />
+                      </td>
                     <td className="px-4 py-3 text-xs font-medium text-muted-foreground">
                       {getProductVariants(p.id).length || 1} variants
                     </td>
@@ -630,6 +664,7 @@ export function ProductsClient() {
             </table>
           </div>
         </div>
+      </div>
       )}
 
       {/* CSV Bulk Import Dialog */}

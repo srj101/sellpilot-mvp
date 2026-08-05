@@ -9,6 +9,7 @@ import { deleteProductImageFromVectorDb, searchProductsByImage } from "../lib/ve
 import { assertPlanLimit, getProductUsage } from "../lib/plan-limits";
 import { queueProductImageIndexing } from "../lib/queue";
 import { deleteS3Object, getPresignedUploadUrl, getPublicUrl, getS3ObjectSize } from "../lib/s3";
+import { getStockStatus } from "../lib/stock-status";
 import { businessScopedProcedure } from "../trpc";
 
 const VariantInput = z.object({
@@ -23,6 +24,7 @@ const VariantInput = z.object({
   compareAtPrice: z.number().nullable().optional(),
   sku: z.string().nullable().optional(),
   inventoryQuantity: z.number(),
+  lowStockThreshold: z.number().min(0).optional(),
   imageUrl: z.string().nullable().optional(),
 });
 
@@ -36,6 +38,7 @@ const ProductInput = z.object({
   options: z.array(z.object({ name: z.string(), values: z.array(z.string()) })),
   variants: z.array(VariantInput),
   rating: z.number().int().min(1).max(5).optional(),
+  lowStockThreshold: z.number().min(0).optional(),
 });
 
 export const productsRouter = {
@@ -43,24 +46,51 @@ export const productsRouter = {
    * form and the CSV bulk importer, before either one hits assertPlanLimit at save time. */
   getUsage: businessScopedProcedure.query(({ ctx }) => getProductUsage(ctx)),
 
-  list: businessScopedProcedure.query(async ({ ctx }) => {
-    const businessId = ctx.businessId;
-    const products = await ctx.db
-      .select()
-      .from(product)
-      .where(eq(product.businessId, businessId))
-      .orderBy(desc(product.createdAt));
+  list: businessScopedProcedure
+    .input(z.object({ filterStatus: z.enum(["all", "in_stock", "low_stock", "out_of_stock"]).optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const businessId = ctx.businessId;
+      const products = await ctx.db
+        .select()
+        .from(product)
+        .where(eq(product.businessId, businessId))
+        .orderBy(desc(product.createdAt));
 
-    const variants =
-      products.length > 0
-        ? await ctx.db
-            .select()
-            .from(productVariant)
-            .where(inArray(productVariant.productId, products.map((p) => p.id)))
-        : [];
+      const variants =
+        products.length > 0
+          ? await ctx.db
+              .select()
+              .from(productVariant)
+              .where(inArray(productVariant.productId, products.map((p) => p.id)))
+          : [];
 
-    return { products, variants };
-  }),
+      const variantsWithStatus = variants.map((v) => ({
+        ...v,
+        stockStatus: getStockStatus(v.inventoryQuantity, v.lowStockThreshold ?? 5),
+      }));
+
+      const productsWithStatus = products.map((p) => {
+        const pVariants = variantsWithStatus.filter((v) => v.productId === p.id);
+        const totalQty = pVariants.length > 0
+          ? pVariants.reduce((sum, v) => sum + v.inventoryQuantity, 0)
+          : 0;
+        const threshold = p.lowStockThreshold ?? 5;
+        const stockStatus = getStockStatus(totalQty, threshold);
+
+        return {
+          ...p,
+          totalInventoryQuantity: totalQty,
+          stockStatus,
+        };
+      });
+
+      const filter = input?.filterStatus ?? "all";
+      const filteredProducts = filter === "all"
+        ? productsWithStatus
+        : productsWithStatus.filter((p) => p.stockStatus === filter);
+
+      return { products: filteredProducts, variants: variantsWithStatus };
+    }),
 
   create: businessScopedProcedure.input(ProductInput).mutation(async ({ ctx, input }) => {
     const userId = ctx.businessOwnerId;
@@ -80,6 +110,7 @@ export const productsRouter = {
         images: input.images,
         options: input.options,
         rating: input.rating ?? null,
+        lowStockThreshold: input.lowStockThreshold ?? 5,
       })
       .returning();
 
@@ -98,6 +129,7 @@ export const productsRouter = {
         compareAtPrice: v.compareAtPrice ?? null,
         sku: v.sku ?? null,
         inventoryQuantity: v.inventoryQuantity,
+        lowStockThreshold: v.lowStockThreshold ?? input.lowStockThreshold ?? 5,
         imageUrl: v.imageUrl ?? null,
       }));
 
@@ -148,6 +180,7 @@ export const productsRouter = {
         images: input.images,
         options: input.options,
         rating: input.rating ?? null,
+        lowStockThreshold: input.lowStockThreshold ?? 5,
       })
       .where(and(eq(product.id, productId), eq(product.businessId, businessId)))
       .returning();
@@ -185,6 +218,7 @@ export const productsRouter = {
             compareAtPrice: v.compareAtPrice ?? null,
             sku: v.sku ?? null,
             inventoryQuantity: v.inventoryQuantity,
+            lowStockThreshold: v.lowStockThreshold ?? input.lowStockThreshold ?? 5,
             imageUrl: v.imageUrl ?? null,
           })
           .where(eq(productVariant.id, v.id))
@@ -214,6 +248,7 @@ export const productsRouter = {
             compareAtPrice: v.compareAtPrice ?? null,
             sku: v.sku ?? null,
             inventoryQuantity: v.inventoryQuantity,
+            lowStockThreshold: v.lowStockThreshold ?? input.lowStockThreshold ?? 5,
             imageUrl: v.imageUrl ?? null,
           })
           .returning();

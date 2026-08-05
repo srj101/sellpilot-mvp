@@ -974,16 +974,27 @@ export async function getFAQMatches(businessId: string, query: string, limit = 5
   return matches.slice(0, limit);
 }
 
-// Get low stock products
-export async function getLowStockProducts(businessId: string, threshold = 5) {
+// Get low stock products using dynamic lowStockThreshold settings
+export async function getLowStockProducts(businessId: string, threshold?: number) {
   const variants = await db.select().from(productVariant);
   const products = await db.select().from(product);
   const prodById = new Map(products.map((p) => [p.id, p]));
   const low = variants
-    .filter((v) => (v.inventoryQuantity ?? 0) < threshold)
     .filter((v) => {
       const p = prodById.get(v.productId);
-      return !!p && p.businessId === businessId;
+      if (!p || p.businessId !== businessId) return false;
+      const effectiveThreshold = threshold ?? v.lowStockThreshold ?? p.lowStockThreshold ?? 5;
+      return (v.inventoryQuantity ?? 0) <= effectiveThreshold;
+    })
+    .map((v) => {
+      const p = prodById.get(v.productId);
+      const effectiveThreshold = threshold ?? v.lowStockThreshold ?? p?.lowStockThreshold ?? 5;
+      return {
+        ...v,
+        productTitle: p?.title,
+        lowStockThreshold: effectiveThreshold,
+        stockStatus: (v.inventoryQuantity ?? 0) <= 0 ? "out_of_stock" : "low_stock",
+      };
     });
   return low.slice(0, 100);
 }

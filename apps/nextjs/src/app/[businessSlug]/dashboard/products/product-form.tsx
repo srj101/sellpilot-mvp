@@ -70,6 +70,9 @@ export function ProductForm({
   const [variants, setVariants] = useState<any[]>(
     initialProduct?.variants ?? [],
   );
+  const [lowStockThreshold, setLowStockThreshold] = useState(
+    initialProduct?.lowStockThreshold?.toString() ?? "5",
+  );
 
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -260,6 +263,7 @@ export function ProductForm({
         images,
         options: hasVariants ? options : [],
         variants: finalVariants,
+        lowStockThreshold: Number(lowStockThreshold) || 5,
       };
 
       if (isEditing) {
@@ -716,6 +720,18 @@ export function ProductForm({
                     value={inventoryQuantity}
                     onChange={(e) => setInventoryQuantity(e.target.value)}
                     placeholder="50"
+                    className="rounded-xl border bg-background/50 focus:bg-background"
+                  />
+                </div>
+                <div>
+                  <label className="text-muted-foreground mb-1 block text-xs font-semibold uppercase tracking-wider">
+                    Low Stock Threshold
+                  </label>
+                  <Input
+                    type="number"
+                    value={lowStockThreshold}
+                    onChange={(e) => setLowStockThreshold(e.target.value)}
+                    placeholder="5"
                     className="rounded-xl border bg-background/50 focus:bg-background"
                   />
                 </div>

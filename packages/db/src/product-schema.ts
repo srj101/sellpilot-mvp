@@ -23,6 +23,7 @@ export const product = pgTable("product", {
     .notNull(),
   rating: integer("rating"),
   status: text("status").default("active").notNull(), // active, draft, archived
+  lowStockThreshold: integer("low_stock_threshold").default(5).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
@@ -48,6 +49,7 @@ export const productVariant = pgTable("product_variant", {
   wholesalePrice: integer("wholesale_price"),
   sku: text("sku"),
   inventoryQuantity: integer("inventory_quantity").default(0).notNull(),
+  lowStockThreshold: integer("low_stock_threshold").default(5).notNull(),
   imageUrl: text("image_url"), // variant image
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
