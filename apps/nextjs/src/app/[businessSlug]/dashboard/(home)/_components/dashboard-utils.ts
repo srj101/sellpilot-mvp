@@ -33,6 +33,12 @@ export function trendPct(curr: number, prev: number) {
   return ((curr - prev) / prev) * 100;
 }
 
+/** Day-over-day trend: today vs yesterday. Same null-baseline logic as trendPct. */
+export function trendPctDay(today: number, yesterday: number) {
+  if (yesterday === 0) return null;
+  return ((today - yesterday) / yesterday) * 100;
+}
+
 export const STATUS_BADGE: Record<string, "success" | "destructive" | "secondary" | "default"> = {
   delivered: "success",
   cancelled: "destructive",

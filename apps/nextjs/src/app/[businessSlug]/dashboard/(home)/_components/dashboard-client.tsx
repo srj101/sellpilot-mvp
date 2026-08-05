@@ -14,18 +14,14 @@ import { cn } from "@acme/ui";
 
 import { useTRPC } from "~/trpc/react";
 import type { ActivityEvent, DashboardClientProps, SerializedOrder } from "./dashboard-types";
-import { DAY, avatarColor, formatCurrency, initials, trendPct, STATUS_BADGE } from "./dashboard-utils";
+import { DAY, avatarColor, formatCurrency, initials, trendPct, trendPctDay, STATUS_BADGE } from "./dashboard-utils";
 import {
   ActivityTimeline,
   OverviewChart,
 } from "./dashboard-widgets";
 import { TrialBanner } from "./trial-banner";
 
-/** FR-DSH-01 — stats.trends was already computed (see the useMemo below) but never
- * rendered on any stat card. "vs previous 30 days" rather than the SRS's literal "vs
- * previous day", since that's what the existing trend math actually compares (the same
- * current/previous-30-day-window convention Analytics uses) — re-deriving true
- * day-over-day trends would be a bigger change than this dead-code wire-up. */
+/** FR-DSH-01 — 30-day vs previous 30-day trend (displayed alongside day-over-day TrendBadgeDay). */
 function TrendBadge({ value }: { value: number | null }) {
   if (value === null) return <p className="mt-1 text-xs text-muted-foreground">No prior data</p>;
   const positive = value >= 0;
@@ -33,6 +29,17 @@ function TrendBadge({ value }: { value: number | null }) {
     <p className={cn("mt-1 text-xs", positive ? "text-green-500" : "text-rose-500")}>
       {positive ? "+" : ""}
       {value.toFixed(1)}% vs previous 30 days
+    </p>
+  );
+}
+
+function TrendBadgeDay({ value }: { value: number | null }) {
+  if (value === null) return null;
+  const positive = value >= 0;
+  return (
+    <p className={cn("mt-0.5 text-xs", positive ? "text-green-500" : "text-rose-500")}>
+      {positive ? "+" : ""}
+      {value.toFixed(1)}% vs yesterday
     </p>
   );
 }
@@ -66,8 +73,17 @@ export function DashboardClient({ userName }: DashboardClientProps) {
     const currentCustomers = new Set(currentPeriod.map((o) => o.customerPhone ?? o.customerName)).size;
     const prevCustomers = new Set(prevPeriod.map((o) => o.customerPhone ?? o.customerName)).size;
 
+    // Day-over-day windows (FR-DSH-01)
     const todayStart = new Date(now);
     todayStart.setHours(0, 0, 0, 0);
+    const yesterdayStart = new Date(todayStart.getTime() - DAY);
+    const todayOrders = validOrders.filter((o) => inWindow(o, todayStart.getTime(), now));
+    const yesterdayOrders = validOrders.filter((o) => inWindow(o, yesterdayStart.getTime(), todayStart.getTime()));
+    const todayRevenue = todayOrders.reduce((s, o) => s + o.total, 0);
+    const yesterdayRevenue = yesterdayOrders.reduce((s, o) => s + o.total, 0);
+    const todayCustomers = new Set(todayOrders.map((o) => o.customerPhone ?? o.customerName)).size;
+    const yesterdayCustomers = new Set(yesterdayOrders.map((o) => o.customerPhone ?? o.customerName)).size;
+
     const todaysOrders = orders.filter((o) => new Date(o.createdAt).getTime() >= todayStart.getTime());
     const todaysRevenue = todaysOrders
       .filter((o) => o.status !== "cancelled" && o.status !== "returned")
@@ -86,6 +102,11 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         revenue: trendPct(currentRevenue, prevRevenue),
         orders: trendPct(currentPeriod.length, prevPeriod.length),
         customers: trendPct(currentCustomers, prevCustomers),
+      },
+      trendsDay: {
+        revenue: trendPctDay(todayRevenue, yesterdayRevenue),
+        orders: trendPctDay(todayOrders.length, yesterdayOrders.length),
+        customers: trendPctDay(todayCustomers, yesterdayCustomers),
       },
     };
   }, [orders, now]);
@@ -237,6 +258,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
             ) : (
               <>
                 <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{formatCurrency(stats.totalRevenue)}</p>
+                <TrendBadgeDay value={stats.trendsDay.revenue} />
                 <TrendBadge value={stats.trends.revenue} />
               </>
             )}
@@ -257,6 +279,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
             ) : (
               <>
                 <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{customerCount.toLocaleString()}</p>
+                <TrendBadgeDay value={stats.trendsDay.customers} />
                 <TrendBadge value={stats.trends.customers} />
               </>
             )}
@@ -277,6 +300,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
             ) : (
               <>
                 <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{stats.totalOrders.toLocaleString()}</p>
+                <TrendBadgeDay value={stats.trendsDay.orders} />
                 <TrendBadge value={stats.trends.orders} />
               </>
             )}
