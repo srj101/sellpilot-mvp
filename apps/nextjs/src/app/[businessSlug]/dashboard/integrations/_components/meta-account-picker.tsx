@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { useFormStatus } from "react-dom";
 import { Check, Loader2, Unlink } from "lucide-react";
 
@@ -20,32 +19,15 @@ function SubmitButton({ label }: { label: string }) {
   );
 }
 
-/** Two-click inline confirm (mirrors the pattern used for destructive actions elsewhere,
- * e.g. offers-client.tsx's DeleteButton) — this detaches the page from whichever OTHER
- * store currently has it, so it shouldn't fire on a single accidental click. */
+/** Single-click button that detaches the page from whichever OTHER store currently
+ * has it and reconnects it here. */
 function ReconnectButton() {
-  const [armed, setArmed] = useState(false);
   const { pending } = useFormStatus();
 
-  if (!armed) {
-    return (
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className="shrink-0 gap-1.5 border-amber-500/30 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
-        onClick={() => setArmed(true)}
-      >
-        <Unlink className="h-4 w-4" />
-        Unlink &amp; reconnect
-      </Button>
-    );
-  }
-
   return (
-    <Button type="submit" size="sm" variant="destructive" className="shrink-0" disabled={pending} onBlur={() => setArmed(false)}>
-      {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-      {pending ? "Moving..." : "Confirm move here?"}
+    <Button type="submit" size="sm" variant="destructive" className="shrink-0 gap-1.5" disabled={pending}>
+      {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unlink className="h-4 w-4" />}
+      {pending ? "Moving..." : "Disconnect & Connect"}
     </Button>
   );
 }

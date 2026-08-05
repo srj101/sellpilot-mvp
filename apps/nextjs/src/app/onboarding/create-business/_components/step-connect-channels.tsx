@@ -117,6 +117,7 @@ export function StepConnectChannels({ businessSlug, onNext }: { businessSlug: st
   const pickerIntent = metaPages?.intent;
   const availablePages = metaPages?.pages || [];
   const pickerError = metaPages?.error;
+  const connectedElsewhereIds = new Set(metaPages?.connectedElsewhereIds ?? []);
 
   const hasConnections = connections.length > 0;
   const showRightPanel = hasConnections || isPicking;
@@ -377,7 +378,7 @@ export function StepConnectChannels({ businessSlug, onNext }: { businessSlug: st
                     {pickerError ? (
                       <ErrorState errorMsg={pickerError} />
                     ) : (
-                      <FacebookPagePicker pages={fbAvailable} connectedIds={fbConnectedIds} returnTo={returnTo} />
+                      <FacebookPagePicker pages={fbAvailable} connectedIds={fbConnectedIds} connectedElsewhereIds={connectedElsewhereIds} returnTo={returnTo} />
                     )}
                   </div>
                 </div>
@@ -399,7 +400,7 @@ export function StepConnectChannels({ businessSlug, onNext }: { businessSlug: st
                     {pickerError ? (
                       <ErrorState errorMsg={pickerError} />
                     ) : (
-                      <InstagramAccountPicker pages={igAvailable} connectedIds={igConnectedIds} returnTo={returnTo} />
+                      <InstagramAccountPicker pages={igAvailable} connectedIds={igConnectedIds} connectedElsewhereIds={connectedElsewhereIds} returnTo={returnTo} />
                     )}
                   </div>
                 </div>

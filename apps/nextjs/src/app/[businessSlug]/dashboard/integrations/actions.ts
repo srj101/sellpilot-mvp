@@ -573,14 +573,40 @@ export async function fetchAvailableMetaPages() {
   const tempToken = cookieStore.get("meta_temp_user_token")?.value;
   const intent = cookieStore.get("meta_channel_intent")?.value;
 
-  if (!tempToken) return { pages: [], isPicking: false, intent: null };
+  if (!tempToken) return { pages: [], isPicking: false, intent: null, connectedElsewhereIds: [] as string[] };
 
   try {
     const { getPagesWithInstagram } = await import("@acme/api/meta");
     const response = await getPagesWithInstagram(tempToken, "facebook");
-    return { pages: response.data || [], isPicking: true, intent };
+    const pages = response.data || [];
+
+    // Find pages/accounts already connected to a DIFFERENT business
+    let connectedElsewhereIds: string[] = [];
+    if (pages.length > 0) {
+      const businessSlug = cookieStore.get("meta_channel_store_slug")?.value;
+      if (businessSlug) {
+        const [org] = await db.select({ id: business.id }).from(business).where(eq(business.slug, businessSlug)).limit(1);
+        if (org) {
+          const allAccountIds = pages
+            .filter((p) => p.id !== "no_page")
+            .map((p) => p.id);
+          if (allAccountIds.length > 0) {
+            const rows = await db
+              .select({ platformAccountId: metaConnection.platformAccountId, businessId: metaConnection.businessId })
+              .from(metaConnection)
+              .where(and(
+                eq(metaConnection.platform, intent === "instagram" ? "instagram" : "facebook_page"),
+                inArray(metaConnection.platformAccountId, allAccountIds),
+              ));
+            connectedElsewhereIds = [...new Set(rows.filter((r) => r.businessId !== org.id).map((r) => r.platformAccountId))];
+          }
+        }
+      }
+    }
+
+    return { pages, isPicking: true, intent, connectedElsewhereIds };
   } catch (err) {
     console.error("Failed to load Facebook Pages:", err);
-    return { pages: [], isPicking: true, intent, error: err instanceof Error ? err.message : "Unknown error" };
+    return { pages: [], isPicking: true, intent, error: err instanceof Error ? err.message : "Unknown error", connectedElsewhereIds: [] as string[] };
   }
 }
