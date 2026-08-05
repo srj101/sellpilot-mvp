@@ -1,6 +1,6 @@
 import { and, eq, gte, inArray, lte, sql } from "@acme/db";
 import { db } from "@acme/db/client";
-import { business, businessMember, order, orderItem, subscription, user } from "@acme/db/schema";
+import { business, businessMember, businessProfile, order, orderItem, subscription, user } from "@acme/db/schema";
 import { sendEmail } from "@acme/auth/email";
 
 function appUrl(): string {
@@ -130,6 +130,12 @@ export async function processWeeklyInsightsJob(): Promise<{ processed: number }>
       .where(eq(business.id, sub.businessId))
       .limit(1);
 
+    const [profile] = await db
+      .select({ supportEmail: businessProfile.supportEmail })
+      .from(businessProfile)
+      .where(eq(businessProfile.businessId, sub.businessId))
+      .limit(1);
+
     const [ownerMember] = await db
       .select({ userId: businessMember.userId })
       .from(businessMember)
@@ -144,7 +150,9 @@ export async function processWeeklyInsightsJob(): Promise<{ processed: number }>
       .where(eq(user.id, ownerMember.userId))
       .limit(1);
 
-    if (!ownerUser?.email) continue;
+    // Specific business recipient email: prefers supportEmail on businessProfile, falls back to owner's registered email
+    const recipientEmail = profile?.supportEmail?.trim() || ownerUser?.email?.trim();
+    if (!recipientEmail) continue;
 
     // Query current 7 days performance
     const currentOrders = await db
@@ -210,7 +218,7 @@ export async function processWeeklyInsightsJob(): Promise<{ processed: number }>
         </div>
 
         <p style="color: #334155; font-size: 14px; line-height: 1.6; margin-bottom: 20px;">
-          Hello <strong>${ownerUser.name ?? "Store Owner"}</strong>, here is your AI-synthesized weekly executive performance digest for <strong>${biz.name}</strong>:
+          Hello <strong>${ownerUser?.name ?? "Store Owner"}</strong>, here is your AI-synthesized weekly executive performance digest for <strong>${biz.name}</strong>:
         </p>
 
         <!-- Metrics Grid -->
@@ -260,11 +268,11 @@ export async function processWeeklyInsightsJob(): Promise<{ processed: number }>
     `;
 
     await sendEmail({
-      to: ownerUser.email,
+      to: recipientEmail,
       subject: `🤖 AI Executive Insight Report — ${biz.name}`,
       html: htmlBody,
       text: `Weekly AI Executive Report for ${biz.name}: Revenue ৳${currentRev}, Orders: ${currentCount}, Growth: ${revGrowth}%. Summary: ${aiInsight.summary}. View details: ${analyticsUrl}`,
-    }).catch((err) => console.error(`[weekly-insights] Failed to send email to ${ownerUser.email}:`, err));
+    }).catch((err) => console.error(`[weekly-insights] Failed to send email to ${recipientEmail}:`, err));
 
     processed++;
   }
