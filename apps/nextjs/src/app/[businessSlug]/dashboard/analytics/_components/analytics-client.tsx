@@ -6,6 +6,7 @@ import { MessageSquare, Forward, Activity, Heart, DollarSign, ShoppingCart, Rota
 import { Button } from "@acme/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@acme/ui/card";
 import { RANGES } from "./analytics-utils";
+import { CustomKpiPanel } from "./custom-kpi-panel";
 import { CopilotWidget } from "../../_components/copilot-widget";
 import { UpgradeBanner } from "../../_components/upgrade-banner";
 import { useBusinessSlug } from "~/hooks/use-business-slug";
@@ -522,6 +523,8 @@ export function AnalyticsClient({
         </Card>
       </div>
       )}
+
+      <CustomKpiPanel businessSlug={businessSlug} />
     </div>
   );
 }

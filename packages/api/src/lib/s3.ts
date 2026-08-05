@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 export const s3Client = new S3Client({
@@ -37,6 +37,26 @@ export async function getPresignedUploadUrl(key: string, contentType: string): P
   });
 
   return getSignedUrl(s3Client, command, { expiresIn: 900 });
+}
+
+export async function getS3ObjectSize(key: string): Promise<number> {
+  try {
+    const command = new HeadObjectCommand({ Bucket: BUCKET_NAME, Key: key });
+    const response = await s3Client.send(command);
+    return response.ContentLength ?? 0;
+  } catch (error) {
+    console.error("[S3] Failed to fetch object size:", key, error);
+    return 0;
+  }
+}
+
+export async function deleteS3Object(key: string): Promise<void> {
+  try {
+    const command = new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: key });
+    await s3Client.send(command);
+  } catch (error) {
+    console.error("[S3] Failed to delete object:", key, error);
+  }
 }
 
 export function getPublicUrl(key: string): string {

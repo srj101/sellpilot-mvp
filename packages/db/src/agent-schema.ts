@@ -8,6 +8,7 @@ import {
   timestamp,
   unique,
   boolean,
+  bigint,
 } from "drizzle-orm/pg-core";
 
 import { user, business } from "./auth-schema";
@@ -422,6 +423,7 @@ export const subscription = pgTable(
     paymentMethodId: text("payment_method_id"),
     productsUsed: integer("products_used").default(0).notNull(),
     seatsUsed: integer("seats_used").default(1).notNull(),
+    storageUsedBytes: bigint("storage_used_bytes", { mode: "number" }).default(0).notNull(),
     usageResetAt: timestamp("usage_reset_at").defaultNow().notNull(),
     /** Set once per billing period the first time aiConversationsUsed crosses 80%/100% of
      * the plan's included volume — guards the usage-alert email/notification from firing
@@ -722,4 +724,33 @@ export const subscriptionRelations = relations(subscription, ({ one }) => ({
 
 export const customRoleRelations = relations(customRole, ({ one }) => ({
   user: one(user, { fields: [customRole.userId], references: [user.id] }),
+}));
+
+/**
+ * Merchant-configured custom KPI targets for Analytics dashboard (Pro plan feature).
+ */
+export const customKpi = pgTable(
+  "custom_kpi",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    businessId: text("business_id")
+      .notNull()
+      .references(() => business.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    metricType: text("metric_type").notNull(),
+    targetValue: integer("target_value").notNull(),
+    period: text("period").default("weekly").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [index("custom_kpi_business_idx").on(table.businessId)],
+);
+
+export const customKpiRelations = relations(customKpi, ({ one }) => ({
+  business: one(business, { fields: [customKpi.businessId], references: [business.id] }),
 }));

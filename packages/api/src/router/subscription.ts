@@ -8,6 +8,7 @@ import { business, businessMember, order, paymentMethod, product, saasInvoice, s
 
 import type { BillingCycle, PlanKey } from "../lib/plans";
 import { BILLING_CYCLES, CYCLE_META, PLAN_CATALOG, PLAN_KEYS, priceForCycle } from "../lib/plans";
+import { getStorageUsage } from "../lib/plan-limits";
 import { CARD_AND_BANK_GATEWAYS, initiatePayment, resolvePlatformCredentials as resolvePlatformCredentialsRaw, validatePayment } from "../lib/sslcommerz";
 import { businessScopedProcedure, ownerOnlyProcedure, publicProcedure } from "../trpc";
 
@@ -130,10 +131,11 @@ export const subscriptionRouter = {
     const planKey = (sub?.plan as PlanKey | undefined) ?? "starter";
     const limits = PLAN_CATALOG[planKey].limits;
 
-    const [productsRow, seatsRow, invoicesRow] = await Promise.all([
+    const [productsRow, seatsRow, invoicesRow, storageMetrics] = await Promise.all([
       ctx.db.select({ value: count() }).from(product).where(eq(product.businessId, ctx.businessId)),
       ctx.db.select({ value: count() }).from(businessMember).where(eq(businessMember.businessId, ctx.businessId)),
       ctx.db.select({ value: count() }).from(order).where(eq(order.businessId, ctx.businessId)),
+      getStorageUsage(ctx),
     ]);
     const productsUsed = productsRow[0]?.value ?? 0;
     const seatsUsed = seatsRow[0]?.value ?? 0;
@@ -146,6 +148,13 @@ export const subscriptionRouter = {
       products: { used: productsUsed, limit: limits.products, pct: pct(productsUsed, limits.products) },
       seats: { used: seatsUsed, limit: limits.teamSeats, pct: pct(seatsUsed, limits.teamSeats) },
       invoices: { used: invoicesUsed, limit: limits.invoices, pct: pct(invoicesUsed, limits.invoices) },
+      storage: {
+        usedBytes: storageMetrics.usedBytes,
+        usedGb: storageMetrics.usedGb,
+        limitGb: storageMetrics.limitGb,
+        limitBytes: storageMetrics.limitBytes,
+        pct: storageMetrics.percentage,
+      },
     };
   }),
 

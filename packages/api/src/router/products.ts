@@ -2,13 +2,13 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
-import { and, desc, eq, inArray } from "@acme/db";
-import { product, productVariant } from "@acme/db/schema";
+import { and, desc, eq, inArray, sql } from "@acme/db";
+import { product, productVariant, subscription } from "@acme/db/schema";
 
 import { deleteProductImageFromVectorDb, searchProductsByImage } from "../lib/vector-search";
 import { assertPlanLimit, getProductUsage } from "../lib/plan-limits";
 import { queueProductImageIndexing } from "../lib/queue";
-import { getPresignedUploadUrl, getPublicUrl } from "../lib/s3";
+import { deleteS3Object, getPresignedUploadUrl, getPublicUrl, getS3ObjectSize } from "../lib/s3";
 import { businessScopedProcedure } from "../trpc";
 
 const VariantInput = z.object({
@@ -361,18 +361,61 @@ export const productsRouter = {
 
   /**
    * Returns a presigned S3 URL for uploading a product image.
-   * The client uploads the file directly to S3, then stores the returned publicUrl.
-   * Existing Base64 images in the product table are left untouched (Option B).
+   * Checks plan storage capacity before issuing presigned URL.
    */
   getImageUploadUrl: businessScopedProcedure
-    .input(z.object({ contentType: z.string() }))
+    .input(z.object({ contentType: z.string(), fileSize: z.number().optional() }))
     .mutation(async ({ ctx, input }) => {
+      // Pre-flight storage limit check (defaults to 5MB check if fileSize omitted)
+      await assertPlanLimit(ctx, "storage", input.fileSize ?? 5 * 1024 * 1024);
+
       const ext = input.contentType.split("/")[1] ?? "jpg";
-      const key = `product-images/${ctx.businessId}/${crypto.randomUUID()}.${ext}`;
+      const key = `businesses/${ctx.businessId}/products/${crypto.randomUUID()}.${ext}`;
 
       const uploadUrl = await getPresignedUploadUrl(key, input.contentType);
       const publicUrl = getPublicUrl(key);
 
       return { uploadUrl, publicUrl, key };
+    }),
+
+  /**
+   * Confirms upload to S3 and atomically increments DB storageUsedBytes in real-time.
+   */
+  confirmUpload: businessScopedProcedure
+    .input(z.object({ key: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const sizeBytes = await getS3ObjectSize(input.key);
+
+      if (sizeBytes > 0) {
+        await ctx.db
+          .update(subscription)
+          .set({
+            storageUsedBytes: sql`${subscription.storageUsedBytes} + ${sizeBytes}`,
+          })
+          .where(eq(subscription.businessId, ctx.businessId));
+      }
+
+      return { success: true, sizeBytes, publicUrl: getPublicUrl(input.key) };
+    }),
+
+  /**
+   * Deletes image from S3 and atomically decrements DB storageUsedBytes in real-time.
+   */
+  deleteImage: businessScopedProcedure
+    .input(z.object({ key: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const sizeBytes = await getS3ObjectSize(input.key);
+      await deleteS3Object(input.key);
+
+      if (sizeBytes > 0) {
+        await ctx.db
+          .update(subscription)
+          .set({
+            storageUsedBytes: sql`GREATEST(0, ${subscription.storageUsedBytes} - ${sizeBytes})`,
+          })
+          .where(eq(subscription.businessId, ctx.businessId));
+      }
+
+      return { success: true, freedBytes: sizeBytes };
     }),
 } satisfies TRPCRouterRecord;

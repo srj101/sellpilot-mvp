@@ -7,7 +7,7 @@ import { businessMember, product, subscription } from "@acme/db/schema";
 import type { PlanKey } from "./plans";
 import { PLAN_CATALOG } from "./plans";
 
-type LimitResource = "products" | "seats";
+type LimitResource = "products" | "seats" | "storage";
 type Channel = "messenger" | "instagram" | "whatsapp";
 
 const CHANNEL_LABEL: Record<Channel, string> = {
@@ -66,6 +66,55 @@ export async function assertPlanLimit(
       });
     }
   }
+
+  if (resource === "storage") {
+    const [sub] = await ctx.db
+      .select({ storageUsedBytes: subscription.storageUsedBytes })
+      .from(subscription)
+      .where(eq(subscription.businessId, ctx.businessId));
+
+    const currentBytes = sub?.storageUsedBytes ?? 0;
+    const maxAllowedBytes = limits.storageGb * 1024 * 1024 * 1024;
+
+    if (currentBytes + additionalCount > maxAllowedBytes) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: `You've reached your ${name} storage limit (${limits.storageGb} GB). Upgrade your plan to upload more media assets.`,
+      });
+    }
+  }
+}
+
+export async function getStorageUsage(ctx: { db: typeof Db; businessId: string }): Promise<{
+  plan: PlanKey;
+  planName: string;
+  limitGb: number;
+  limitBytes: number;
+  usedBytes: number;
+  usedGb: string;
+  remainingBytes: number;
+  percentage: number;
+}> {
+  const planKey = await resolvePlanKey(ctx.db, ctx.businessId);
+  const { limits, name } = PLAN_CATALOG[planKey];
+  const [sub] = await ctx.db
+    .select({ storageUsedBytes: subscription.storageUsedBytes })
+    .from(subscription)
+    .where(eq(subscription.businessId, ctx.businessId));
+
+  const usedBytes = sub?.storageUsedBytes ?? 0;
+  const limitBytes = limits.storageGb * 1024 * 1024 * 1024;
+
+  return {
+    plan: planKey,
+    planName: name,
+    limitGb: limits.storageGb,
+    limitBytes,
+    usedBytes,
+    usedGb: (usedBytes / (1024 * 1024 * 1024)).toFixed(2),
+    remainingBytes: Math.max(0, limitBytes - usedBytes),
+    percentage: Math.min(100, Math.round((usedBytes / limitBytes) * 100)),
+  };
 }
 
 /** Live product count against the plan limit — powers the "X of Y products, Z remaining"

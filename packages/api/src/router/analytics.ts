@@ -2,8 +2,8 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
-import { eq, inArray } from "@acme/db";
-import { agentSession, customer, metaWebhookEvent, order, orderItem, pageView, product } from "@acme/db/schema";
+import { and, eq, gte, inArray, sql } from "@acme/db";
+import { agentSession, customKpi, customer, metaWebhookEvent, order, orderItem, pageView, product } from "@acme/db/schema";
 
 import { businessScopedProcedure } from "../trpc";
 import { runCopilotQuery } from "../lib/copilot-agent";
@@ -360,5 +360,76 @@ export const analyticsRouter = {
         revenueSeries,
         rangeLabel: { start: formatDate(windowStart), end: formatDate(windowEnd - DAY) },
       };
+    }),
+
+  listCustomKPIs: businessScopedProcedure.query(async ({ ctx }) => {
+    const tier = await getFeatureTier(ctx, "copilot");
+    if (tier !== "full") return [];
+
+    const kpis = await ctx.db
+      .select()
+      .from(customKpi)
+      .where(eq(customKpi.businessId, ctx.businessId));
+
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const [revRow] = await ctx.db
+      .select({ total: sql<number>`coalesce(sum(total_amount), 0)`, count: sql<number>`count(*)` })
+      .from(order)
+      .where(and(eq(order.businessId, ctx.businessId), gte(order.createdAt, sevenDaysAgo)));
+
+    const currentWeeklyRevenue = Number(revRow?.total ?? 0);
+    const currentWeeklyOrders = Number(revRow?.count ?? 0);
+    const currentWeeklyAov = currentWeeklyOrders > 0 ? Math.round(currentWeeklyRevenue / currentWeeklyOrders) : 0;
+
+    return kpis.map((kpi) => {
+      let currentValue = 0;
+      if (kpi.metricType === "revenue") currentValue = currentWeeklyRevenue;
+      else if (kpi.metricType === "orders") currentValue = currentWeeklyOrders;
+      else if (kpi.metricType === "aov") currentValue = currentWeeklyAov;
+
+      const percentage = Math.min(100, Math.round((currentValue / kpi.targetValue) * 100));
+      return {
+        ...kpi,
+        currentValue,
+        percentage,
+        isAchieved: currentValue >= kpi.targetValue,
+      };
+    });
+  }),
+
+  createCustomKPI: businessScopedProcedure
+    .input(
+      z.object({
+        title: z.string().min(1).max(100),
+        metricType: z.enum(["revenue", "orders", "aov"]),
+        targetValue: z.number().positive(),
+        period: z.enum(["weekly", "monthly"]).default("weekly"),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tier = await getFeatureTier(ctx, "copilot");
+      if (tier !== "full") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Custom KPI tracking requires the Pro Plan." });
+      }
+
+      return await ctx.db
+        .insert(customKpi)
+        .values({
+          businessId: ctx.businessId,
+          title: input.title,
+          metricType: input.metricType,
+          targetValue: input.targetValue,
+          period: input.period,
+        })
+        .returning();
+    }),
+
+  deleteCustomKPI: businessScopedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db
+        .delete(customKpi)
+        .where(and(eq(customKpi.id, input.id), eq(customKpi.businessId, ctx.businessId)));
+      return { success: true };
     }),
 } satisfies TRPCRouterRecord;

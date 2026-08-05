@@ -35,6 +35,7 @@ export function ProductForm({
   const createProductMutation = useMutation(trpc.products.create.mutationOptions());
   const updateProductMutation = useMutation(trpc.products.update.mutationOptions());
   const getImageUploadUrl = useMutation(trpc.products.getImageUploadUrl.mutationOptions());
+  const confirmUploadMutation = useMutation(trpc.products.confirmUpload.mutationOptions());
 
   const [title, setTitle] = useState(initialProduct?.title ?? "");
   const [description, setDescription] = useState(
@@ -130,15 +131,16 @@ export function ProductForm({
     setVariants(updatedVariants);
   }, [options, hasVariants]);
 
-  // Image Upload helper: upload to S3 and store the public URL
+  // Image Upload helper: upload to S3, confirm size, and store the public URL
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setUploadingImage(true);
     try {
-      const { uploadUrl, publicUrl } = await getImageUploadUrl.mutateAsync({
+      const { uploadUrl, key } = await getImageUploadUrl.mutateAsync({
         contentType: file.type,
+        fileSize: file.size,
       });
 
       const put = await fetch(uploadUrl, {
@@ -151,7 +153,8 @@ export function ProductForm({
         throw new Error("Failed to upload image to storage");
       }
 
-      setImages((prev) => [...prev, publicUrl]);
+      const confirmed = await confirmUploadMutation.mutateAsync({ key });
+      setImages((prev) => [...prev, confirmed.publicUrl]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to upload image");
     } finally {

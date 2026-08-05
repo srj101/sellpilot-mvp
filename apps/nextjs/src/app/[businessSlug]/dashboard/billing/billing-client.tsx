@@ -40,7 +40,7 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
-function Meter({ label, used, limit }: { label: string; used: number; limit: number | null }) {
+function Meter({ label, used, limit, customDisplay }: { label: string; used: number; limit: number | null; customDisplay?: string }) {
   const pct = limit === null ? 0 : Math.min(100, Math.round((used / limit) * 100));
   const barColor = limit !== null && pct >= 100 ? "bg-rose-500" : limit !== null && pct >= 80 ? "bg-amber-500" : "bg-primary";
   return (
@@ -48,7 +48,7 @@ function Meter({ label, used, limit }: { label: string; used: number; limit: num
       <div className="flex items-baseline justify-between text-xs">
         <span className="font-medium text-foreground">{label}</span>
         <span className="text-muted-foreground">
-          {used.toLocaleString()} {limit === null ? "· Unlimited" : `/ ${limit.toLocaleString()}`}
+          {customDisplay ?? `${used.toLocaleString()} ${limit === null ? "· Unlimited" : `/ ${limit.toLocaleString()}`}`}
         </span>
       </div>
       {limit !== null && (
@@ -385,9 +385,10 @@ export function BillingClient({ businessSlug }: { businessSlug: string }) {
           <CardTitle>Usage This Period</CardTitle>
           <CardDescription>Live counts against your {catalogEntry?.name ?? "active"} plan limits</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-6 md:grid-cols-3">
+        <CardContent className="grid gap-6 md:grid-cols-4">
           {usagePending ? (
             <>
+              <div className="flex flex-col gap-1.5"><Skeleton className="h-4 w-32"/><Skeleton className="h-1.5 w-full rounded-full"/></div>
               <div className="flex flex-col gap-1.5"><Skeleton className="h-4 w-32"/><Skeleton className="h-1.5 w-full rounded-full"/></div>
               <div className="flex flex-col gap-1.5"><Skeleton className="h-4 w-32"/><Skeleton className="h-1.5 w-full rounded-full"/></div>
               <div className="flex flex-col gap-1.5"><Skeleton className="h-4 w-32"/><Skeleton className="h-1.5 w-full rounded-full"/></div>
@@ -397,6 +398,7 @@ export function BillingClient({ businessSlug }: { businessSlug: string }) {
               <Meter label="AI Conversations" used={usage?.aiConversations.used ?? 0} limit={usage?.aiConversations.limit ?? null} />
               <Meter label="Products" used={usage?.products.used ?? 0} limit={usage?.products.limit ?? null} />
               <Meter label="Team Seats" used={usage?.seats.used ?? 0} limit={usage?.seats.limit ?? null} />
+              <Meter label="Media Storage" used={usage?.storage?.usedBytes ?? 0} limit={usage?.storage?.limitBytes ?? 3221225472} customDisplay={`${usage?.storage?.usedGb ?? "0.00"} GB / ${usage?.storage?.limitGb ?? 3} GB`} />
             </>
           )}
         </CardContent>
