@@ -254,7 +254,7 @@ export const notificationPreference = pgTable(
       .references(() => business.id, { onDelete: "cascade" }),
     /** "new_order" | "low_stock" | "human_handoff" | "quota_alert" | "weekly_insights" */
     eventType: text("event_type").notNull(),
-    emailEnabled: boolean("email_enabled").default(true).notNull(),
+    emailEnabled: boolean("email_enabled").default(false).notNull(),
     inAppEnabled: boolean("in_app_enabled").default(true).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
@@ -664,13 +664,13 @@ export interface AgentSessionState {
   shippingCost?: number;
   discount?: { code: string; amount: number };
   currentStep?:
-    | "browsing"
-    | "product_selected"
-    | "cart_active"
-    | "collecting_customer"
-    | "awaiting_confirmation"
-    | "order_placed"
-    | "support";
+  | "browsing"
+  | "product_selected"
+  | "cart_active"
+  | "collecting_customer"
+  | "awaiting_confirmation"
+  | "order_placed"
+  | "support";
   pendingOrderId?: string;
   notes?: string;
 }

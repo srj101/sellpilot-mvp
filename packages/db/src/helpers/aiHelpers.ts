@@ -9,6 +9,7 @@ import {
   customer,
   faq,
   notification,
+  notificationPreference,
   offer,
   order,
   orderItem,
@@ -20,6 +21,7 @@ import { db } from "../client";
 import { conversationMeta } from "../inbox-schema";
 import { metaWebhookEvent } from "../meta-webhook-event-schema";
 import { product, productVariant } from "../product-schema";
+import { getNotificationPreference } from "./notification-preferences";
 
 // Link a conversation thread to the CRM customer record created/updated for its order —
 // conversations otherwise have no connection to `customer` rows (keyed by platform contact
@@ -441,6 +443,7 @@ export interface ResolvedLineItem {
   unitPrice: number;
   compareAtPrice: number | null;
   inventoryQuantity: number;
+  lowStockThreshold: number;
   quantity: number;
   lineTotal: number;
 }
@@ -472,6 +475,7 @@ async function resolveAndPriceItems(
       unitPrice: r.variant.price,
       compareAtPrice: r.variant.compareAtPrice ?? null,
       inventoryQuantity: r.variant.inventoryQuantity ?? 0,
+      lowStockThreshold: r.variant.lowStockThreshold ?? r.product.lowStockThreshold ?? 5,
       quantity: it.quantity,
       lineTotal: r.variant.price * it.quantity,
     });
@@ -643,6 +647,8 @@ export async function createCustomerAndOrder(params: {
     });
   }
 
+  const lowStockAlerts: { name: string; remaining: number; threshold: number; variantId: string }[] = [];
+
   for (const item of priced.items) {
     await db.insert(orderItem).values({
       orderId: created.id,
@@ -656,25 +662,38 @@ export async function createCustomerAndOrder(params: {
       imageUrl: item.imageUrl,
     });
 
+    const newQty = item.inventoryQuantity - item.quantity;
     await db
       .update(productVariant)
-      .set({ inventoryQuantity: item.inventoryQuantity - item.quantity })
+      .set({ inventoryQuantity: newQty })
       .where(eq(productVariant.id, item.variantId));
+
+    // FR-SET-04: detect low-stock after decrement — callers send email/in-app
+    const threshold = item.lowStockThreshold ?? 5;
+    if (newQty >= 0 && newQty <= threshold) {
+      lowStockAlerts.push({
+        name: item.productTitle,
+        remaining: newQty,
+        threshold,
+        variantId: item.variantId,
+      });
+    }
   }
 
   await linkConversationToCustomer(userId, businessId, threadId, cust.id);
 
-  // Covers both the AI's own order creation and the manual "Create Order" sheet — this
-  // is the one function both paths funnel through, so notifying here means every order
-  // gets one regardless of which path created it.
-  const itemsSummary = priced.items.map((i) => `${i.productTitle} × ${i.quantity}`).join(", ");
-  await createNotification({
-    businessId,
-    type: "order_created",
-    title: `New order #${created.orderNumber}`,
-    body: `${itemsSummary} — ৳${created.total.toLocaleString()} (${customerName})`,
-    link: "/dashboard/orders",
-  }).catch((err) => console.error("[createCustomerAndOrder] Failed to create notification:", err));
+  // FR-SET-04: gate in-app notification on inAppEnabled preference
+  const { inAppEnabled } = await getNotificationPreference(businessId, "new_order");
+  if (inAppEnabled) {
+    const itemsSummary = priced.items.map((i) => `${i.productTitle} × ${i.quantity}`).join(", ");
+    await createNotification({
+      businessId,
+      type: "order_created",
+      title: `New order #${created.orderNumber}`,
+      body: `${itemsSummary} — ৳${created.total.toLocaleString()} (${customerName})`,
+      link: "/dashboard/orders",
+    }).catch((err) => console.error("[createCustomerAndOrder] Failed to create notification:", err));
+  }
 
   // Mark this thread's session as no longer "abandoned mid-purchase" — RECOVERABLE_STEPS
   // in the abandoned-follow-up sweep excludes "order_placed" specifically so a customer
@@ -714,6 +733,7 @@ export async function createCustomerAndOrder(params: {
     paymentUrl: created.paymentUrl ?? undefined,
     paymentMethod: isCod ? ("cod" as const) : ("online" as const),
     total: created.total,
+    lowStockAlerts,
   };
 }
 
@@ -897,13 +917,17 @@ export async function escalateToHuman(userId: string, businessId: string, thread
       set: { handlingMode: "human" },
     });
 
-  await createNotification({
-    businessId,
-    type: "complaint_escalated",
-    title: "Conversation escalated to you",
-    body: reason,
-    link: "/dashboard/inbox",
-  }).catch((err) => console.error("[escalateToHuman] Failed to create notification:", err));
+  // FR-SET-04: gate in-app notification on inAppEnabled preference
+  const { inAppEnabled } = await getNotificationPreference(businessId, "human_handoff");
+  if (inAppEnabled) {
+    await createNotification({
+      businessId,
+      type: "complaint_escalated",
+      title: "Conversation escalated to you",
+      body: reason,
+      link: "/dashboard/inbox",
+    }).catch((err) => console.error("[escalateToHuman] Failed to create notification:", err));
+  }
 }
 
 /** Pro tier's "basic logging + alert" (spec §6 Complaint/Return/Refund Handling) — the AI

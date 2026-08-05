@@ -14,6 +14,8 @@
 import { createQueue, createThreadCancelBroadcast, type MetaDMReplyJob, type MetaCommentReplyJob, type OrderStatusNotifyJob } from "@acme/queue";
 import { initializeHelpers } from "@acme/ai-agent";
 import { MessagingService, type PlatformConnection } from "@acme/messaging";
+import { getNotificationPreference, resolveNotificationRecipient } from "@acme/db/helpers/notification-preferences";
+import { sendEmail } from "@acme/auth/email";
 
 import { loadConfig } from "./config.js";
 import {
@@ -94,7 +96,47 @@ async function initializeAIHelpers() {
         getLowStockProducts: aiHelpers.getLowStockProducts,
       },
       orderHelpers: {
-        createCustomerAndOrder: aiHelpers.createCustomerAndOrder,
+        createCustomerAndOrder: async (params) => {
+          const result = await aiHelpers.createCustomerAndOrder(params);
+          if (result.success && result.orderId) {
+            // FR-SET-04: send new_order email if emailEnabled
+            try {
+              const { emailEnabled } = await getNotificationPreference(params.businessId, "new_order");
+              if (emailEnabled) {
+                const recipientEmail = await resolveNotificationRecipient(params.businessId);
+                if (recipientEmail) {
+                  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+                  await sendEmail({
+                    to: recipientEmail,
+                    subject: `New order #${result.orderNumber} — ৳${result.total.toLocaleString()}`,
+                    html: `<p>New order <strong>#${result.orderNumber}</strong> placed for <strong>৳${result.total.toLocaleString()}</strong>. <a href="${appUrl}/dashboard/orders">View order</a></p>`,
+                    text: `New order #${result.orderNumber} placed for ৳${result.total.toLocaleString()}.`,
+                  }).catch((err) => console.error("[worker.createCustomerAndOrder] Failed to send new_order email:", err));
+                }
+              }
+              // FR-SET-04: send low_stock emails if any variants crossed threshold
+              if (result.lowStockAlerts?.length) {
+                const { emailEnabled: lowStockEmailEnabled } = await getNotificationPreference(params.businessId, "low_stock");
+                if (lowStockEmailEnabled) {
+                  const recipientEmail = await resolveNotificationRecipient(params.businessId);
+                  if (recipientEmail) {
+                    const alerts = result.lowStockAlerts.map((a) => `${a.name} (${a.remaining} left, threshold: ${a.threshold})`).join(", ");
+                    const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+                    await sendEmail({
+                      to: recipientEmail,
+                      subject: `⚠️ Low stock alert — ${result.lowStockAlerts.length} product(s) running low`,
+                      html: `<p>Low stock: ${alerts}. <a href="${appUrl}/dashboard/products">View products</a></p>`,
+                      text: `Low stock: ${alerts}. View: ${appUrl}/dashboard/products`,
+                    }).catch((err) => console.error("[worker.createCustomerAndOrder] Failed to send low_stock email:", err));
+                  }
+                }
+              }
+            } catch (err) {
+              console.error("[worker.createCustomerAndOrder] Failed to check/send notification emails:", err);
+            }
+          }
+          return result;
+        },
         getOrdersForThread: aiHelpers.getOrdersForThread,
         getCustomerByPhone: aiHelpers.getCustomerByPhone,
         getCustomerPurchaseHistory: aiHelpers.getCustomerPurchaseHistory,
@@ -107,7 +149,27 @@ async function initializeAIHelpers() {
         getOfferByCode: aiHelpers.getOfferByCode,
         getComboOffersForProduct: aiHelpers.getComboOffersForProduct,
         getFAQMatches: aiHelpers.getFAQMatches,
-        escalateToHuman: aiHelpers.escalateToHuman,
+        escalateToHuman: async (userId, businessId, threadId, reason) => {
+          await aiHelpers.escalateToHuman(userId, businessId, threadId, reason);
+          // FR-SET-04: send human_handoff email if emailEnabled
+          try {
+            const { emailEnabled } = await getNotificationPreference(businessId, "human_handoff");
+            if (emailEnabled) {
+              const recipientEmail = await resolveNotificationRecipient(businessId);
+              if (recipientEmail) {
+                const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+                await sendEmail({
+                  to: recipientEmail,
+                  subject: "🙋 Conversation escalated to you",
+                  html: `<p>A customer conversation has been escalated and needs your attention. Reason: ${reason}. <a href="${appUrl}/dashboard/inbox">View inbox</a></p>`,
+                  text: `A customer conversation has been escalated. Reason: ${reason}. View: ${appUrl}/dashboard/inbox`,
+                }).catch((err) => console.error("[worker.escalateToHuman] Failed to send human_handoff email:", err));
+              }
+            }
+          } catch (err) {
+            console.error("[worker.escalateToHuman] Failed to check/send notification email:", err);
+          }
+        },
         logComplaint: aiHelpers.logComplaint,
         routeBulkInquiry: aiHelpers.routeBulkInquiry,
         getActiveCampaigns: aiHelpers.getActiveCampaigns,

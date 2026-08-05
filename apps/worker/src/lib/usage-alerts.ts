@@ -10,6 +10,7 @@ import { db } from "@acme/db/client";
 import { business, businessMember, subscription, user } from "@acme/db/schema";
 import { PLAN_CATALOG, USAGE_ALERT_THRESHOLDS, type PlanKey } from "@acme/api/plans";
 import { createNotification } from "@acme/db/helpers/aiHelpers";
+import { getNotificationPreference } from "@acme/db/helpers/notification-preferences";
 import { sendEmail } from "@acme/auth/email";
 
 function appUrl(): string {
@@ -27,28 +28,36 @@ async function notifyUsageThreshold(businessId: string, pct: 80 | 100, planName:
   const [ownerUser] = await db.select({ email: user.email }).from(user).where(eq(user.id, owner.userId)).limit(1);
   if (!ownerUser) return;
 
-  const billingUrl = `${appUrl()}/${biz.slug}/dashboard/billing`;
-  const subject =
-    pct === 100 ? `${biz.name} has used its full AI conversation allowance` : `${biz.name} is at 80% of its AI conversation allowance`;
-  const body =
-    pct === 100
-      ? `Your ${planName} plan's monthly AI conversation limit has been reached. Service continues uninterrupted — extra usage is billed simply at your plan's overage rate on the next invoice. Review usage or upgrade any time: ${billingUrl}`
-      : `Your ${planName} plan has used 80% of its monthly AI conversations. No action needed — service never stops mid-conversation — but you may want to review usage or upgrade before the next invoice: ${billingUrl}`;
+  // FR-SET-04: gate email on emailEnabled preference for quota_alert
+  const { emailEnabled, inAppEnabled } = await getNotificationPreference(businessId, "quota_alert");
 
-  await sendEmail({ to: ownerUser.email, subject, html: `<p>${body}</p>`, text: body }).catch((err) =>
-    console.error(`[usage-alerts] Failed to send email for ${businessId}:`, err),
-  );
-
-  await createNotification({
-    businessId,
-    type: pct === 100 ? "usage_limit_reached" : "usage_80_percent",
-    title: pct === 100 ? "AI conversation limit reached" : "80% of AI conversations used",
-    body:
+  if (emailEnabled) {
+    const billingUrl = `${appUrl()}/${biz.slug}/dashboard/billing`;
+    const subject =
+      pct === 100 ? `${biz.name} has used its full AI conversation allowance` : `${biz.name} is at 80% of its AI conversation allowance`;
+    const body =
       pct === 100
-        ? "Extra usage is billed at your plan's overage rate on the next invoice."
-        : "Review usage or upgrade before your next invoice.",
-    link: "/dashboard/billing",
-  }).catch((err) => console.error(`[usage-alerts] Failed to create notification for ${businessId}:`, err));
+        ? `Your ${planName} plan's monthly AI conversation limit has been reached. Service continues uninterrupted — extra usage is billed simply at your plan's overage rate on the next invoice. Review usage or upgrade any time: ${billingUrl}`
+        : `Your ${planName} plan has used 80% of its monthly AI conversations. No action needed — service never stops mid-conversation — but you may want to review usage or upgrade before the next invoice: ${billingUrl}`;
+
+    await sendEmail({ to: ownerUser.email, subject, html: `<p>${body}</p>`, text: body }).catch((err) =>
+      console.error(`[usage-alerts] Failed to send email for ${businessId}:`, err),
+    );
+  }
+
+  // FR-SET-04: gate in-app notification on inAppEnabled preference
+  if (inAppEnabled) {
+    await createNotification({
+      businessId,
+      type: pct === 100 ? "usage_limit_reached" : "usage_80_percent",
+      title: pct === 100 ? "AI conversation limit reached" : "80% of AI conversations used",
+      body:
+        pct === 100
+          ? "Extra usage is billed at your plan's overage rate on the next invoice."
+          : "Review usage or upgrade before your next invoice.",
+      link: "/dashboard/billing",
+    }).catch((err) => console.error(`[usage-alerts] Failed to create notification for ${businessId}:`, err));
+  }
 }
 
 /** Called after every conversation increment — cheap in the common case: no DB writes or

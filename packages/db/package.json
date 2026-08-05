@@ -18,6 +18,10 @@
     "./helpers/aiHelpers": {
       "types": "./dist/helpers/aiHelpers.d.ts",
       "default": "./src/helpers/aiHelpers.ts"
+    },
+    "./helpers/notification-preferences": {
+      "types": "./dist/helpers/notification-preferences.d.ts",
+      "default": "./src/helpers/notification-preferences.ts"
     }
   },
   "license": "MIT",

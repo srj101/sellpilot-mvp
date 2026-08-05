@@ -4,6 +4,8 @@ import { z } from "zod";
 import { desc, eq, and, inArray, sql, createCustomerAndOrder, quoteOrder } from "@acme/db";
 import type { db as Db } from "@acme/db/client";
 import { metaConnection, metaWebhookEvent, order, orderItem, orderStatusHistory, transaction } from "@acme/db/schema";
+import { getNotificationPreference, resolveNotificationRecipient } from "@acme/db/helpers/notification-preferences";
+import { sendEmail } from "@acme/auth/email";
 
 import { recordOrderStatusChange } from "../lib/order-audit";
 import { sendMetaInboxReply } from "../lib/meta";
@@ -215,6 +217,41 @@ export const ordersRouter = {
           result.paymentUrl,
         );
         await sendThreadMessage(ctx.db, ctx.businessId, channel, input.threadId, text, `order-created:${result.orderId}`);
+
+        // FR-SET-04: send new_order email if emailEnabled
+        const { emailEnabled } = await getNotificationPreference(ctx.businessId, "new_order");
+        if (emailEnabled) {
+          const recipientEmail = await resolveNotificationRecipient(ctx.businessId);
+          if (recipientEmail) {
+            const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+            const orderUrl = `${appUrl}/${ctx.businessId}/dashboard/orders`;
+            await sendEmail({
+              to: recipientEmail,
+              subject: `New order #${result.orderNumber} — ৳${result.total.toLocaleString()}`,
+              html: `<p>New order <strong>#${result.orderNumber}</strong> placed for <strong>৳${result.total.toLocaleString()}</strong>. <a href="${orderUrl}">View order</a></p>`,
+              text: `New order #${result.orderNumber} placed for ৳${result.total.toLocaleString()}. View: ${orderUrl}`,
+            }).catch((err) => console.error("[orders.create] Failed to send new_order email:", err));
+          }
+        }
+
+        // FR-SET-04: send low_stock emails if any variants crossed threshold
+        if (result.lowStockAlerts?.length) {
+          const { emailEnabled: lowStockEmailEnabled } = await getNotificationPreference(ctx.businessId, "low_stock");
+          const { inAppEnabled: lowStockInAppEnabled } = await getNotificationPreference(ctx.businessId, "low_stock");
+          if (lowStockEmailEnabled) {
+            const recipientEmail = await resolveNotificationRecipient(ctx.businessId);
+            if (recipientEmail) {
+              const alerts = result.lowStockAlerts.map((a) => `${a.name} (${a.remaining} left, threshold: ${a.threshold})`).join(", ");
+              const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+              await sendEmail({
+                to: recipientEmail,
+                subject: `⚠️ Low stock alert — ${result.lowStockAlerts.length} product(s) running low`,
+                html: `<p>Low stock: ${alerts}. <a href="${appUrl}/${ctx.businessId}/dashboard/products">View products</a></p>`,
+                text: `Low stock: ${alerts}. View: ${appUrl}/${ctx.businessId}/dashboard/products`,
+              }).catch((err) => console.error("[orders.create] Failed to send low_stock email:", err));
+            }
+          }
+        }
       }
 
       return result;
