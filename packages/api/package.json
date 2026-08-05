@@ -27,10 +27,6 @@
       "types": "./dist/lib/resolve-contact-names.d.ts",
       "default": "./src/lib/resolve-contact-names.ts"
     },
-    "./openwa": {
-      "types": "./dist/lib/openwa.d.ts",
-      "default": "./src/lib/openwa.ts"
-    },
     "./vector-search": {
       "types": "./dist/lib/vector-search.d.ts",
       "default": "./src/lib/vector-search.ts"

@@ -21,11 +21,6 @@ export class WhatsAppPlatformProvider extends MetaBasePlatformProvider {
     connection: PlatformConnection,
     message: OutgoingMessage
   ): Promise<SendResult> {
-    // Check if using OpenWA (unofficial WhatsApp API)
-    if (connection.accessToken.startsWith("user-")) {
-      return this.sendViaOpenWA(connection, message);
-    }
-
     if (message.imageUrl) {
       return this.sendWhatsAppImage(
         connection,
@@ -52,15 +47,6 @@ export class WhatsAppPlatformProvider extends MetaBasePlatformProvider {
     imageUrl: string,
     caption?: string
   ): Promise<SendResult> {
-    if (connection.accessToken.startsWith("user-")) {
-      return this.sendViaOpenWA(connection, {
-        platform: this.platform,
-        recipientId,
-        imageUrl,
-        text: caption,
-      });
-    }
-
     return this.sendWhatsAppImage(connection, recipientId, imageUrl, caption);
   }
 
@@ -179,64 +165,6 @@ export class WhatsAppPlatformProvider extends MetaBasePlatformProvider {
               : String(fallbackErr),
         };
       }
-    }
-  }
-
-  private async sendViaOpenWA(
-    connection: PlatformConnection,
-    message: OutgoingMessage
-  ): Promise<SendResult> {
-    // OpenWA integration - uses unofficial WhatsApp API
-    const baseUrl = process.env.OPENWA_API_URL ?? "http://localhost:8080";
-    const sessionId = connection.accessToken.replace("user-", "");
-
-    try {
-      if (message.imageUrl) {
-        const { buffer, contentType } = await this.downloadImage(
-          message.imageUrl
-        );
-        const base64Data = buffer.toString("base64");
-        const dataUrl = `data:${contentType};base64,${base64Data}`;
-
-        const res = await fetch(`${baseUrl}/api/${sessionId}/send-image`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chatId: message.recipientId,
-            base64: dataUrl,
-            caption: message.text ?? "",
-          }),
-        });
-
-        const data = (await res.json()) as { id?: string };
-        return {
-          success: res.ok,
-          messageId: data.id,
-          raw: data,
-        };
-      }
-
-      const res = await fetch(`${baseUrl}/api/${sessionId}/send-message`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chatId: message.recipientId,
-          message: message.text,
-        }),
-      });
-
-      const data = (await res.json()) as { id?: string };
-      return {
-        success: res.ok,
-        messageId: data.id,
-        raw: data,
-      };
-    } catch (err) {
-      this.logError("sendViaOpenWA", err);
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : String(err),
-      };
     }
   }
 

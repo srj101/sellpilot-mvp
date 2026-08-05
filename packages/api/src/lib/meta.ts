@@ -491,37 +491,6 @@ export async function sendMetaInboxReply({
   });
 
   if (platform === "whatsapp") {
-    if (accessToken.startsWith("user-")) {
-      if (imageUrl) {
-        try {
-          const { buffer, contentType } = await downloadImage(imageUrl);
-          const base64Data = buffer.toString("base64");
-          const dataUrl = `data:${contentType};base64,${base64Data}`;
-          const { sendOpenWAImage } = await import("./openwa");
-          const response = await sendOpenWAImage(accessToken, recipientId, dataUrl, text);
-          return {
-            messageId: response.messageId,
-            raw: response,
-          };
-        } catch (downloadErr) {
-          console.error("[sendMetaInboxReply] Failed OpenWA image download, falling back to URL sending:", downloadErr);
-          const { sendOpenWAImage } = await import("./openwa");
-          const response = await sendOpenWAImage(accessToken, recipientId, imageUrl, text);
-          return {
-            messageId: response.messageId,
-            raw: response,
-          };
-        }
-      } else {
-        const { sendOpenWAText } = await import("./openwa");
-        const response = await sendOpenWAText(accessToken, recipientId, text);
-        return {
-          messageId: response.messageId,
-          raw: response,
-        };
-      }
-    }
-
     if (imageUrl) {
       try {
         const { buffer, contentType } = await downloadImage(imageUrl);
