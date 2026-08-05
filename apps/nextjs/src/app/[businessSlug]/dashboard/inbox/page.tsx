@@ -4,8 +4,9 @@ import { redirect } from "next/navigation";
 
 import { Button } from "@acme/ui/button";
 import { Separator } from "@acme/ui/separator";
+import { Sheet, SheetClose, SheetContent, SheetFooter, SheetTrigger } from "@acme/ui/sheet";
 import { cn } from "@acme/ui";
-import { Inbox } from "lucide-react";
+import { Inbox, Info, MessageSquareText } from "lucide-react";
 
 import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { getSession } from "~/auth/server";
@@ -18,10 +19,10 @@ import { ThreadHeaderActions } from "./_components/thread-header-actions";
 import { ContactPanel } from "./_components/contact-panel";
 import { InboxTabsBar } from "./_components/inbox-tabs-bar";
 import { HighTrafficBanner } from "./_components/high-traffic-banner";
+import { MobileConversationSheet } from "./_components/mobile-conversation-sheet";
 import {
   avatarColor,
   channelIcon,
-  channelLabel,
   formatDetailedTime,
   formatRelativeTimeLong,
   initials,
@@ -31,22 +32,33 @@ interface InboxSearchParams {
   thread?: string;
 }
 
-function EmptyState({ businessSlug }: { businessSlug: string }) {
+function EmptyState({ businessSlug, hasThreads }: { businessSlug: string; hasThreads: boolean }) {
   return (
     <div className="flex h-full flex-col items-center justify-center p-10 text-center">
       <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border bg-background shadow-sm">
         <Inbox className="h-8 w-8 text-muted-foreground" />
       </div>
-      <h2 className="text-xl font-semibold tracking-tight">No conversations yet</h2>
-      <p className="text-muted-foreground mt-2 max-w-md text-sm leading-6">
-        Once Meta sends messages into the webhook, this inbox will populate with live
-        conversations, message history, and reply actions.
-      </p>
-      <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-        <Button asChild>
-          <Link href={`/${businessSlug}/dashboard/integrations`}>Check integrations</Link>
-        </Button>
-      </div>
+      {hasThreads ? (
+        <>
+          <h2 className="text-xl font-semibold tracking-tight">Select a conversation</h2>
+          <p className="text-muted-foreground mt-2 max-w-md text-sm leading-6">
+            Choose a conversation from the list to view messages and reply.
+          </p>
+        </>
+      ) : (
+        <>
+          <h2 className="text-xl font-semibold tracking-tight">No conversations yet</h2>
+          <p className="text-muted-foreground mt-2 max-w-md text-sm leading-6">
+            Once Meta sends messages into the webhook, this inbox will populate with live
+            conversations, message history, and reply actions.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <Button asChild>
+              <Link href={`/${businessSlug}/dashboard/integrations`}>Check integrations</Link>
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -123,27 +135,36 @@ export default async function InboxPage(props: {
 
   return (
     <DashboardShell>
-      <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border bg-card">
+      <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm">
+      <div className="hidden md:block">
         <InboxTabsBar threads={data.threads} />
-        <HighTrafficBanner />
+      </div>
+      <HighTrafficBanner />
 
         <div
           className={cn(
-            "grid w-full min-h-0 flex-1 grid-cols-1 overflow-hidden",
+            "grid h-full w-full min-h-0 grid-cols-1 overflow-hidden",
             selectedThread ? "md:grid-cols-[320px_1fr_320px]" : "md:grid-cols-[320px_1fr]",
           )}
         >
-          <div className="min-h-0 border-b md:border-b-0 md:border-r">
+          {/* Left: Conversation list — desktop only */}
+          <div className="hidden min-h-0 overflow-y-auto border-r md:block">
             <ConversationList threads={data.threads} selectedThreadId={selectedThread?.id ?? null} />
           </div>
 
-          <div className="flex min-h-0 flex-col">
+          {/* Center: Messages */}
+          <div className="min-h-0 flex flex-col">
             {selectedThread ? (
               <>
-                <div className="flex shrink-0 items-center gap-3 border-b px-5 py-4">
+                <div className="flex shrink-0 items-center gap-2 border-b px-3 py-3 md:gap-3 md:px-5 md:py-4">
+                  {/* Conversation list — mobile only */}
+                  <MobileConversationSheet
+                    threads={data.threads}
+                    selectedThreadId={selectedThread?.id ?? null}
+                  />
                   <span
                     className={cn(
-                      "flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold text-white",
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white md:h-9 md:w-9",
                       avatarColor(selectedThread.contactLabel),
                     )}
                   >
@@ -151,11 +172,33 @@ export default async function InboxPage(props: {
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-foreground">{selectedThread.contactLabel}</p>
-                    <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+                    <p className="flex items-center gap-1 truncate text-[11px] text-muted-foreground md:text-xs">
                       {channelIcon(selectedThread.platform, "h-3 w-3")}
-                      {channelLabel(selectedThread.platform)} · Active {formatRelativeTimeLong(selectedThread.lastMessageAt)}
+                      {selectedThread.accountLabel}
                     </p>
                   </div>
+                  {/* Contact info — mobile only, opens sheet */}
+                  <Sheet>
+                    <SheetTrigger asChild>
+                      <Button type="button" variant="outline" size="icon" className="h-9 w-9 md:hidden" aria-label="Contact info">
+                        <Info className="h-4 w-4" />
+                      </Button>
+                    </SheetTrigger>
+                    <SheetContent side="right" className="w-[85vw] p-0 sm:w-[380px]" hideClose>
+                      <ContactPanel
+                        threadId={selectedThread.id}
+                        customerId={selectedThread.customerId}
+                        contactLabel={selectedThread.contactLabel}
+                        messages={selectedThread.messages}
+                        initialSummary={selectedThread.summary}
+                      />
+                      <SheetFooter className="border-t p-4">
+                        <SheetClose asChild>
+                          <Button variant="outline" className="w-full">Close</Button>
+                        </SheetClose>
+                      </SheetFooter>
+                    </SheetContent>
+                  </Sheet>
                   <ThreadHeaderActions
                     threadId={selectedThread.id}
                     status={selectedThread.status}
@@ -164,7 +207,7 @@ export default async function InboxPage(props: {
                   />
                 </div>
 
-                <div className="flex-1 space-y-4 overflow-y-auto p-6">
+                <div className="flex-1 space-y-4 overflow-y-auto p-4 md:p-6">
                   {selectedThread.messages.map((message) => (
                     <MessageBubble
                       key={message.id}
@@ -180,7 +223,7 @@ export default async function InboxPage(props: {
 
                 <Separator />
 
-                <div className="shrink-0 p-4">
+                <div className="shrink-0 p-3 md:p-4">
                   <ReplyForm
                     threadId={selectedThread.id}
                     platform={selectedThread.platform}
@@ -190,12 +233,33 @@ export default async function InboxPage(props: {
                 </div>
               </>
             ) : (
-              <EmptyState businessSlug={businessSlug} />
+              <>
+                {/* Mobile: select conversation button */}
+                <div className="flex h-full flex-col items-center justify-center p-10 text-center md:hidden">
+                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border bg-background shadow-sm">
+                    <Inbox className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <h2 className="text-xl font-semibold tracking-tight">Your Inbox</h2>
+                  <p className="text-muted-foreground mt-2 max-w-md text-sm leading-6">
+                    Select a conversation to view messages and reply.
+                  </p>
+                  <div className="mt-6">
+                    <MobileConversationSheet
+                      threads={data.threads}
+                      selectedThreadId={null}
+                      showLabel
+                    />
+                  </div>
+                </div>
+                {/* Desktop: empty state */}
+                <EmptyState businessSlug={businessSlug} hasThreads={data.threads.length > 0} />
+              </>
             )}
           </div>
 
+          {/* Right: Contact panel — desktop only */}
           {selectedThread && (
-            <div className="hidden min-h-0 border-l md:block">
+            <div className="hidden min-h-0 overflow-y-auto border-l md:block">
               <ContactPanel
                 key={selectedThread.id}
                 threadId={selectedThread.id}

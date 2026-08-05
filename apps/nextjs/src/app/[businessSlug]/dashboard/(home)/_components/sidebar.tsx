@@ -439,65 +439,69 @@ function NavRow({
 
     if (hasSubmenu) {
       return (
-        <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <DropdownMenuTrigger asChild>{iconBtn}</DropdownMenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={14}>
-              {item.label}
-            </TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent
-            side="right"
-            align="start"
-            sideOffset={14}
-            className="min-w-[192px] rounded-lg border-haze-divider bg-card p-1.5 shadow-xl"
-          >
-            <DropdownMenuItem asChild className="rounded-lg focus:bg-muted">
-              <Link
-                href={withSlug(item.href)}
-                className="flex items-center gap-2.5 px-2 py-2"
-              >
-                <Icon className="h-4 w-4 text-muted-foreground" />
-                <span className="text-[13px] font-medium">{item.label}</span>
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator className="my-1 bg-border/50" />
-            {submenu.map((sub) => {
-              const SubIcon = sub.icon;
-              return (
-                <DropdownMenuItem
-                  key={sub.href}
-                  asChild
-                  className="rounded-lg focus:bg-muted"
+        <div className="flex justify-center">
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>{iconBtn}</DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={14}>
+                {item.label}
+              </TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent
+              side="right"
+              align="start"
+              sideOffset={14}
+              className="min-w-[192px] rounded-lg border-haze-divider bg-card p-1.5 shadow-xl"
+            >
+              <DropdownMenuItem asChild className="rounded-lg focus:bg-muted">
+                <Link
+                  href={withSlug(item.href)}
+                  className="flex items-center gap-2.5 px-2 py-2"
                 >
-                  <Link
-                    href={withSlug(sub.href)}
-                    className="flex items-center gap-2.5 px-2 py-2"
+                  <Icon className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-[13px] font-medium">{item.label}</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="my-1 bg-border/50" />
+              {submenu.map((sub) => {
+                const SubIcon = sub.icon;
+                return (
+                  <DropdownMenuItem
+                    key={sub.href}
+                    asChild
+                    className="rounded-lg focus:bg-muted"
                   >
-                    {SubIcon ? (
-                      <SubIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                    ) : null}
-                    <span className="text-[13px]">{sub.label}</span>
-                  </Link>
-                </DropdownMenuItem>
-              );
-            })}
-          </DropdownMenuContent>
-        </DropdownMenu>
+                    <Link
+                      href={withSlug(sub.href)}
+                      className="flex items-center gap-2.5 px-2 py-2"
+                    >
+                      {SubIcon ? (
+                        <SubIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                      ) : null}
+                      <span className="text-[13px]">{sub.label}</span>
+                    </Link>
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       );
     }
 
     return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Link href={withSlug(item.href)}>{iconBtn}</Link>
-        </TooltipTrigger>
-        <TooltipContent side="right" sideOffset={14}>
-          {item.label}
-        </TooltipContent>
-      </Tooltip>
+      <div className="flex justify-center">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link href={withSlug(item.href)}>{iconBtn}</Link>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={14}>
+            {item.label}
+          </TooltipContent>
+        </Tooltip>
+      </div>
     );
   }
 
@@ -684,7 +688,7 @@ function SidebarLogoHeader({ isCollapsed }: { isCollapsed: boolean }) {
     <Link
       href="/onboarding/select-business"
       className={cn(
-        "flex h-16 items-center gap-3 border-b border-haze-divider/40 mb-3 shrink-0 transition-colors hover:bg-haze-sidebar-active-bg/20",
+        "flex h-14 items-center gap-3 border-b border-haze-divider/40 shrink-0 transition-colors hover:bg-haze-sidebar-active-bg/20",
         isCollapsed ? "justify-center px-1" : "px-4",
       )}
     >
@@ -735,16 +739,16 @@ function SidebarBody({ isCollapsed }: { isCollapsed: boolean }) {
       <nav
         className={cn(
           "haze-scrollbar-dark min-h-0 flex-1 overflow-y-auto overflow-x-hidden",
-          isCollapsed ? "px-0 py-2" : "px-0 py-1",
+          isCollapsed ? "px-0 py-2 flex flex-col items-center pl-3" : "px-0 py-0",
         )}
       >
         {filteredGroups.map((group) => (
-          <div key={group.title} className="mb-1">
+          <div key={group.title} className={cn("mb-1", isCollapsed ? "flex flex-col items-center" : "")}>
             {!isCollapsed && <GroupTitle title={group.title} />}
             {isCollapsed && (
-              <div className="mx-3 my-2 h-px bg-border/40" />
+              <div className="mx-3 my-2 h-px bg-border/40 w-8" />
             )}
-            <div className="space-y-0.5">
+            <div className={cn("space-y-0.5", isCollapsed ? "flex flex-col items-center" : "")}>
               {group.items.map((item) => (
                 <NavRow
                   key={item.label}
@@ -778,7 +782,7 @@ function MobileSidebarSheet() {
   const filteredGroups = useFilteredNavGroups();
 
   return (
-    <div className="flex h-full flex-col px-3 py-5">
+    <div className="flex h-full flex-col overflow-hidden px-3 py-5">
 
       <nav className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-1">
         {filteredGroups.map((group) => (
@@ -827,7 +831,7 @@ function MobileMenu() {
       </SheetTrigger>
       <SheetContent
         side="top"
-        className="rounded-b-[28px] p-0"
+        className="max-h-[80vh] rounded-b-[28px] p-0"
         title="SellPilot navigation"
       >
         <MobileSidebarSheet />
@@ -924,7 +928,8 @@ export function Sidebar() {
         </Tooltip>
       </aside>
 
-      <div className="fixed left-4 right-4 top-4 z-40 flex h-14 w-full items-center justify-between rounded-xl border border-haze-divider bg-card/75 px-4 shadow-md backdrop-blur-md md:hidden print:hidden">
+      <div className="fixed left-0 right-0 top-0 z-40 flex h-14 items-center justify-between border-b border-haze-divider bg-card/75 px-4 shadow-md backdrop-blur-md md:hidden print:hidden">
+        <MobileMenu />
         <div className="flex items-center gap-2.5">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/15">
             <span className="h-2.5 w-2.5 rounded-full bg-primary" />
@@ -933,7 +938,6 @@ export function Sidebar() {
             SellPilot AI
           </span>
         </div>
-        <MobileMenu />
       </div>
     </>
   );

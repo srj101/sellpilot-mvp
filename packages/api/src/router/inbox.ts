@@ -88,7 +88,7 @@ export const inboxRouter = {
       }
 
       const selectedThread =
-        data.threads.find((t) => t.id === input.threadId) ?? data.threads[0] ?? null;
+        data.threads.find((t) => t.id === input.threadId) ?? null;
 
       let markedRead = false;
       if (selectedThread) {

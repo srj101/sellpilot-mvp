@@ -13,11 +13,11 @@ export async function DashboardShell({ children }: DashboardShellProps) {
     : null;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground select-none">
+    <div className="flex h-screen w-screen overflow-hidden text-foreground select-none">
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <FloatingHeader user={user} />
-        <main className="haze-scrollbar-dark flex-1 overflow-y-auto pt-24 md:pt-2">
+        <main className="haze-scrollbar-dark flex h-0 flex-1 overflow-y-auto pt-16 md:pt-2">
           <div className="min-h-full px-4 pb-8 md:px-6 lg:px-8">{children}</div>
         </main>
       </div>

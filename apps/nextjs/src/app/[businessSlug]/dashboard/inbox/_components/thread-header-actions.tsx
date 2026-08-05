@@ -2,51 +2,20 @@
 
 import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
-import { Archive, MoreHorizontal, Star, CheckCircle2, Headset, Bot } from "lucide-react";
+import { Archive, CheckCircle2, Filter, MoreHorizontal, Star, Headset, Bot } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@acme/ui/dropdown-menu";
 import { cn } from "@acme/ui";
 import { useTRPC } from "~/trpc/react";
 
-const MORE_OPTIONS = [
-  { value: "open", label: "Mark as Open" },
-  { value: "ticket", label: "Mark as Ticket" },
-] as const;
-
-function IconButton({
-  active,
-  onClick,
-  disabled,
-  label,
-  children,
-}: {
-  active?: boolean;
-  onClick: () => void;
-  disabled?: boolean;
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="icon"
-      className={cn("h-8 w-8", active && "border-primary/40 bg-primary/10 text-primary")}
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={label}
-      title={label}
-    >
-      {children}
-    </Button>
-  );
-}
+import { InboxFilterSheet } from "./inbox-tabs-bar";
 
 export function ThreadHeaderActions({
   threadId,
@@ -72,6 +41,7 @@ export function ThreadHeaderActions({
 
   return (
     <div className="flex items-center gap-1.5">
+      {/* Take over button — always visible */}
       <Button
         type="button"
         variant="outline"
@@ -87,48 +57,73 @@ export function ThreadHeaderActions({
         title={isHuman ? "Hand this conversation back to the AI" : "Take over this conversation from the AI"}
       >
         {isHuman ? <Headset className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
-        {isHuman ? "You're handling this" : "Take over"}
+        <span className="hidden sm:inline">{isHuman ? "You're handling" : "Take over"}</span>
       </Button>
 
-      <IconButton
-        label={starred ? "Unstar conversation" : "Star conversation"}
-        active={starred}
+      {/* Star — desktop only */}
+      <Button
+        type="button"
+        variant="outline"
+        size="icon"
+        className={cn("hidden h-8 w-8 sm:inline-flex", starred && "border-primary/40 bg-primary/10 text-primary")}
         disabled={toggleStar.isPending}
         onClick={() => toggleStar.mutate({ threadId, starred: !starred }, { onSuccess: () => router.refresh() })}
+        aria-label={starred ? "Unstar" : "Star"}
       >
         <Star className={cn("h-4 w-4", starred && "fill-amber-400 text-amber-400")} />
-      </IconButton>
+      </Button>
 
-      <IconButton
-        label="Mark resolved"
-        active={status === "resolved"}
-        disabled={setStatus.isPending}
-        onClick={() => updateStatus(status === "resolved" ? "open" : "resolved")}
-      >
-        <CheckCircle2 className="h-4 w-4" />
-      </IconButton>
-
-      <IconButton
-        label="Archive conversation"
-        active={status === "archived"}
-        disabled={setStatus.isPending}
-        onClick={() => updateStatus(status === "archived" ? "open" : "archived")}
-      >
-        <Archive className="h-4 w-4" />
-      </IconButton>
-
+      {/* More menu — always visible, contains all actions */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button type="button" variant="outline" size="icon" className="h-8 w-8" aria-label="More status options">
+          <Button type="button" variant="outline" size="icon" className="h-8 w-8" aria-label="More options">
             <MoreHorizontal className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {MORE_OPTIONS.map((opt) => (
-            <DropdownMenuItem key={opt.value} disabled={setStatus.isPending} onSelect={() => updateStatus(opt.value)}>
-              {opt.label}
-            </DropdownMenuItem>
-          ))}
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem
+            disabled={toggleStar.isPending}
+            onSelect={() => toggleStar.mutate({ threadId, starred: !starred }, { onSuccess: () => router.refresh() })}
+          >
+            <Star className={cn("h-4 w-4 mr-2", starred && "fill-amber-400 text-amber-400")} />
+            {starred ? "Unstar" : "Star"}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={setStatus.isPending}
+            onSelect={() => updateStatus(status === "resolved" ? "open" : "resolved")}
+          >
+            <CheckCircle2 className="h-4 w-4 mr-2" />
+            {status === "resolved" ? "Mark as Open" : "Mark Resolved"}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={setStatus.isPending}
+            onSelect={() => updateStatus(status === "archived" ? "open" : "archived")}
+          >
+            <Archive className="h-4 w-4 mr-2" />
+            {status === "archived" ? "Unarchive" : "Archive"}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem disabled={setStatus.isPending} onSelect={() => updateStatus("open")}>
+            Mark as Open
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={setStatus.isPending} onSelect={() => updateStatus("ticket")}>
+            Mark as Ticket
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {/* Filters — mobile only, opens bottom sheet */}
+          <div className="md:hidden">
+            <InboxFilterSheet>
+              <div
+                role="menuitem"
+                className="flex cursor-pointer items-center gap-2.5 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-muted focus:bg-muted"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Filter className="h-4 w-4" />
+                Filters
+              </div>
+            </InboxFilterSheet>
+          </div>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

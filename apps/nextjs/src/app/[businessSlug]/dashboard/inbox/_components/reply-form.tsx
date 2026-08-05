@@ -59,14 +59,14 @@ export function ReplyForm({
           onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
           rows={1}
-          placeholder="Type a message... (Enter to send)"
-          className="min-h-[42px] flex-1 resize-none rounded-full border bg-background px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          placeholder="Type a message..."
+          className="min-h-[44px] flex-1 resize-none rounded-full border bg-background px-4 py-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
         />
         <button
           type="submit"
           disabled={sendReply.isPending || !message.trim()}
           aria-label="Send message"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-transform hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-transform hover:scale-105 disabled:opacity-50 disabled:hover:scale-105"
         >
           <Send className="h-4 w-4" />
         </button>
