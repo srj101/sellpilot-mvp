@@ -38,11 +38,11 @@ export function WeeklyInsightBanner({
   };
 
   return (
-    <Card className="relative overflow-hidden border-indigo-500/20 bg-gradient-to-r from-indigo-500/10 via-purple-500/5 to-background p-5 shadow-xs">
+    <Card className="relative overflow-hidden border-(--primary)/20 bg-gradient-to-r from-(--primary)/10 via-(--primary)/5 to-background p-5 shadow-xs">
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         {/* Header Title */}
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-500/20">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-(--primary) text-(--primary-foreground) shadow-md shadow-(--primary)/20">
             <Bot className="h-5 w-5" />
           </div>
           <div>
@@ -50,7 +50,7 @@ export function WeeklyInsightBanner({
               <h3 className="font-semibold text-base text-foreground">
                 Weekly Executive AI Insights
               </h3>
-              <Badge variant="outline" className="border-indigo-500/30 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] py-0 px-2 font-medium">
+              <Badge variant="outline" className="border-(--primary)/30 bg-(--primary)/10 text-(--primary) text-[10px] py-0 px-2 font-medium">
                 Pro Digest
               </Badge>
             </div>
@@ -64,7 +64,7 @@ export function WeeklyInsightBanner({
         <Button
           onClick={handleAskCopilot}
           size="sm"
-          className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs shrink-0 self-start"
+          className="gap-2 bg-(--primary) hover:bg-(--primary)/90 text-(--primary-foreground) shadow-xs shrink-0 self-start"
         >
           <Sparkles className="h-4 w-4" /> Ask Copilot Follow-up Question
         </Button>
@@ -79,7 +79,7 @@ export function WeeklyInsightBanner({
 
         <div className="rounded-xl bg-background/80 p-3 border border-border/60">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Sales Growth Rate</span>
-          <div className={`flex items-center gap-1 text-lg font-bold mt-0.5 ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+          <div className={`flex items-center gap-1 text-lg font-bold mt-0.5 ${isPositive ? 'text-(--success)' : 'text-(--destructive)'}`}>
             {isPositive ? <ArrowUpRight className="h-5 w-5" /> : <ArrowDownRight className="h-5 w-5" />}
             {isPositive ? `+${growthRate}%` : `${growthRate}%`}
           </div>
@@ -92,9 +92,9 @@ export function WeeklyInsightBanner({
       </div>
 
       {/* AI Commentary & Strategic Recommendations */}
-      <div className="mt-4 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 p-3.5 border border-indigo-500/20 text-xs space-y-2">
+      <div className="mt-4 rounded-xl bg-(--primary)/5 p-3.5 border border-(--primary)/20 text-xs space-y-2">
         <p className="font-mono text-foreground/90 font-medium leading-relaxed">
-          "Your store generated <span className="font-bold text-indigo-600 dark:text-indigo-400">৳{Math.round(totalRev).toLocaleString()}</span> across <span className="font-bold">{totalOrders} completed orders</span> ({isPositive ? '+' : ''}{growthRate}% vs prior period). Primary demand driven by {topProductName}."
+          "Your store generated <span className="font-bold text-(--primary)">৳{Math.round(totalRev).toLocaleString()}</span> across <span className="font-bold">{totalOrders} completed orders</span> ({isPositive ? '+' : ''}{growthRate}% vs prior period). Primary demand driven by {topProductName}."
         </p>
 
         <div className="pt-1">

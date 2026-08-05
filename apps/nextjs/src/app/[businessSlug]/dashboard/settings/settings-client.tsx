@@ -403,7 +403,7 @@ export function SettingsClient({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="bp-notif-email" className="flex items-center gap-1.5">
-                  <Mail className="h-3.5 w-3.5 text-indigo-500" /> Notification Recipient Email
+                  <Mail className="h-3.5 w-3.5 text-(--primary)" /> Notification Recipient Email
                 </Label>
                 <Input
                   id="bp-notif-email"

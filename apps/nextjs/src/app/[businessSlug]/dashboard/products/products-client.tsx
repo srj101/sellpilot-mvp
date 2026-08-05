@@ -57,9 +57,9 @@ function StockBadge({ status, qty }: { status: "in_stock" | "low_stock" | "out_o
     return <Badge variant="destructive">Out of Stock</Badge>;
   }
   if (status === "low_stock") {
-    return <Badge className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20">Low Stock ({qty} left)</Badge>;
+    return <Badge className="bg-(--warning)/10 text-(--warning) border-(--warning)/20">Low Stock ({qty} left)</Badge>;
   }
-  return <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">{qty} in stock</Badge>;
+  return <Badge className="bg-(--success)/10 text-(--success) border-(--success)/20">{qty} in stock</Badge>;
 }
 
 export function ProductsClient() {
@@ -316,14 +316,14 @@ export function ProductsClient() {
               title={`${usage.used} of ${usage.limit} products used on ${usage.planName}`}
               className={cn(
                 "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium tabular-nums",
-                atLimit ? "border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-400" : "text-muted-foreground",
+                atLimit ? "border-(--warning)/30 bg-(--warning)/5 text-(--warning)" : "text-muted-foreground",
               )}
             >
               {atLimit && <Lock className="h-3 w-3 shrink-0" />}
               <span>{usage.used}/{usage.limit}</span>
               <div className="hidden h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-muted sm:block">
                 <div
-                  className={cn("h-full rounded-full transition-all", atLimit ? "bg-amber-500" : "bg-primary")}
+                  className={cn("h-full rounded-full transition-all", atLimit ? "bg-(--warning)" : "bg-primary")}
                   style={{ width: `${Math.min(100, Math.round((usage.used / usage.limit) * 100))}%` }}
                 />
               </div>
@@ -594,7 +594,7 @@ export function ProductsClient() {
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                           p.status === "active"
-                            ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                            ? "bg-(--success)/10 text-(--success)"
                             : "bg-gray-500/10 text-gray-500"
                         }`}>
                           {p.status}
@@ -681,7 +681,7 @@ export function ProductsClient() {
             {usage && (
               <div className={cn(
                 "flex items-center justify-between rounded-lg border px-3 py-2 text-xs",
-                atLimit ? "border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-400" : "text-muted-foreground",
+                atLimit ? "border-(--warning)/30 bg-(--warning)/5 text-(--warning)" : "text-muted-foreground",
               )}>
                 <span>{usage.used} of {usage.limit} products used on {usage.planName}</span>
                 <span className="font-semibold">{usage.remaining} remaining</span>
@@ -729,7 +729,7 @@ export function ProductsClient() {
             )}
 
             {importSummary && (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400">
+              <div className="rounded-lg border border-(--warning)/30 bg-(--warning)/5 p-3 text-sm text-(--warning)">
                 <p className="flex items-center gap-2 font-medium">
                   <Lock className="h-4 w-4 shrink-0" />
                   Imported {importSummary.imported} product{importSummary.imported === 1 ? "" : "s"}
@@ -748,7 +748,7 @@ export function ProductsClient() {
                   {csvSkipped > 0 ? ` — ${csvSkipped} skipped (missing title/price)` : ""}
                 </p>
                 {usage && csvRows.length > usage.remaining && (
-                  <p className="flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400">
+                  <p className="flex items-start gap-1.5 rounded-lg border border-(--warning)/30 bg-(--warning)/5 p-3 text-xs text-(--warning)">
                     <Lock className="h-3.5 w-3.5 shrink-0 translate-y-0.5" />
                     <span>
                       Your {usage.planName} plan allows {usage.limit} products and you have {usage.remaining} slot{usage.remaining === 1 ? "" : "s"} left.

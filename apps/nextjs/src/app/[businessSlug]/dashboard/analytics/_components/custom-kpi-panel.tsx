@@ -72,14 +72,14 @@ export function CustomKpiPanel({ businessSlug }: { businessSlug: string }) {
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <div className="space-y-1">
             <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <Target className="h-5 w-5 text-indigo-500" />
+              <Target className="h-5 w-5 text-(--primary)" />
               Proactive Weekly Insights & Custom KPI Tracking
             </CardTitle>
             <CardDescription>
               Set target revenue goals and receive weekly proactive AI executive email digests.
             </CardDescription>
           </div>
-          <Badge variant="secondary" className="bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+          <Badge variant="secondary" className="bg-(--primary)/10 text-(--primary)">
             Pro Plan Exclusive
           </Badge>
         </CardHeader>
@@ -105,7 +105,7 @@ export function CustomKpiPanel({ businessSlug }: { businessSlug: string }) {
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle className="flex items-center gap-2">
-            <Target className="h-5 w-5 text-indigo-500" />
+            <Target className="h-5 w-5 text-(--primary)" />
             Custom KPI Target Tracking
           </CardTitle>
           <CardDescription>
@@ -128,10 +128,10 @@ export function CustomKpiPanel({ businessSlug }: { businessSlug: string }) {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {kpis.map((kpi) => {
               const barColor = kpi.isAchieved
-                ? "bg-emerald-500"
+                ? "bg-(--success)"
                 : kpi.percentage >= 70
-                  ? "bg-indigo-500"
-                  : "bg-amber-500";
+                  ? "bg-(--primary)"
+                  : "bg-(--warning)";
 
               return (
                 <div key={kpi.id} className="flex flex-col gap-2 rounded-xl border bg-card p-4 shadow-2xs">
@@ -143,7 +143,7 @@ export function CustomKpiPanel({ businessSlug }: { businessSlug: string }) {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6 text-muted-foreground hover:text-rose-500"
+                      className="h-6 w-6 text-muted-foreground hover:text-(--destructive)"
                       onClick={() => deleteKpi.mutate({ id: kpi.id })}
                     >
                       <Trash2 className="h-3.5 w-3.5" />

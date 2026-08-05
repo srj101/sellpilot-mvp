@@ -27,9 +27,9 @@ function formatDate(date: string | Date) {
 }
 
 const STATUS_STYLE: Record<string, string> = {
-  trialing: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  active: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  past_due: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+  trialing: "bg-(--warning)/10 text-(--warning)",
+  active: "bg-(--success)/10 text-(--success)",
+  past_due: "bg-(--destructive)/10 text-(--destructive)",
   cancelled: "bg-muted text-muted-foreground",
 };
 
@@ -42,7 +42,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 function Meter({ label, used, limit, customDisplay }: { label: string; used: number; limit: number | null; customDisplay?: string }) {
   const pct = limit === null ? 0 : Math.min(100, Math.round((used / limit) * 100));
-  const barColor = limit !== null && pct >= 100 ? "bg-rose-500" : limit !== null && pct >= 80 ? "bg-amber-500" : "bg-primary";
+  const barColor = limit !== null && pct >= 100 ? "bg-(--destructive)" : limit !== null && pct >= 80 ? "bg-(--warning)" : "bg-primary";
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-baseline justify-between text-xs">
@@ -57,7 +57,7 @@ function Meter({ label, used, limit, customDisplay }: { label: string; used: num
         </div>
       )}
       {limit !== null && pct >= 100 && (
-        <p className="text-[11px] text-rose-600 dark:text-rose-400">
+        <p className="text-[11px] text-(--destructive)">
           You&apos;ve hit your {label.toLowerCase()} limit. Upgrade or remove some to add more.
         </p>
       )}
@@ -174,10 +174,10 @@ export function BillingClient({ businessSlug }: { businessSlug: string }) {
   return (
     <div className="space-y-6">
       {isPastDue && (
-        <div className="flex items-start gap-3 rounded-xl border border-rose-500/30 bg-rose-500/5 p-4">
-          <AlertTriangle className="mt-0.5 size-5 shrink-0 text-rose-500" />
+        <div className="flex items-start gap-3 rounded-xl border border-(--destructive)/30 bg-(--destructive)/5 p-4">
+          <AlertTriangle className="mt-0.5 size-5 shrink-0 text-(--destructive)" />
           <div className="flex-1 text-sm">
-            <p className="font-semibold text-rose-600 dark:text-rose-400">Payment failed</p>
+            <p className="font-semibold text-(--destructive)">Payment failed</p>
             <p className="mt-0.5 text-muted-foreground">
               We couldn&apos;t process your last payment. Update your payment method to avoid interruption.
             </p>
@@ -247,7 +247,7 @@ export function BillingClient({ businessSlug }: { businessSlug: string }) {
                     </div>
                     <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                       <div
-                        className="h-full rounded-full bg-amber-500 transition-all"
+                        className="h-full rounded-full bg-(--warning) transition-all"
                         style={{ width: `${Math.max(0, Math.min(100, ((14 - current.daysRemaining) / 14) * 100))}%` }}
                       />
                     </div>
@@ -274,7 +274,7 @@ export function BillingClient({ businessSlug }: { businessSlug: string }) {
                 )}
 
                 {current.pendingPlan && (
-                  <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                  <p className="rounded-lg bg-(--warning)/10 px-3 py-2 text-xs text-(--warning)">
                     Switching to <strong>{PLAN_CATALOG[current.pendingPlan].name}</strong> at the end of this period.
                   </p>
                 )}
@@ -312,7 +312,7 @@ export function BillingClient({ businessSlug }: { businessSlug: string }) {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="rounded-lg text-rose-500 hover:bg-rose-500/5 hover:text-rose-600"
+                      className="rounded-lg text-(--destructive) hover:bg-(--destructive)/5 hover:text-(--destructive)"
                       onClick={handleCancel}
                       disabled={cancelSub.isPending}
                     >
@@ -352,11 +352,11 @@ export function BillingClient({ businessSlug }: { businessSlug: string }) {
                   </div>
                   <div className="flex items-center gap-1">
                     {!m.isDefault && (
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-amber-500" title="Make default" onClick={() => setDefaultMethod.mutate({ id: m.id })}>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-(--warning)" title="Make default" onClick={() => setDefaultMethod.mutate({ id: m.id })}>
                         <Star className="h-3.5 w-3.5" />
                       </Button>
                     )}
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-rose-500" title="Remove" onClick={() => removeMethod.mutate({ id: m.id })}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-(--destructive)" title="Remove" onClick={() => removeMethod.mutate({ id: m.id })}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
@@ -442,7 +442,7 @@ export function BillingClient({ businessSlug }: { businessSlug: string }) {
                       <td className="py-3 capitalize text-muted-foreground">{PLAN_CATALOG[inv.plan as PlanKey].name}</td>
                       <td className="py-3">
                         <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                          inv.status === "paid" ? "bg-emerald-500/10 text-emerald-600" : inv.status === "failed" ? "bg-rose-500/10 text-rose-600" : "bg-muted text-muted-foreground")}>
+                          inv.status === "paid" ? "bg-(--success)/10 text-(--success)" : inv.status === "failed" ? "bg-(--destructive)/10 text-(--destructive)" : "bg-muted text-muted-foreground")}>
                           {inv.status}
                         </span>
                       </td>

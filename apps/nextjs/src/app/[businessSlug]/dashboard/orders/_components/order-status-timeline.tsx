@@ -9,17 +9,17 @@ import { useTRPC } from "~/trpc/react";
 function getStatusIcon(status: string) {
   switch (status) {
     case "pending":
-      return <Clock className="h-3.5 w-3.5 text-amber-500" />;
+      return <Clock className="h-3.5 w-3.5 text-(--warning)" />;
     case "confirmed":
-      return <CheckCircle2 className="h-3.5 w-3.5 text-blue-500" />;
+      return <CheckCircle2 className="h-3.5 w-3.5 text-(--chart-4)" />;
     case "shipped":
-      return <Truck className="h-3.5 w-3.5 text-purple-500" />;
+      return <Truck className="h-3.5 w-3.5 text-(--chart-5)" />;
     case "delivered":
-      return <Package className="h-3.5 w-3.5 text-emerald-500" />;
+      return <Package className="h-3.5 w-3.5 text-(--success)" />;
     case "cancelled":
-      return <XCircle className="h-3.5 w-3.5 text-rose-500" />;
+      return <XCircle className="h-3.5 w-3.5 text-(--destructive)" />;
     case "returned":
-      return <RotateCcw className="h-3.5 w-3.5 text-orange-500" />;
+      return <RotateCcw className="h-3.5 w-3.5 text-(--warning)" />;
     default:
       return <Clock className="h-3.5 w-3.5 text-muted-foreground" />;
   }
@@ -28,21 +28,21 @@ function getStatusIcon(status: string) {
 function getChangedByBadge(changedBy: string, name?: string | null) {
   if (changedBy === "ai_agent") {
     return (
-      <Badge variant="outline" className="gap-1 border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400 text-[10px] py-0 px-1.5 font-normal">
+      <Badge variant="outline" className="gap-1 border-(--chart-5)/30 bg-(--chart-5)/10 text-(--chart-5) text-[10px] py-0 px-1.5 font-normal">
         <Bot className="h-3 w-3" /> {name ?? "SellPilot AI"}
       </Badge>
     );
   }
   if (changedBy === "system_sweep") {
     return (
-      <Badge variant="outline" className="gap-1 border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] py-0 px-1.5 font-normal">
+      <Badge variant="outline" className="gap-1 border-(--chart-4)/30 bg-(--chart-4)/10 text-(--chart-4) text-[10px] py-0 px-1.5 font-normal">
         <RefreshCw className="h-3 w-3" /> {name ?? "Automated Sweep"}
       </Badge>
     );
   }
   if (changedBy === "customer") {
     return (
-      <Badge variant="outline" className="gap-1 border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] py-0 px-1.5 font-normal">
+      <Badge variant="outline" className="gap-1 border-(--success)/30 bg-(--success)/10 text-(--success) text-[10px] py-0 px-1.5 font-normal">
         <User className="h-3 w-3" /> Customer
       </Badge>
     );

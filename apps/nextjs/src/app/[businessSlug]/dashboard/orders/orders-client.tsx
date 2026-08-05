@@ -176,10 +176,10 @@ export function OrdersClient() {
       {/* Quick Stats */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {[
-          { label: "Total Orders", value: stats.total, color: "from-blue-500/10 to-blue-600/5 dark:from-blue-500/20 dark:to-blue-600/10", text: "text-blue-600 dark:text-blue-400" },
-          { label: "Pending", value: stats.pending, color: "from-amber-500/10 to-amber-600/5 dark:from-amber-500/20 dark:to-amber-600/10", text: "text-amber-600 dark:text-amber-400" },
-          { label: "Delivered", value: stats.delivered, color: "from-emerald-500/10 to-emerald-600/5 dark:from-emerald-500/20 dark:to-emerald-600/10", text: "text-emerald-600 dark:text-emerald-400" },
-          { label: "Revenue", value: formatCurrency(stats.revenue), color: "from-violet-500/10 to-violet-600/5 dark:from-violet-500/20 dark:to-violet-600/10", text: "text-violet-600 dark:text-violet-400" },
+          { label: "Total Orders", value: stats.total, color: "from-(--chart-4)/10 to-(--chart-4)/5", text: "text-(--chart-4)" },
+          { label: "Pending", value: stats.pending, color: "from-(--warning)/10 to-(--warning)/5", text: "text-(--warning)" },
+          { label: "Delivered", value: stats.delivered, color: "from-(--success)/10 to-(--success)/5", text: "text-(--success)" },
+          { label: "Revenue", value: formatCurrency(stats.revenue), color: "from-(--chart-5)/10 to-(--chart-5)/5", text: "text-(--chart-5)" },
         ].map((s) => (
           <div
             key={s.label}
@@ -390,7 +390,7 @@ export function OrdersClient() {
                             <span>{formatCurrency(o.shippingCost)}</span>
                           </div>
                           {o.discountAmount > 0 && (
-                            <div className="flex justify-between text-emerald-600">
+                            <div className="flex justify-between text-(--success)">
                               <span>Discount{o.couponCode ? ` (${o.couponCode})` : ""}</span>
                               <span>-{formatCurrency(o.discountAmount)}</span>
                             </div>
@@ -450,7 +450,7 @@ export function OrdersClient() {
                     )}
 
                     {o.notes && (
-                      <div className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                      <div className="mt-4 rounded-xl bg-(--warning)/10 p-3 text-sm text-(--warning)">
                         <strong>Note:</strong> {o.notes}
                       </div>
                     )}

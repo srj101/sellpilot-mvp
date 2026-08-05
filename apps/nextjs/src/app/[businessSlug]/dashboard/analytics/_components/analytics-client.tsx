@@ -136,49 +136,49 @@ export function AnalyticsClient({
         <Card className="card-hover p-5">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-muted-foreground">Revenue</p>
-            <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-600 dark:text-emerald-400">
+            <div className="rounded-xl bg-(--success)/10 p-2 text-(--success)">
               <DollarSign className="h-4 w-4" />
             </div>
           </div>
           <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{formatCurrency(revenueStats.revenue)}</p>
           {(() => {
             const t = trendLabel(revenueStats.revenueTrend, "vs previous period");
-            return <p className={`mt-1 text-xs ${t.positive ? "text-green-500" : "text-rose-500"}`}>{t.text}</p>;
+            return <p className={`mt-1 text-xs ${t.positive ? "text-(--success)" : "text-(--destructive)"}`}>{t.text}</p>;
           })()}
         </Card>
 
         <Card className="card-hover p-5">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-muted-foreground">Total Orders</p>
-            <div className="rounded-xl bg-blue-500/10 p-2 text-blue-500">
+            <div className="rounded-xl bg-(--chart-4)/10 p-2 text-(--chart-4)">
               <ShoppingCart className="h-4 w-4" />
             </div>
           </div>
           <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{revenueStats.orderCount.toLocaleString()}</p>
           {(() => {
             const t = trendLabel(revenueStats.orderCountTrend, "vs previous period");
-            return <p className={`mt-1 text-xs ${t.positive ? "text-green-500" : "text-rose-500"}`}>{t.text}</p>;
+            return <p className={`mt-1 text-xs ${t.positive ? "text-(--success)" : "text-(--destructive)"}`}>{t.text}</p>;
           })()}
         </Card>
 
         <Card className="card-hover p-5">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-muted-foreground">Average Order Value</p>
-            <div className="rounded-xl bg-violet-500/10 p-2 text-violet-500">
+            <div className="rounded-xl bg-(--chart-5)/10 p-2 text-(--chart-5)">
               <Activity className="h-4 w-4" />
             </div>
           </div>
           <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{formatCurrency(revenueStats.aov)}</p>
           {(() => {
             const t = trendLabel(revenueStats.aovTrend, "vs previous period");
-            return <p className={`mt-1 text-xs ${t.positive ? "text-green-500" : "text-rose-500"}`}>{t.text}</p>;
+            return <p className={`mt-1 text-xs ${t.positive ? "text-(--success)" : "text-(--destructive)"}`}>{t.text}</p>;
           })()}
         </Card>
 
         <Card className="card-hover p-5">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-muted-foreground">Return Rate</p>
-            <div className="rounded-xl bg-rose-500/10 p-2 text-rose-500">
+            <div className="rounded-xl bg-(--destructive)/10 p-2 text-(--destructive)">
               <RotateCcw className="h-4 w-4" />
             </div>
           </div>
@@ -186,7 +186,7 @@ export function AnalyticsClient({
           {(() => {
             // Inverted: a drop in return rate is the good direction, unlike every other trend here.
             const t = trendLabel(revenueStats.returnRateTrend, "vs previous period", true);
-            return <p className={`mt-1 text-xs ${t.positive ? "text-green-500" : "text-rose-500"}`}>{t.text}</p>;
+            return <p className={`mt-1 text-xs ${t.positive ? "text-(--success)" : "text-(--destructive)"}`}>{t.text}</p>;
           })()}
         </Card>
       </div>
@@ -360,7 +360,7 @@ export function AnalyticsClient({
               <span>Chat Sessions</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
+              <span className="h-2.5 w-2.5 rounded-full bg-(--chart-4)" />
               <span>Orders Placed</span>
             </div>
           </div>
@@ -381,7 +381,7 @@ export function AnalyticsClient({
           <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{messagingStats.messagesSent.toLocaleString()}</p>
           {(() => {
             const t = trendLabel(messagingStats.messagesSentTrend, "vs previous period");
-            return <p className={`mt-1 text-xs ${t.positive ? "text-green-500" : "text-rose-500"}`}>{t.text}</p>;
+            return <p className={`mt-1 text-xs ${t.positive ? "text-(--success)" : "text-(--destructive)"}`}>{t.text}</p>;
           })()}
         </Card>
 
@@ -389,14 +389,14 @@ export function AnalyticsClient({
         <Card className="card-hover p-5">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-muted-foreground">Chat Sessions</p>
-            <div className="rounded-xl bg-blue-500/10 p-2 text-blue-500">
+            <div className="rounded-xl bg-(--chart-4)/10 p-2 text-(--chart-4)">
               <MessageSquare className="h-4 w-4" />
             </div>
           </div>
           <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{messagingStats.chatSessions.toLocaleString()}</p>
           {(() => {
             const t = trendLabel(messagingStats.chatSessionsTrend, "vs previous period");
-            return <p className={`mt-1 text-xs ${t.positive ? "text-green-500" : "text-rose-500"}`}>{t.text}</p>;
+            return <p className={`mt-1 text-xs ${t.positive ? "text-(--success)" : "text-(--destructive)"}`}>{t.text}</p>;
           })()}
         </Card>
 
@@ -404,14 +404,14 @@ export function AnalyticsClient({
         <Card className="card-hover p-5">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-muted-foreground">Rate of Conversion</p>
-            <div className="rounded-xl bg-violet-500/10 p-2 text-violet-500">
+            <div className="rounded-xl bg-(--chart-5)/10 p-2 text-(--chart-5)">
               <Activity className="h-4 w-4" />
             </div>
           </div>
           <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{messagingStats.conversionRate.toFixed(2)}%</p>
           {(() => {
             const t = trendLabel(messagingStats.conversionRateTrend, "improvement");
-            return <p className={`mt-1 text-xs ${t.positive ? "text-green-500" : "text-rose-500"}`}>{t.text}</p>;
+            return <p className={`mt-1 text-xs ${t.positive ? "text-(--success)" : "text-(--destructive)"}`}>{t.text}</p>;
           })()}
         </Card>
 
@@ -420,7 +420,7 @@ export function AnalyticsClient({
           <div>
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-muted-foreground">Inquiries Last Week</p>
-              <div className="rounded-xl bg-pink-500/10 p-2 text-pink-500">
+              <div className="rounded-xl bg-(--chart-3)/10 p-2 text-(--chart-3)">
                 <Heart className="h-4 w-4" />
               </div>
             </div>
@@ -433,7 +433,7 @@ export function AnalyticsClient({
               return (
                 <div
                   key={i}
-                  className="flex-1 bg-pink-500 rounded-t-xs hover:opacity-80 transition-all"
+                  className="flex-1 bg-(--chart-3) rounded-t-xs hover:opacity-80 transition-all"
                   style={{ height: `${heightPct}%` }}
                   title={`${d.count} inquiries on ${d.label}`}
                 />
