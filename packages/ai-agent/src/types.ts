@@ -170,6 +170,8 @@ export interface AgentOutput {
     completion: number;
     total: number;
   };
+  /** Self-reported confidence score (0-100) extracted from the [CONFIDENCE:XX] tag */
+  confidence?: number;
 }
 
 // ============================================

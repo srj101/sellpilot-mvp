@@ -16,7 +16,7 @@ import {
 import type { ThreadCancelBroadcast } from "@acme/queue";
 import { searchProductsByImage } from "@acme/api/vector-search";
 import { getMetaContactName } from "@acme/api/resolve-contact-names";
-import { getConversationSummary, generateAndSaveConversationSummary, getCustomerForThread } from "@acme/db/helpers/aiHelpers";
+import { getConversationSummary, generateAndSaveConversationSummary, getCustomerForThread, getBusinessProfile, createNotification, escalateToHuman } from "@acme/db/helpers/aiHelpers";
 
 import { checkAiConversationAvailability, incrementAiConversation } from "../lib/ai-conversations.js";
 import { getBusinessPlanKey } from "../lib/plan.js";
@@ -374,6 +374,30 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
     });
     responseText = response.response;
     tokensUsed = response.tokensUsed?.total ?? 0;
+
+    // Auto-escalate on low confidence (FR-AGT-15 / FR-SET-01)
+    const profile = await getBusinessProfile(data.businessId).catch(() => null);
+    if (profile?.autoEscalateOnLowConfidence && response.confidence !== undefined) {
+      const threshold = profile.confidenceThreshold ?? 30;
+      if (response.confidence < threshold) {
+        console.log(`[DMReply] Low confidence ${response.confidence}/${threshold} — escalating to human`);
+        try {
+          await escalateToHuman(data.userId, data.businessId, data.threadId, "low-confidence auto-escalation");
+        } catch (err) {
+          console.error("[DMReply] Failed to escalate on low confidence:", err);
+        }
+        const fallbackText = config.aiFallbackMessage;
+        const fallbackResult = await messagingService.sendMessage(connection, {
+          platform: data.platform,
+          recipientId: data.recipientId,
+          text: fallbackText,
+        });
+        if (fallbackResult.success && outboundLogger) {
+          await outboundLogger.logOutbound(job.data, fallbackResult.messageId, fallbackText);
+        }
+        return;
+      }
+    }
 
     console.log(`[DMReply] Job ${job.id} generated response:`, {
       text: responseText.slice(0, 300),

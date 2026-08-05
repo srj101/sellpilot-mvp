@@ -186,6 +186,8 @@ export const agentRouter = {
         conversationTone: z.enum(["friendly", "professional", "playful", "formal"]).optional(),
         preferredLanguage: z.enum(["auto", "bangla", "english"]).optional(),
         abandonedFollowupMinutes: z.number().min(1).optional(),
+        autoEscalateOnLowConfidence: z.boolean().optional(),
+        confidenceThreshold: z.number().min(0).max(100).optional(),
         metadata: z.record(z.string(), z.unknown()).optional(),
       }),
     )

@@ -196,6 +196,14 @@ export class SalesAgentGraph {
         response = stripMarkdown(response);
       }
 
+      // Extract [CONFIDENCE:XX] tag from the end of the response
+      let confidence: number | undefined;
+      const confidenceMatch = response.match(/\[CONFIDENCE:(\d{1,3})\]\s*$/);
+      if (confidenceMatch && confidenceMatch.index !== undefined && confidenceMatch[1]) {
+        confidence = Math.min(100, Math.max(0, parseInt(confidenceMatch[1], 10)));
+        response = response.slice(0, confidenceMatch.index).trimEnd();
+      }
+
       // Count LLM calls and extract tool calls — scoped to only messages THIS invocation
       // produced (see initialMessageCount above), not the full cumulative conversation.
       let totalPromptTokens = 0;
@@ -262,6 +270,7 @@ export class SalesAgentGraph {
         toolCalls,
         processingTime,
         llmCalls,
+        confidence,
         tokensUsed: {
           prompt: totalPromptTokens,
           completion: totalCompletionTokens,

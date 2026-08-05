@@ -65,6 +65,13 @@ export const businessProfile = pgTable(
     /** Minutes of inactivity before the abandoned-conversation follow-up fires (spec
      * FR-AGT-13's "configurable delay, default 30 min") */
     abandonedFollowupMinutes: integer("abandoned_followup_minutes").default(30).notNull(),
+    /** Auto-escalation: when enabled, the agent hands off to a human if its self-reported
+     * confidence falls below the threshold (0-100). */
+    autoEscalateOnLowConfidence: boolean("auto_escalate_on_low_confidence")
+      .default(false)
+      .notNull(),
+    /** Confidence threshold (0-100). Below this → auto-escalate to human. */
+    confidenceThreshold: integer("confidence_threshold").default(30).notNull(),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     /** Set once the onboarding wizard reaches its final "trial started" screen — null means
      * the business exists but the wizard was abandoned partway (see business.enterBySlug). */

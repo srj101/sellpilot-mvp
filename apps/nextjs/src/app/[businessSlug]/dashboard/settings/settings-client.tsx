@@ -53,6 +53,8 @@ type BusinessProfile = {
   conversationTone: string;
   preferredLanguage: string;
   abandonedFollowupMinutes: number;
+  autoEscalateOnLowConfidence: boolean;
+  confidenceThreshold: number;
 } | null;
 
 interface ShippingRate {
@@ -148,6 +150,8 @@ export function SettingsClient({
   const [conversationTone, setConversationTone] = useState(profile?.conversationTone ?? "friendly");
   const [preferredLanguage, setPreferredLanguage] = useState(profile?.preferredLanguage ?? "auto");
   const [followUpMinutes, setFollowUpMinutes] = useState(String(profile?.abandonedFollowupMinutes ?? 30));
+  const [autoEscalateOnLowConfidence, setAutoEscalateOnLowConfidence] = useState(profile?.autoEscalateOnLowConfidence ?? false);
+  const [confidenceThreshold, setConfidenceThreshold] = useState(String(profile?.confidenceThreshold ?? 30));
 
   // Notification Preferences State (FR-SET-04)
   const { data: serverNotifPrefs } = useQuery(trpc.agent.getNotificationPreferences.queryOptions());
@@ -290,6 +294,8 @@ export function SettingsClient({
         conversationTone: conversationTone as "friendly" | "professional" | "playful" | "formal",
         preferredLanguage: preferredLanguage as "auto" | "bangla" | "english",
         abandonedFollowupMinutes: minutes,
+        autoEscalateOnLowConfidence,
+        confidenceThreshold: Number(confidenceThreshold) || 30,
       });
       toast.success("AI Agent settings saved!");
       router.refresh();
@@ -600,6 +606,51 @@ export function SettingsClient({
               className={inputCls}
             />
           </div>
+        </div>
+
+        {/* ─── Auto-Escalation (FR-AGT-15 / FR-SET-01) ───────────── */}
+        <div className="mt-6 border-t pt-4">
+          <h4 className="mb-3 text-sm font-semibold text-foreground">Auto-Escalation on Low Confidence</h4>
+          <p className="mb-4 text-xs text-muted-foreground">
+            When the AI is uncertain about its reply, automatically hand the conversation to a human agent.
+          </p>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5">
+              <Label className="text-sm font-medium">Enable auto-escalation</Label>
+              <p className="text-xs text-muted-foreground">
+                Escalate to human when AI confidence falls below the threshold
+              </p>
+            </div>
+            <Switch
+              checked={autoEscalateOnLowConfidence}
+              onCheckedChange={setAutoEscalateOnLowConfidence}
+            />
+          </div>
+          {autoEscalateOnLowConfidence && (
+            <div className="mt-3 rounded-lg border p-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Confidence Threshold</Label>
+                <span className="text-sm font-bold text-primary">{confidenceThreshold}%</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Below this confidence level, the AI will escalate to a human agent
+              </p>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={confidenceThreshold}
+                onChange={(e) => setConfidenceThreshold(e.target.value)}
+                className="mt-2 w-full accent-primary"
+              />
+              <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+                <span>0% (always escalate)</span>
+                <span>50%</span>
+                <span>100% (never escalate)</span>
+              </div>
+            </div>
+          )}
         </div>
         <div className="mt-4 flex justify-end border-t pt-4">
           <Button
