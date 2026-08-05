@@ -24,6 +24,7 @@ import { Skeleton } from "@acme/ui/skeleton";
 import { toast } from "@acme/ui/toast";
 import { cn } from "@acme/ui";
 import { useTRPC } from "~/trpc/react";
+import { OrderStatusTimeline } from "./_components/order-status-timeline";
 
 const UPDATABLE_STATUSES = ["pending", "confirmed", "paid", "shipped", "delivered", "cancelled", "returned"] as const;
 const NOTIFIES_CUSTOMER = new Set(["shipped", "delivered", "cancelled", "returned"]);
@@ -453,6 +454,10 @@ export function OrdersClient() {
                         <strong>Note:</strong> {o.notes}
                       </div>
                     )}
+
+                    <div className="mt-4 border-t pt-3">
+                      <OrderStatusTimeline orderId={o.id} />
+                    </div>
                   </div>
                 )}
               </div>

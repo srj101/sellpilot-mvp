@@ -3,8 +3,9 @@ import { z } from "zod";
 
 import { desc, eq, and, inArray, sql, createCustomerAndOrder, quoteOrder } from "@acme/db";
 import type { db as Db } from "@acme/db/client";
-import { metaConnection, metaWebhookEvent, order, orderItem, transaction } from "@acme/db/schema";
+import { metaConnection, metaWebhookEvent, order, orderItem, orderStatusHistory, transaction } from "@acme/db/schema";
 
+import { recordOrderStatusChange } from "../lib/order-audit";
 import { sendMetaInboxReply } from "../lib/meta";
 import { businessScopedProcedure } from "../trpc";
 
@@ -261,10 +262,17 @@ export const ordersRouter = {
       z.object({
         id: z.string(),
         status: z.enum(ORDER_STATUSES),
+        note: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const businessId = ctx.businessId;
+
+      const [existingOrder] = await ctx.db
+        .select({ status: order.status })
+        .from(order)
+        .where(and(eq(order.id, input.id), eq(order.businessId, businessId)))
+        .limit(1);
 
       const [updated] = await ctx.db
         .update(order)
@@ -278,6 +286,18 @@ export const ordersRouter = {
         .where(and(eq(order.id, input.id), eq(order.businessId, businessId)))
         .returning({ channel: order.channel, threadId: order.threadId, orderNumber: order.orderNumber });
       if (!updated) return { success: false };
+
+      // Record audit history log (FR-ORD-03)
+      void recordOrderStatusChange({
+        businessId,
+        orderId: input.id,
+        fromStatus: existingOrder?.status ?? null,
+        toStatus: input.status,
+        changedBy: "merchant",
+        changedById: ctx.session.user.id,
+        changedByName: ctx.session.user.name,
+        note: input.note,
+      });
 
       // COD money is only actually collected at the doorstep — flip the ledger entry from
       // "pending" to "success" once delivery is confirmed, so the Payments page's Pending
@@ -300,6 +320,17 @@ export const ordersRouter = {
       await notifyCustomerOfStatus(ctx.db, businessId, updated, input.status);
 
       return { success: true };
+    }),
+
+  getStatusHistory: businessScopedProcedure
+    .input(z.object({ orderId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const history = await ctx.db
+        .select()
+        .from(orderStatusHistory)
+        .where(and(eq(orderStatusHistory.businessId, ctx.businessId), eq(orderStatusHistory.orderId, input.orderId)))
+        .orderBy(desc(orderStatusHistory.createdAt));
+      return history;
     }),
 
   delete: businessScopedProcedure

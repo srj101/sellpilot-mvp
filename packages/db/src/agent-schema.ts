@@ -240,6 +240,35 @@ export const order = pgTable(
 );
 
 /**
+ * Order status transition history log (FR-ORD-03).
+ */
+export const orderStatusHistory = pgTable(
+  "order_status_history",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    businessId: text("business_id")
+      .notNull()
+      .references(() => business.id, { onDelete: "cascade" }),
+    orderId: text("order_id")
+      .notNull()
+      .references(() => order.id, { onDelete: "cascade" }),
+    fromStatus: text("from_status"),
+    toStatus: text("to_status").notNull(),
+    changedBy: text("changed_by").notNull(),
+    changedById: text("changed_by_id"),
+    changedByName: text("changed_by_name"),
+    note: text("note"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("order_status_history_order_id_idx").on(table.orderId),
+    index("order_status_history_business_id_idx").on(table.businessId),
+  ],
+);
+
+/**
  * Order line items. Each references a product variant at the time of purchase.
  */
 export const orderItem = pgTable(
@@ -670,6 +699,11 @@ export const orderRelations = relations(order, ({ one, many }) => ({
     references: [customer.id],
   }),
   items: many(orderItem),
+  history: many(orderStatusHistory),
+}));
+
+export const orderStatusHistoryRelations = relations(orderStatusHistory, ({ one }) => ({
+  order: one(order, { fields: [orderStatusHistory.orderId], references: [order.id] }),
 }));
 
 export const orderItemRelations = relations(orderItem, ({ one }) => ({
