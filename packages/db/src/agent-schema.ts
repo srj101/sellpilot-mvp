@@ -40,6 +40,7 @@ export const businessProfile = pgTable(
     currency: text("currency").default("BDT").notNull(),
     defaultShippingCost: integer("default_shipping_cost").default(0).notNull(),
     supportEmail: text("support_email"),
+    notificationEmail: text("notification_email"),
     supportPhone: text("support_phone"),
     /**
      * This business's OWN SSLCommerz merchant credentials — used only for their customers'

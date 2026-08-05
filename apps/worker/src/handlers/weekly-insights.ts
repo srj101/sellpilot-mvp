@@ -131,7 +131,7 @@ export async function processWeeklyInsightsJob(): Promise<{ processed: number }>
       .limit(1);
 
     const [profile] = await db
-      .select({ supportEmail: businessProfile.supportEmail })
+      .select({ notificationEmail: businessProfile.notificationEmail, supportEmail: businessProfile.supportEmail })
       .from(businessProfile)
       .where(eq(businessProfile.businessId, sub.businessId))
       .limit(1);
@@ -150,8 +150,14 @@ export async function processWeeklyInsightsJob(): Promise<{ processed: number }>
       .where(eq(user.id, ownerMember.userId))
       .limit(1);
 
-    // Specific business recipient email: prefers supportEmail on businessProfile, falls back to owner's registered email
-    const recipientEmail = profile?.supportEmail?.trim() || ownerUser?.email?.trim();
+    // Recipient email resolution:
+    // 1. Custom notification recipient email configured by owner in Settings
+    // 2. Default: Store Owner's registered account email
+    // 3. Fallback: Store support email
+    const recipientEmail =
+      profile?.notificationEmail?.trim() ||
+      ownerUser?.email?.trim() ||
+      profile?.supportEmail?.trim();
     if (!recipientEmail) continue;
 
     // Query current 7 days performance

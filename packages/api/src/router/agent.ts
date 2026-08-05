@@ -176,6 +176,7 @@ export const agentRouter = {
         currency: z.string().default("USD"),
         defaultShippingCost: z.number().min(0).default(0),
         supportEmail: z.string().optional(),
+        notificationEmail: z.string().optional(),
         supportPhone: z.string().optional(),
         // AI Agent persona/behavior settings (spec Settings > AI Agent tab) — columns
         // already existed and were already read by the agent's prompt-building and

@@ -138,6 +138,7 @@ export function SettingsClient({
   const [bpCurrency, setBpCurrency] = useState(profile?.currency ?? "BDT");
   const [bpShippingCost, setBpShippingCost] = useState(String(profile?.defaultShippingCost ?? 0));
   const [bpEmail, setBpEmail] = useState(profile?.supportEmail ?? "");
+  const [bpNotificationEmail, setBpNotificationEmail] = useState((profile as any)?.notificationEmail ?? "");
   const [bpPhone, setBpPhone] = useState(profile?.supportPhone ?? "");
 
   // AI Agent settings state
@@ -154,6 +155,7 @@ export function SettingsClient({
     bpCurrency !== (profile?.currency ?? "BDT") ||
     bpShippingCost !== String(profile?.defaultShippingCost ?? 0) ||
     bpEmail !== (profile?.supportEmail ?? "") ||
+    bpNotificationEmail !== ((profile as any)?.notificationEmail ?? "") ||
     bpPhone !== (profile?.supportPhone ?? "");
 
   const handleSaveBusiness = async () => {
@@ -175,6 +177,7 @@ export function SettingsClient({
         currency: bpCurrency,
         defaultShippingCost: Number(bpShippingCost),
         supportEmail: bpEmail,
+        notificationEmail: bpNotificationEmail,
         supportPhone: bpPhone,
       });
       toast.success("Business profile updated successfully!");
@@ -349,6 +352,22 @@ export function SettingsClient({
                   placeholder="support@example.com"
                   className={inputCls}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bp-notif-email" className="flex items-center gap-1.5">
+                  <Mail className="h-3.5 w-3.5 text-indigo-500" /> Notification Recipient Email
+                </Label>
+                <Input
+                  id="bp-notif-email"
+                  type="email"
+                  value={bpNotificationEmail}
+                  onChange={(e) => setBpNotificationEmail(e.target.value)}
+                  placeholder="Defaults to store owner account email"
+                  className={inputCls}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  System alerts and weekly digests will be sent to this email address. Leave blank to default to the store owner's account email.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="bp-phone" className="flex items-center gap-1.5">
