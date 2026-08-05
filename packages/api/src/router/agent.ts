@@ -7,6 +7,7 @@ import {
   businessProfile,
   customer,
   faq,
+  notificationPreference,
   offer,
   order,
   orderItem,
@@ -207,6 +208,55 @@ export const agentRouter = {
         .values({ userId: ctx.businessOwnerId, businessId: ctx.businessId, ...input })
         .returning();
       return created;
+    }),
+
+  getNotificationPreferences: businessScopedProcedure.query(async ({ ctx }) => {
+    const NOTIFICATION_EVENTS = ["new_order", "low_stock", "human_handoff", "quota_alert", "weekly_insights"] as const;
+    const existing = await ctx.db
+      .select()
+      .from(notificationPreference)
+      .where(eq(notificationPreference.businessId, ctx.businessId));
+
+    const prefMap = new Map(existing.map((p) => [p.eventType, p]));
+
+    return NOTIFICATION_EVENTS.map((eventType) => ({
+      eventType,
+      emailEnabled: prefMap.get(eventType)?.emailEnabled ?? true,
+      inAppEnabled: prefMap.get(eventType)?.inAppEnabled ?? true,
+    }));
+  }),
+
+  updateNotificationPreferences: businessScopedProcedure
+    .input(
+      z.array(
+        z.object({
+          eventType: z.enum(["new_order", "low_stock", "human_handoff", "quota_alert", "weekly_insights"]),
+          emailEnabled: z.boolean(),
+          inAppEnabled: z.boolean(),
+        }),
+      ),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const businessId = ctx.businessId;
+      for (const pref of input) {
+        await ctx.db
+          .insert(notificationPreference)
+          .values({
+            businessId,
+            eventType: pref.eventType,
+            emailEnabled: pref.emailEnabled,
+            inAppEnabled: pref.inAppEnabled,
+          })
+          .onConflictDoUpdate({
+            target: [notificationPreference.businessId, notificationPreference.eventType],
+            set: {
+              emailEnabled: pref.emailEnabled,
+              inAppEnabled: pref.inAppEnabled,
+              updatedAt: new Date(),
+            },
+          });
+      }
+      return { success: true };
     }),
 
   listProducts: businessScopedProcedure

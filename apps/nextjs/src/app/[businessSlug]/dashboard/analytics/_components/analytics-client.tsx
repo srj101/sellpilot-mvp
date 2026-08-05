@@ -7,6 +7,7 @@ import { Button } from "@acme/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@acme/ui/card";
 import { RANGES } from "./analytics-utils";
 import { CustomKpiPanel } from "./custom-kpi-panel";
+import { WeeklyInsightBanner } from "./weekly-insight-banner";
 import { CopilotWidget } from "../../_components/copilot-widget";
 import { UpgradeBanner } from "../../_components/upgrade-banner";
 import { useBusinessSlug } from "~/hooks/use-business-slug";
@@ -124,6 +125,9 @@ export function AnalyticsClient({
           real UI — for Starter this is genuinely real, all-zero data, not a fake sample —
           with this banner on top instead of the old full-page lock replacing everything. */}
       {tier === "none" && <UpgradeBanner businessSlug={businessSlug} feature="Analytics" requiredPlan="growth" />}
+
+      {/* Weekly Executive AI Insight Digest Banner */}
+      <WeeklyInsightBanner revenueStats={revenueStats} topProducts={topProducts} />
 
       {/* FR-ANA-01/02/03: Revenue, Orders, AOV, Return Rate — available at both Growth &
           Pro, per the SRS's plain "Analytics screen displays Total Revenue, Total Orders,

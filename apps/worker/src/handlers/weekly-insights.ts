@@ -1,6 +1,6 @@
 import { and, eq, gte, inArray, lte, sql } from "@acme/db";
 import { db } from "@acme/db/client";
-import { business, businessMember, businessProfile, order, orderItem, subscription, user } from "@acme/db/schema";
+import { business, businessMember, businessProfile, notificationPreference, order, orderItem, subscription, user } from "@acme/db/schema";
 import { sendEmail } from "@acme/auth/email";
 
 function appUrl(): string {
@@ -150,6 +150,15 @@ export async function processWeeklyInsightsJob(): Promise<{ processed: number }>
       .where(eq(user.id, ownerMember.userId))
       .limit(1);
 
+    // Query Notification Preferences for "weekly_insights" (FR-SET-04)
+    const [notifPref] = await db
+      .select({ emailEnabled: notificationPreference.emailEnabled, inAppEnabled: notificationPreference.inAppEnabled })
+      .from(notificationPreference)
+      .where(and(eq(notificationPreference.businessId, sub.businessId), eq(notificationPreference.eventType, "weekly_insights")))
+      .limit(1);
+
+    const emailEnabled = notifPref?.emailEnabled ?? true;
+
     // Recipient email resolution:
     // 1. Custom notification recipient email configured by owner in Settings
     // 2. Default: Store Owner's registered account email
@@ -273,12 +282,14 @@ export async function processWeeklyInsightsJob(): Promise<{ processed: number }>
       </div>
     `;
 
-    await sendEmail({
-      to: recipientEmail,
-      subject: `🤖 AI Executive Insight Report — ${biz.name}`,
-      html: htmlBody,
-      text: `Weekly AI Executive Report for ${biz.name}: Revenue ৳${currentRev}, Orders: ${currentCount}, Growth: ${revGrowth}%. Summary: ${aiInsight.summary}. View details: ${analyticsUrl}`,
-    }).catch((err) => console.error(`[weekly-insights] Failed to send email to ${recipientEmail}:`, err));
+    if (emailEnabled) {
+      await sendEmail({
+        to: recipientEmail,
+        subject: `🤖 AI Executive Insight Report — ${biz.name}`,
+        html: htmlBody,
+        text: `Weekly AI Executive Report for ${biz.name}: Revenue ৳${currentRev}, Orders: ${currentCount}, Growth: ${revGrowth}%. Summary: ${aiInsight.summary}. View details: ${analyticsUrl}`,
+      }).catch((err) => console.error(`[weekly-insights] Failed to send email to ${recipientEmail}:`, err));
+    }
 
     processed++;
   }

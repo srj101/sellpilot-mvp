@@ -241,6 +241,34 @@ export const order = pgTable(
 );
 
 /**
+ * System event notification preferences per business (FR-SET-04).
+ */
+export const notificationPreference = pgTable(
+  "notification_preference",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    businessId: text("business_id")
+      .notNull()
+      .references(() => business.id, { onDelete: "cascade" }),
+    /** "new_order" | "low_stock" | "human_handoff" | "quota_alert" | "weekly_insights" */
+    eventType: text("event_type").notNull(),
+    emailEnabled: boolean("email_enabled").default(true).notNull(),
+    inAppEnabled: boolean("in_app_enabled").default(true).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("notif_pref_business_id_idx").on(table.businessId),
+    unique("notif_pref_biz_event_unique").on(table.businessId, table.eventType),
+  ],
+);
+
+/**
  * Order status transition history log (FR-ORD-03).
  */
 export const orderStatusHistory = pgTable(

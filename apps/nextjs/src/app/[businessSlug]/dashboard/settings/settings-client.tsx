@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Building2,
   Truck,
@@ -18,6 +18,7 @@ import {
   Loader2,
   Bot,
   Clock,
+  Bell,
 } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
@@ -25,6 +26,7 @@ import { Input } from "@acme/ui/input";
 import { Label } from "@acme/ui/label";
 import { Badge } from "@acme/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@acme/ui/card";
+import { Switch } from "@acme/ui/switch";
 import { toast } from "@acme/ui/toast";
 
 import { useTRPC } from "~/trpc/react";
@@ -146,6 +148,52 @@ export function SettingsClient({
   const [conversationTone, setConversationTone] = useState(profile?.conversationTone ?? "friendly");
   const [preferredLanguage, setPreferredLanguage] = useState(profile?.preferredLanguage ?? "auto");
   const [followUpMinutes, setFollowUpMinutes] = useState(String(profile?.abandonedFollowupMinutes ?? 30));
+
+  // Notification Preferences State (FR-SET-04)
+  const { data: serverNotifPrefs } = useQuery(trpc.agent.getNotificationPreferences.queryOptions());
+  const updateNotifPrefs = useMutation(trpc.agent.updateNotificationPreferences.mutationOptions());
+  const [localNotifPrefs, setLocalNotifPrefs] = useState<Record<string, { emailEnabled: boolean; inAppEnabled: boolean }> | null>(null);
+
+  const notifPrefs = useMemo(() => {
+    if (localNotifPrefs) return localNotifPrefs;
+    if (!serverNotifPrefs) return {};
+    const map: Record<string, { emailEnabled: boolean; inAppEnabled: boolean }> = {};
+    for (const item of serverNotifPrefs) {
+      map[item.eventType] = { emailEnabled: item.emailEnabled, inAppEnabled: item.inAppEnabled };
+    }
+    return map;
+  }, [localNotifPrefs, serverNotifPrefs]);
+
+  const handleNotifToggle = (eventType: string, channel: "emailEnabled" | "inAppEnabled", value: boolean) => {
+    setLocalNotifPrefs((prev) => {
+      const currentMap = prev ?? notifPrefs;
+      const existing = currentMap[eventType] ?? { emailEnabled: true, inAppEnabled: true };
+      return {
+        ...currentMap,
+        [eventType]: {
+          ...existing,
+          [channel]: value,
+        },
+      };
+    });
+  };
+
+  const handleSaveNotifPrefs = async () => {
+    setSaving("notif_prefs");
+    try {
+      const payload = Object.entries(notifPrefs).map(([eventType, prefs]) => ({
+        eventType: eventType as "new_order" | "low_stock" | "human_handoff" | "quota_alert" | "weekly_insights",
+        emailEnabled: prefs.emailEnabled,
+        inAppEnabled: prefs.inAppEnabled,
+      }));
+      await updateNotifPrefs.mutateAsync(payload);
+      toast.success("Notification preferences saved!");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save notification preferences");
+    } finally {
+      setSaving(null);
+    }
+  };
 
   // Check if profile inputs differ from database values to enable Save button
   const isBusinessDirty =
@@ -416,6 +464,80 @@ export function SettingsClient({
                 {saving === "business" ? "Saving..." : "Save Business Profile"}
               </Button>
             </div>
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* ─── Notifications & System Alerts (FR-SET-04) ──────────── */}
+      <SectionCard
+        icon={Bell}
+        title="Notifications & System Alerts"
+        description="Configure event notification preferences for email alerts and in-app notifications."
+      >
+        <div className="space-y-4">
+          {[
+            {
+              id: "new_order",
+              title: "🛒 New Order Placed",
+              desc: "Notify when a customer places an order via social chat or web checkout.",
+            },
+            {
+              id: "low_stock",
+              title: "⚠️ Low Stock Warning",
+              desc: "Alert when product inventory drops to or below its low-stock threshold.",
+            },
+            {
+              id: "human_handoff",
+              title: "🙋 Human Handoff Request",
+              desc: "Alert when a customer requests a human agent or triggers complaint routing.",
+            },
+            {
+              id: "quota_alert",
+              title: "📊 Quota & Storage Overage",
+              desc: "Alert at 80% and 100% monthly AI conversation or storage limits.",
+            },
+            {
+              id: "weekly_insights",
+              title: "🤖 Weekly Executive AI Insight Digest",
+              desc: "Weekly report with AI sales growth analysis and recommendations.",
+            },
+          ].map((evt) => {
+            const current = notifPrefs[evt.id] ?? { emailEnabled: true, inAppEnabled: true };
+            return (
+              <div key={evt.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3 border-b last:border-0">
+                <div>
+                  <p className="text-sm font-semibold">{evt.title}</p>
+                  <p className="text-xs text-muted-foreground">{evt.desc}</p>
+                </div>
+                <div className="flex items-center gap-6 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground font-medium">Email</span>
+                    <Switch
+                      checked={current.emailEnabled}
+                      onCheckedChange={(val) => handleNotifToggle(evt.id, "emailEnabled", val)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground font-medium">In-App</span>
+                    <Switch
+                      checked={current.inAppEnabled}
+                      onCheckedChange={(val) => handleNotifToggle(evt.id, "inAppEnabled", val)}
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          <div className="flex justify-end border-t pt-4">
+            <Button
+              onClick={handleSaveNotifPrefs}
+              disabled={saving === "notif_prefs"}
+              className="gap-2 rounded-lg"
+            >
+              <Save className="h-4 w-4" />
+              {saving === "notif_prefs" ? "Saving..." : "Save Notification Preferences"}
+            </Button>
           </div>
         </div>
       </SectionCard>
