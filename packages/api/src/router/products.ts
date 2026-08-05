@@ -8,7 +8,7 @@ import { product, productVariant, subscription } from "@acme/db/schema";
 import { deleteProductImageFromVectorDb, searchProductsByImage } from "../lib/vector-search";
 import { assertPlanLimit, getProductUsage } from "../lib/plan-limits";
 import { queueProductImageIndexing } from "../lib/queue";
-import { deleteS3Object, getPresignedUploadUrl, getPublicUrl, getS3ObjectSize } from "../lib/s3";
+import { deleteS3Object, getPresignedUploadUrl, getPublicUrl, getS3ObjectSize, processImageUrl } from "../lib/s3";
 import { getStockStatus } from "../lib/stock-status";
 import { businessScopedProcedure } from "../trpc";
 
@@ -98,6 +98,21 @@ export const productsRouter = {
 
     await assertPlanLimit(ctx, "products");
 
+    // Process all images: download external URLs / data URLs → upload to S3
+    const processedImages: string[] = [];
+    for (const img of input.images) {
+      const s3Url = await processImageUrl(img, businessId, "products");
+      if (s3Url) processedImages.push(s3Url);
+    }
+
+    // Process variant images
+    const processedVariants = await Promise.all(
+      input.variants.map(async (v) => ({
+        ...v,
+        imageUrl: v.imageUrl ? (await processImageUrl(v.imageUrl, businessId, "products")) ?? null : null,
+      })),
+    );
+
     const [newProduct] = await ctx.db
       .insert(product)
       .values({
@@ -107,7 +122,7 @@ export const productsRouter = {
         description: input.description,
         category: input.category,
         status: input.status,
-        images: input.images,
+        images: processedImages,
         options: input.options,
         rating: input.rating ?? null,
         lowStockThreshold: input.lowStockThreshold ?? 5,
@@ -118,8 +133,8 @@ export const productsRouter = {
       throw new Error("Failed to create product");
     }
 
-    if (input.variants.length > 0) {
-      const variantsToInsert = input.variants.map((v) => ({
+    if (processedVariants.length > 0) {
+      const variantsToInsert = processedVariants.map((v) => ({
         productId: newProduct.id,
         title: v.title,
         option1: v.option1 ?? null,
@@ -130,7 +145,7 @@ export const productsRouter = {
         sku: v.sku ?? null,
         inventoryQuantity: v.inventoryQuantity,
         lowStockThreshold: v.lowStockThreshold ?? input.lowStockThreshold ?? 5,
-        imageUrl: v.imageUrl ?? null,
+        imageUrl: v.imageUrl,
       }));
 
       const insertedVariants = await ctx.db.insert(productVariant).values(variantsToInsert).returning();
@@ -148,8 +163,8 @@ export const productsRouter = {
       }
     }
 
-    for (const imgUrl of input.images) {
-      const isVariantImage = input.variants.some((v) => v.imageUrl === imgUrl);
+    for (const imgUrl of processedImages) {
+      const isVariantImage = processedVariants.some((v) => v.imageUrl === imgUrl);
       if (!isVariantImage) {
         void queueProductImageIndexing({
           businessId,
@@ -170,6 +185,21 @@ export const productsRouter = {
     const businessId = ctx.businessId;
     const productId = input.id;
 
+    // Process all images: download external URLs / data URLs → upload to S3
+    const processedImages: string[] = [];
+    for (const img of input.images) {
+      const s3Url = await processImageUrl(img, businessId, "products");
+      if (s3Url) processedImages.push(s3Url);
+    }
+
+    // Process variant images
+    const processedVariants = await Promise.all(
+      input.variants.map(async (v) => ({
+        ...v,
+        imageUrl: v.imageUrl ? (await processImageUrl(v.imageUrl, businessId, "products")) ?? null : null,
+      })),
+    );
+
     const [updatedProduct] = await ctx.db
       .update(product)
       .set({
@@ -177,7 +207,7 @@ export const productsRouter = {
         description: input.description,
         category: input.category,
         status: input.status,
-        images: input.images,
+        images: processedImages,
         options: input.options,
         rating: input.rating ?? null,
         lowStockThreshold: input.lowStockThreshold ?? 5,
@@ -195,7 +225,7 @@ export const productsRouter = {
       .where(eq(productVariant.productId, productId));
 
     const existingVariantIds = existingVariants.map((v) => v.id);
-    const inputVariantIds = input.variants.map((v) => v.id).filter((id): id is string => Boolean(id));
+    const inputVariantIds = processedVariants.map((v) => v.id).filter((id): id is string => Boolean(id));
 
     const variantsToDelete = existingVariants.filter((v) => !inputVariantIds.includes(v.id));
     if (variantsToDelete.length > 0) {
@@ -205,7 +235,7 @@ export const productsRouter = {
       }
     }
 
-    for (const v of input.variants) {
+    for (const v of processedVariants) {
       if (v.id && existingVariantIds.includes(v.id)) {
         const [updated] = await ctx.db
           .update(productVariant)
@@ -219,7 +249,7 @@ export const productsRouter = {
             sku: v.sku ?? null,
             inventoryQuantity: v.inventoryQuantity,
             lowStockThreshold: v.lowStockThreshold ?? input.lowStockThreshold ?? 5,
-            imageUrl: v.imageUrl ?? null,
+            imageUrl: v.imageUrl,
           })
           .where(eq(productVariant.id, v.id))
           .returning();
@@ -249,7 +279,7 @@ export const productsRouter = {
             sku: v.sku ?? null,
             inventoryQuantity: v.inventoryQuantity,
             lowStockThreshold: v.lowStockThreshold ?? input.lowStockThreshold ?? 5,
-            imageUrl: v.imageUrl ?? null,
+            imageUrl: v.imageUrl,
           })
           .returning();
 
@@ -267,8 +297,8 @@ export const productsRouter = {
 
     void deleteProductImageFromVectorDb({ productId });
 
-    for (const imgUrl of input.images) {
-      const isVariantImage = input.variants.some((v) => v.imageUrl === imgUrl);
+    for (const imgUrl of processedImages) {
+      const isVariantImage = processedVariants.some((v) => v.imageUrl === imgUrl);
       if (!isVariantImage) {
         void queueProductImageIndexing({
           businessId,
@@ -357,6 +387,11 @@ export const productsRouter = {
           ? p.price / (1 - p.discountPercent / 100) 
           : undefined;
 
+        // Process image URL: download → S3 → get public URL
+        const processedImageUrl = p.imageUrl
+          ? await processImageUrl(p.imageUrl, businessId, "products")
+          : null;
+
         const [newProduct] = await ctx.db
           .insert(product)
           .values({
@@ -366,7 +401,7 @@ export const productsRouter = {
             description: p.description,
             category: p.category,
             status: "active",
-            images: [],
+            images: processedImageUrl ? [processedImageUrl] : [],
             options: [],
             rating: p.rating ?? null,
           })
@@ -379,8 +414,19 @@ export const productsRouter = {
             price: p.price,
             compareAtPrice: compareAtPrice ? Math.round(compareAtPrice) : null,
             inventoryQuantity: p.stockQty,
-            imageUrl: p.imageUrl ?? null,
+            imageUrl: processedImageUrl,
           });
+
+          // Queue image for embedding if present
+          if (processedImageUrl) {
+            void queueProductImageIndexing({
+              businessId,
+              productId: newProduct.id,
+              imageUrl: processedImageUrl,
+              productTitle: p.title,
+            });
+          }
+
           results.push(newProduct);
         }
       }
