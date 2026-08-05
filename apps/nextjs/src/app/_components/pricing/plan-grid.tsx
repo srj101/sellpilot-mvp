@@ -1,16 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import { Check, Crown, Rocket, Sparkles, TrendingUp } from "lucide-react";
 
 import type { BillingCycle, PlanKey } from "@acme/api/plans";
-import { CYCLE_META, PLAN_CATALOG, PLAN_KEYS, formatPlanPrice } from "@acme/api/plans";
+import { CYCLE_META, PLAN_CATALOG, PLAN_KEYS, formatPlanPrice, OVERAGE_RATES } from "@acme/api/plans";
 import { Button } from "@acme/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@acme/ui/card";
 import { cn } from "@acme/ui";
 
 import { BillingCycleToggle } from "./billing-cycle-toggle";
+import { ConversationSlider } from "./conversation-slider";
 
 interface DashboardPlanState {
   currentPlan: PlanKey | null;
@@ -59,6 +60,26 @@ export function PlanGrid({
   compact = false,
 }: PlanGridProps) {
   const [cycle, setCycle] = useState<BillingCycle>(initialCycle);
+  const [extraConversations, setExtraConversations] = useState<Record<PlanKey, number>>({
+    starter: 0,
+    growth: 0,
+    pro: 0,
+  });
+  const [extraCosts, setExtraCosts] = useState<Record<PlanKey, number>>({
+    starter: 0,
+    growth: 0,
+    pro: 0,
+  });
+
+  const handleConversationChange = useCallback((plan: PlanKey, extra: number, cost: number) => {
+    setExtraConversations((prev) => ({ ...prev, [plan]: extra }));
+    setExtraCosts((prev) => ({ ...prev, [plan]: cost }));
+  }, []);
+
+  const getDisplayPrice = (plan: PlanKey, basePrice: number | null): number | null => {
+    if (basePrice === null) return null;
+    return basePrice + extraCosts[plan];
+  };
 
   return (
     <div className={cn("flex flex-col items-center", compact ? "gap-4" : "gap-8", className)}>
@@ -67,12 +88,14 @@ export function PlanGrid({
       <div className={cn("grid w-full md:grid-cols-3", compact ? "gap-3 lg:gap-4" : "gap-6")}>
         {PLAN_KEYS.map((key) => {
           const plan = PLAN_CATALOG[key];
-          const price = plan.prices[cycle];
-          const isLifetimeUnpriced = cycle === "lifetime" && price === null;
+          const basePrice = plan.prices[cycle];
+          const displayPrice = getDisplayPrice(key, basePrice);
+          const isLifetimeUnpriced = cycle === "lifetime" && basePrice === null;
           const isCurrent = mode === "dashboard" && dashboardState?.currentPlan === key;
           const isPending = mode === "dashboard" && dashboardState?.pendingPlan === key;
           const isBusy = busyPlan === key;
           const Icon = PLAN_ICON[key];
+          const hasSlider = !compact && !isLifetimeUnpriced && cycle === "monthly";
 
           return (
             <Card
@@ -124,7 +147,7 @@ export function PlanGrid({
               <CardContent className={cn("flex flex-1 flex-col", compact ? "gap-3 px-4" : "gap-5 px-6")}>
                 <div className="flex items-baseline gap-1.5 border-b pb-3">
                   <span className={cn("font-bold tracking-tight", compact ? "text-2xl" : "text-3xl")}>
-                    {isLifetimeUnpriced ? "Contact Sales" : formatPlanPrice(price)}
+                    {isLifetimeUnpriced ? "Contact Sales" : formatPlanPrice(displayPrice)}
                     {key === "pro" && !isLifetimeUnpriced && <span className="font-bold">+</span>}
                   </span>
                   {!isLifetimeUnpriced && (
@@ -148,13 +171,24 @@ export function PlanGrid({
                     </li>
                   ))}
                 </ul>
+
+                {/* Conversation Slider — only on dashboard, monthly cycle, non-lifetime */}
+                {hasSlider && (
+                  <div className="mt-2 border-t pt-4">
+                    <ConversationSlider
+                      plan={key}
+                      baseConversations={plan.limits.aiConversationsPerMonth ?? 0}
+                      onChange={(extra, cost) => handleConversationChange(key, extra, cost)}
+                    />
+                  </div>
+                )}
               </CardContent>
 
               <CardFooter className={cn("flex flex-col", compact ? "gap-1 px-4" : "gap-2 px-6")}>
                 {mode === "public" ? (
                   <>
                     <Button asChild className="w-full" size={compact ? "sm" : "default"} variant={plan.popular ? "default" : "outline"}>
-                      <Link href={isLifetimeUnpriced ? "/demo" : `/signup?plan=${key}&cycle=${cycle}`}>
+                      <Link href={isLifetimeUnpriced ? "/demo" : `/signup?plan=${key}&cycle=${cycle}${extraConversations[key] > 0 ? `&extra=${extraConversations[key]}` : ""}`}>
                         {isLifetimeUnpriced ? "Contact Sales" : "Start Free Trial"}
                       </Link>
                     </Button>
