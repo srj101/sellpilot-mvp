@@ -25,10 +25,16 @@ function formatDate(ms: number) {
 export const analyticsRouter = {
   /** Never throws — the page renders a soft-lock empty state for "none" and a widget
    * subset for "basic", instead of erroring on load (see plan-limits.ts's getFeatureTier). */
-  getAccessTier: permissionProcedure("analytics", "view").query(({ ctx }) => getFeatureTier(ctx, "analytics")),
+  getAccessTier: permissionProcedure("analytics", "view").query(async ({ ctx }) => {
+    const tier = await getFeatureTier(ctx, "analytics");
+    return tier as "none" | "basic" | "full";
+  }),
 
   /** B.8 — Executive AI Copilot. Never throws — same soft-lock pattern as getAccessTier. */
-  getCopilotAccess: permissionProcedure("analytics", "view").query(({ ctx }) => getFeatureTier(ctx, "copilot")),
+  getCopilotAccess: permissionProcedure("analytics", "view").query(async ({ ctx }) => {
+    const tier = await getFeatureTier(ctx, "copilot");
+    return tier as "none" | "basic" | "full";
+  }),
 
   askCopilot: permissionProcedure("analytics", "view")
     .input(
@@ -47,7 +53,7 @@ export const analyticsRouter = {
       }
       const result = await runCopilotQuery(ctx, {
         businessId: ctx.businessId,
-        tier,
+        tier: tier as "basic" | "full",
         question: input.question,
         history: input.history,
       });

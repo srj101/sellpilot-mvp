@@ -21,6 +21,7 @@ import { MessagingService } from "@acme/messaging";
 import type { PlatformConnection, PlatformType } from "@acme/messaging";
 import { createSalesAgent } from "@acme/ai-agent";
 import type { PlanKey } from "@acme/api/plans";
+import { PLAN_CATALOG } from "@acme/api/plans";
 
 import { loadConfig } from "../config.js";
 import { checkAiConversationAvailability, incrementAiConversation } from "../lib/ai-conversations.js";
@@ -123,12 +124,17 @@ async function resolveFollowUpText(
     .where(and(eq(cart.userId, userId), eq(cart.threadId, threadId), eq(cart.status, "active")));
   const items = activeCart?.items ?? [];
 
-  if (planKey !== "pro" || items.length === 0) {
-    // Growth never references the cart even if one exists; Pro with an empty/no cart
-    // (customer never got as far as a real price quote) also falls back to generic text.
+  const recoveryTier = PLAN_CATALOG[planKey].limits.abandonedCartRecovery;
+
+  if (recoveryTier === "none" || items.length === 0) {
     return { text: buildGenericFollowUpText(), usedAi: false, items };
   }
 
+  if (recoveryTier === "generic") {
+    return { text: buildGenericFollowUpText(), usedAi: false, items };
+  }
+
+  // recoveryTier === "personalized" (Pro)
   const hasConversations = await checkAiConversationAvailability(businessId);
   if (!hasConversations) return { text: buildGenericFollowUpText(), usedAi: false, items };
 

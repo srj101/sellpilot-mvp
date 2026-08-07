@@ -18,7 +18,10 @@ function trendPct(curr: number, prev: number) {
 }
 
 export const ecommerceRouter = {
-  getAccessTier: permissionProcedure("analytics", "view").query(({ ctx }) => getFeatureTier(ctx, "ecommerce")),
+  getAccessTier: permissionProcedure("analytics", "view").query(async ({ ctx }) => {
+    const tier = await getFeatureTier(ctx, "ecommerce");
+    return tier as "none" | "basic" | "full";
+  }),
 
   getOverview: permissionProcedure("analytics", "view").query(async ({ ctx }) => {
     const tier = await getFeatureTier(ctx, "ecommerce");

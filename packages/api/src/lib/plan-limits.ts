@@ -214,17 +214,32 @@ export async function getPlanFeatureEnabled(ctx: { db: typeof Db; businessId: st
   return isFeatureEnabled(limits, feature);
 }
 
-type TieredFeature = "analytics" | "ecommerce" | "copilot";
+type TieredFeature =
+  | "analytics"
+  | "ecommerce"
+  | "copilot"
+  | "campaignAutomation"
+  | "recommendationTier"
+  | "abandonedCartRecovery"
+  | "complaintHandling"
+  | "bulkInquiryHandling";
 
 /** Never throws — for read-heavy pages that should render a soft-lock/upgrade empty
- * state instead of erroring on load (matching the IntegrationCard / locked-page pattern). */
+ * state instead of erroring on load (matching the IntegrationCard / locked-page pattern).
+ * Returns the raw tier string from the plan catalog since different features use
+ * different value sets (e.g. "none"|"limited"|"full", "basic"|"upsell"|"advanced", etc.). */
 export async function getFeatureTier(
   ctx: { db: typeof Db; businessId: string },
   feature: TieredFeature,
-): Promise<"none" | "basic" | "full"> {
+): Promise<string> {
   const planKey = await resolvePlanKey(ctx.db, ctx.businessId);
   const { limits } = PLAN_CATALOG[planKey];
   if (feature === "analytics") return limits.analyticsTier;
   if (feature === "ecommerce") return limits.ecommerceTier;
-  return limits.copilotTier;
+  if (feature === "copilot") return limits.copilotTier;
+  if (feature === "campaignAutomation") return limits.campaignAutomation;
+  if (feature === "recommendationTier") return limits.recommendationTier;
+  if (feature === "abandonedCartRecovery") return limits.abandonedCartRecovery;
+  if (feature === "complaintHandling") return limits.complaintHandling;
+  return limits.bulkInquiryHandling;
 }
