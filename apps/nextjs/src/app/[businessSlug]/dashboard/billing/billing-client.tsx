@@ -398,6 +398,7 @@ export function BillingClient({ businessSlug }: { businessSlug: string }) {
               <Meter label="AI Conversations" used={usage?.aiConversations.used ?? 0} limit={usage?.aiConversations.limit ?? null} />
               <Meter label="Products" used={usage?.products.used ?? 0} limit={usage?.products.limit ?? null} />
               <Meter label="Team Seats" used={usage?.seats.used ?? 0} limit={usage?.seats.limit ?? null} />
+              <Meter label="Invoices" used={usage?.invoices.used ?? 0} limit={usage?.invoices.limit ?? null} />
               <Meter label="Media Storage" used={usage?.storage?.usedBytes ?? 0} limit={usage?.storage?.limitBytes ?? 3221225472} customDisplay={`${usage?.storage?.usedGb ?? "0.00"} GB / ${usage?.storage?.limitGb ?? 3} GB`} />
             </>
           )}

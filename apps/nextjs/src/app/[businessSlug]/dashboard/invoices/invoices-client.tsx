@@ -29,6 +29,8 @@ export function InvoicesClient() {
   const { data, isPending } = useQuery(trpc.orders.list.queryOptions());
   const orders = data?.orders ?? [];
 
+  const { data: usage } = useQuery(trpc.subscription.getUsage.queryOptions());
+
   const invoices = useMemo(() => {
     const now = new Date().getTime();
     return orders.map((o) => {
@@ -58,25 +60,32 @@ export function InvoicesClient() {
     });
   }, [orders]);
 
+  // PLAN-02 (soft visibility): orders/invoices are always created, but the invoice list
+  // is capped at the plan's limit (Starter = 5, Growth/Pro = unlimited) — older invoices
+  // stay on record but aren't shown until the owner upgrades.
+  const planInvoiceLimit = usage?.invoices.limit ?? null;
+  const visibleInvoices = planInvoiceLimit === null ? invoices : invoices.slice(0, planInvoiceLimit);
+  const hiddenInvoiceCount = invoices.length - visibleInvoices.length;
+
   const filtered = useMemo(() => {
-    return invoices.filter((inv) => {
+    return visibleInvoices.filter((inv) => {
       const matchesSearch =
         inv.id.toLowerCase().includes(search.toLowerCase()) ||
         inv.customerName.toLowerCase().includes(search.toLowerCase());
       const matchesStatus = statusFilter === "all" || inv.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
-  }, [invoices, search, statusFilter]);
+  }, [visibleInvoices, search, statusFilter]);
 
   const statusCounts = useMemo(() => {
-    const counts = { all: invoices.length, paid: 0, pending: 0, overdue: 0 };
-    for (const inv of invoices) counts[inv.status]++;
+    const counts = { all: visibleInvoices.length, paid: 0, pending: 0, overdue: 0 };
+    for (const inv of visibleInvoices) counts[inv.status]++;
     return counts;
-  }, [invoices]);
+  }, [visibleInvoices]);
 
   const handlePrint = (invoiceId: string) => {
     // Find the order and open print dialog
-    const inv = invoices.find((i) => i.id === invoiceId);
+    const inv = visibleInvoices.find((i) => i.id === invoiceId);
     if (inv) {
       window.open(`/${businessSlug}/dashboard/invoices/${inv.orderId}?print=true`, "_blank");
     }
@@ -84,6 +93,20 @@ export function InvoicesClient() {
 
   return (
     <div className="space-y-4">
+      {hiddenInvoiceCount > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="size-4 shrink-0 text-primary" />
+            <span className="font-medium text-foreground">
+              Showing your {planInvoiceLimit} most recent invoices — {hiddenInvoiceCount} older invoice{hiddenInvoiceCount === 1 ? "" : "s"} exist but are hidden on this plan. Upgrade to view them all.
+            </span>
+          </div>
+          <Link href={`/${businessSlug}/dashboard/pricing`}>
+            <Button size="sm">Upgrade for unlimited invoices</Button>
+          </Link>
+        </div>
+      )}
+
       {/* Filters */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-1 items-center gap-3">
@@ -223,7 +246,8 @@ export function InvoicesClient() {
           {/* Footer */}
           <div className="flex items-center justify-between border-t border-border px-4 py-3">
             <p className="text-xs text-muted-foreground">
-              Showing {filtered.length} of {invoices.length} invoices
+              Showing {filtered.length} of {visibleInvoices.length} invoice{visibleInvoices.length === 1 ? "" : "s"}
+              {hiddenInvoiceCount > 0 ? ` (${hiddenInvoiceCount} hidden on this plan)` : ""}
             </p>
           </div>
         </div>
