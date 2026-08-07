@@ -4,71 +4,9 @@ import { z } from "zod/v4";
 import { desc, eq, and } from "@acme/db";
 import { role, businessMember, businessInvitation, user, business } from "@acme/db/schema";
 
+import { DEFAULT_ROLES, perms, resolvePermissions } from "../lib/permissions";
 import { assertPlanLimit } from "../lib/plan-limits";
 import { businessProcedure, protectedProcedure, publicProcedure, businessScopedProcedure } from "../trpc";
-
-const RESOURCES = [
-  "orders",
-  "products",
-  "customers",
-  "invoices",
-  "users",
-  "inbox",
-  "analytics",
-  "agent",
-  "offers",
-  "integrations",
-  "settings",
-] as const;
-const ACTIONS = ["view", "create", "edit", "delete"] as const;
-
-function perms(resources: readonly string[], actions: readonly string[]) {
-  return resources.flatMap((r) => actions.map((a) => `${r}:${a}`));
-}
-
-/**
- * Default roles returned when a store hasn't created any custom roles yet.
- *
- * - integrations:connect / integrations:disconnect are intentionally absent from
- *   all default roles — those actions are owner-only at the procedure level and
- *   cannot be delegated via a custom role.
- * - integrations:view lets editors/admins see the integrations page without
- *   being able to add or remove connections.
- */
-const DEFAULT_ROLES = [
-  {
-    name: "Admin",
-    key: "admin",
-    description: "Full access to every resource. Cannot connect/disconnect integrations (owner only).",
-    permissions: [
-      ...perms(["orders", "products", "customers", "invoices", "users"], ACTIONS),
-      ...perms(["inbox", "analytics", "agent", "offers", "settings"], ACTIONS),
-      "integrations:view",
-    ],
-  },
-  {
-    name: "Editor",
-    key: "editor",
-    description: "Can view, create, and edit records. Cannot delete or manage users/settings.",
-    permissions: [
-      ...perms(["orders", "products", "customers", "invoices"], ["view", "create", "edit"]),
-      ...perms(["inbox", "offers"], ["view", "create", "edit"]),
-      "users:view",
-      "analytics:view",
-      "agent:view",
-      "integrations:view",
-    ],
-  },
-  {
-    name: "Viewer",
-    key: "viewer",
-    description: "Read-only access across the store.",
-    permissions: perms(
-      ["orders", "products", "customers", "invoices", "users", "inbox", "analytics", "agent", "offers", "integrations", "settings"],
-      ["view"],
-    ),
-  },
-];
 
 export const rolesRouter = {
   list: businessScopedProcedure.query(async ({ ctx }) => {
@@ -96,24 +34,12 @@ export const rolesRouter = {
     if (ctx.memberRole === "owner") {
       return { role: ctx.memberRole, permissions: ["*"] };
     }
-    if (!ctx.customRoleKey) {
-      return { role: ctx.memberRole, permissions: [] as string[] };
-    }
-
-    const [customRole] = await ctx.db
-      .select({ permissions: role.permissions })
-      .from(role)
-      .where(and(eq(role.businessId, ctx.businessId), eq(role.key, ctx.customRoleKey)))
-      .limit(1);
-
-    if (customRole) {
-      return { role: ctx.memberRole, permissions: customRole.permissions };
-    }
-
-    // No custom role row yet (business never created any) — the member's key may still
-    // point at one of the synthesized defaults `list` falls back to (see DEFAULT_ROLES above).
-    const fallback = DEFAULT_ROLES.find((r) => r.key === ctx.customRoleKey);
-    return { role: ctx.memberRole, permissions: fallback?.permissions ?? [] };
+    const permissions = await resolvePermissions(ctx.db, {
+      memberRole: ctx.memberRole,
+      customRoleKey: ctx.customRoleKey,
+      businessId: ctx.businessId,
+    });
+    return { role: ctx.memberRole, permissions };
   }),
 
   create: businessScopedProcedure
