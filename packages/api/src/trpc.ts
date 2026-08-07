@@ -15,6 +15,9 @@ import { and, eq } from "@acme/db";
 import { db } from "@acme/db/client";
 import { businessMember, business } from "@acme/db/schema";
 
+import type { Action, Resource } from "./lib/permissions";
+import { resolvePermissions } from "./lib/permissions";
+
 /**
  * 1. CONTEXT
  *
@@ -205,8 +208,18 @@ export const businessProcedure = protectedProcedure.use(async ({ ctx, next }) =>
     }
   }
 
+  // Effective RBAC permissions for this member, resolved once per request so the
+  // permission gate below costs nothing. Owners short-circuit to "*" (no extra query);
+  // members with no business resolved get an empty set.
+  const permissions =
+    membership && businessId
+      ? memberRole === "owner"
+        ? ["*"]
+        : await resolvePermissions(ctx.db, { memberRole, customRoleKey, businessId })
+      : [];
+
   return next({
-    ctx: { ...ctx, businessOwnerId, memberRole, customRoleKey, businessId },
+    ctx: { ...ctx, businessOwnerId, memberRole, customRoleKey, businessId, permissions },
   });
 });
 
@@ -242,6 +255,35 @@ export const ownerOnlyProcedure = businessScopedProcedure.use(({ ctx, next }) =>
   }
   return next({ ctx });
 });
+
+/**
+ * Permission-gated procedure — enforces a `resource:action` RBAC check against the
+ * member's resolved permissions (see businessProcedure's `permissions`). Owners pass
+ * via "*". Rollout is staged: unless RBAC_ENFORCE=true, a denial is logged with full
+ * context and allowed through (log-only mode) so legacy members who'd be locked out
+ * (e.g. a NULL customRoleKey) surface in the logs before enforcement flips on.
+ */
+const RBAC_ENFORCE = process.env.RBAC_ENFORCE === "true";
+
+export const permissionProcedure = (resource: Resource, action: Action) =>
+  businessScopedProcedure.use(async ({ ctx, next, path }) => {
+    if (ctx.permissions.includes("*") || ctx.permissions.includes(`${resource}:${action}`)) {
+      return next({ ctx });
+    }
+
+    if (!RBAC_ENFORCE) {
+      console.warn(
+        `[rbac] would deny ${path} for user ${ctx.session.user.id} business ${ctx.businessId} ` +
+          `role=${ctx.memberRole} customRoleKey=${ctx.customRoleKey}: missing ${resource}:${action}`,
+      );
+      return next({ ctx });
+    }
+
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `Your role doesn't allow you to ${action} ${resource}.`,
+    });
+  });
 
 /**
  * Superadmin procedure — for the SellPilot platform owner / developer.
