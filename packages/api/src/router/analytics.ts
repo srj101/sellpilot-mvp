@@ -63,6 +63,11 @@ export const analyticsRouter = {
       }),
     )
     .query(async ({ ctx, input }) => {
+      const tier = await getFeatureTier(ctx, "analytics");
+      if (tier === "none") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Analytics isn't included in your plan. Upgrade to Growth or Pro." });
+      }
+
       const businessId = ctx.businessId;
       const now = Date.now();
 

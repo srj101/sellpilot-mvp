@@ -1,4 +1,5 @@
 import type { TRPCRouterRecord } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
 
 import { eq } from "@acme/db";
 import { customer, offer, order, pageView, product, productVariant } from "@acme/db/schema";
@@ -20,6 +21,11 @@ export const ecommerceRouter = {
   getAccessTier: permissionProcedure("analytics", "view").query(({ ctx }) => getFeatureTier(ctx, "ecommerce")),
 
   getOverview: permissionProcedure("analytics", "view").query(async ({ ctx }) => {
+    const tier = await getFeatureTier(ctx, "ecommerce");
+    if (tier === "none") {
+      throw new TRPCError({ code: "FORBIDDEN", message: "eCommerce analytics aren't included in your plan. Upgrade to Growth or Pro." });
+    }
+
     const businessId = ctx.businessId;
     const now = Date.now();
     const windowStart = now - WINDOW_DAYS * DAY;

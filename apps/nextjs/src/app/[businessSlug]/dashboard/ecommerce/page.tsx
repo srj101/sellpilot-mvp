@@ -16,13 +16,45 @@ function trendText(value: number | null, suffix: string) {
   return { text: `${positive ? "+" : ""}${value.toFixed(1)}% ${suffix}`, positive };
 }
 
+/** Zeroed overview rendered for Starter (ecommerce tier "none") so the page soft-locks
+ * instead of the server-side FORBIDDEN from getOverview crashing SSR. Mirrors the real
+ * getOverview shape; trend fields null so no trend badge renders. */
+const EMPTY_OVERVIEW: {
+  totalSales: number;
+  totalSalesTrend: number | null;
+  totalOrders: number;
+  totalOrdersTrend: number | null;
+  aov: number;
+  aovTrend: number | null;
+  conversionRate: number;
+  conversionRateTrend: number | null;
+  customerCount: number;
+  salesSeries: { label: string; total: number; orders: number }[];
+  inventoryStatus: { name: string; stock: number; status: string }[];
+  promoCodePerformance: { code: string; usages: number; type: string; discount: number }[];
+} = {
+  totalSales: 0,
+  totalSalesTrend: null,
+  totalOrders: 0,
+  totalOrdersTrend: null,
+  aov: 0,
+  aovTrend: null,
+  conversionRate: 0,
+  conversionRateTrend: null,
+  customerCount: 0,
+  salesSeries: [],
+  inventoryStatus: [],
+  promoCodePerformance: [],
+};
+
 export default async function EcommercePage({ params }: { params: Promise<{ businessSlug: string }> }) {
   const session = await getSession();
   if (!session) redirect("/login");
   const { businessSlug } = await params;
 
   const caller = await createCaller(await headers());
-  const [overview, tier] = await Promise.all([caller.ecommerce.getOverview(), caller.ecommerce.getAccessTier()]);
+  const [tier] = await Promise.all([caller.ecommerce.getAccessTier()]);
+  const overview = tier === "none" ? EMPTY_OVERVIEW : await caller.ecommerce.getOverview();
 
   // Format currency helper
   const formatCurrency = (val: number) => `৳${Math.round(val).toLocaleString()}`;
