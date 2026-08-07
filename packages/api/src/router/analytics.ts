@@ -5,7 +5,7 @@ import { z } from "zod/v4";
 import { and, eq, gte, inArray, sql } from "@acme/db";
 import { agentSession, customKpi, customer, metaWebhookEvent, order, orderItem, pageView, product } from "@acme/db/schema";
 
-import { businessScopedProcedure } from "../trpc";
+import { permissionProcedure } from "../trpc";
 import { runCopilotQuery } from "../lib/copilot-agent";
 import { getFeatureTier } from "../lib/plan-limits";
 
@@ -25,12 +25,12 @@ function formatDate(ms: number) {
 export const analyticsRouter = {
   /** Never throws — the page renders a soft-lock empty state for "none" and a widget
    * subset for "basic", instead of erroring on load (see plan-limits.ts's getFeatureTier). */
-  getAccessTier: businessScopedProcedure.query(({ ctx }) => getFeatureTier(ctx, "analytics")),
+  getAccessTier: permissionProcedure("analytics", "view").query(({ ctx }) => getFeatureTier(ctx, "analytics")),
 
   /** B.8 — Executive AI Copilot. Never throws — same soft-lock pattern as getAccessTier. */
-  getCopilotAccess: businessScopedProcedure.query(({ ctx }) => getFeatureTier(ctx, "copilot")),
+  getCopilotAccess: permissionProcedure("analytics", "view").query(({ ctx }) => getFeatureTier(ctx, "copilot")),
 
-  askCopilot: businessScopedProcedure
+  askCopilot: permissionProcedure("analytics", "view")
     .input(
       z.object({
         question: z.string().min(1).max(500),
@@ -54,7 +54,7 @@ export const analyticsRouter = {
       return { answer: result.answer, tier };
     }),
 
-  getSummary: businessScopedProcedure
+  getSummary: permissionProcedure("analytics", "view")
     .input(
       z.object({
         range: z.enum(["7d", "30d", "90d", "1y", "custom"]).default("30d"),
@@ -362,7 +362,7 @@ export const analyticsRouter = {
       };
     }),
 
-  listCustomKPIs: businessScopedProcedure.query(async ({ ctx }) => {
+  listCustomKPIs: permissionProcedure("analytics", "view").query(async ({ ctx }) => {
     const tier = await getFeatureTier(ctx, "copilot");
     if (tier !== "full") return [];
 
@@ -397,7 +397,7 @@ export const analyticsRouter = {
     });
   }),
 
-  createCustomKPI: businessScopedProcedure
+  createCustomKPI: permissionProcedure("analytics", "create")
     .input(
       z.object({
         title: z.string().min(1).max(100),
@@ -424,7 +424,7 @@ export const analyticsRouter = {
         .returning();
     }),
 
-  deleteCustomKPI: businessScopedProcedure
+  deleteCustomKPI: permissionProcedure("analytics", "delete")
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       await ctx.db

@@ -6,7 +6,7 @@ import { and, desc, eq, inArray } from "@acme/db";
 import type { db as Db } from "@acme/db/client";
 import { offer, product } from "@acme/db/schema";
 
-import { businessScopedProcedure } from "../trpc";
+import { permissionProcedure } from "../trpc";
 import { assertPlanFeature, getPlanFeatureEnabled } from "../lib/plan-limits";
 
 /** Combo fields are only meaningful as a pair — verifies both products actually belong to
@@ -38,9 +38,9 @@ async function assertValidCombo(
 export const offersRouter = {
   /** Never throws — powers the "Upgrade to Pro to create and manage offers" read-only
    * banner instead of erroring the whole page for non-Pro plans. */
-  getAccess: businessScopedProcedure.query(({ ctx }) => getPlanFeatureEnabled(ctx, "offers").then((canManage) => ({ canManage }))),
+  getAccess: permissionProcedure("offers", "view").query(({ ctx }) => getPlanFeatureEnabled(ctx, "offers").then((canManage) => ({ canManage }))),
 
-  list: businessScopedProcedure.query(async ({ ctx }) => {
+  list: permissionProcedure("offers", "view").query(async ({ ctx }) => {
     return ctx.db
       .select()
       .from(offer)
@@ -48,7 +48,7 @@ export const offersRouter = {
       .orderBy(desc(offer.createdAt));
   }),
 
-  create: businessScopedProcedure
+  create: permissionProcedure("offers", "create")
     .input(
       z.object({
         title: z.string().min(1),
@@ -79,7 +79,7 @@ export const offersRouter = {
       return newOffer;
     }),
 
-  update: businessScopedProcedure
+  update: permissionProcedure("offers", "edit")
     .input(
       z.object({
         id: z.string(),
@@ -109,7 +109,7 @@ export const offersRouter = {
       return updatedOffer;
     }),
 
-  delete: businessScopedProcedure
+  delete: permissionProcedure("offers", "delete")
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       await assertPlanFeature(ctx, "offers");

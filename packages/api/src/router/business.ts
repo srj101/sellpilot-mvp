@@ -1,4 +1,5 @@
 import type { TRPCRouterRecord } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
 import { and, eq, ilike, isNotNull } from "@acme/db";
@@ -88,7 +89,7 @@ export const businessRouter = {
         .where(ilike(business.name, name))
         .limit(1);
       if (existing) {
-        throw new Error(`A store named "${name}" already exists — try a different name.`);
+        throw new TRPCError({ code: "CONFLICT", message: `A store named "${name}" already exists — try a different name.` });
       }
 
       const slug = await uniqueSlugFor(ctx, name);
@@ -334,7 +335,7 @@ export const businessRouter = {
       .from(business)
       .where(eq(business.id, ctx.businessId))
       .limit(1);
-    if (!org) throw new Error("Store not found");
+    if (!org) throw new TRPCError({ code: "NOT_FOUND", message: "Store not found" });
     // metadata has been written two ways historically — as a bare description string and as
     // JSON.stringify({ description }) (onboarding create). Normalize both on read so the
     // settings page never shows raw `{"description":...}` in the description field.

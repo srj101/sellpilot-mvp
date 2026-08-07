@@ -10,7 +10,7 @@ import { assertPlanLimit, getProductUsage } from "../lib/plan-limits";
 import { queueProductImageIndexing } from "../lib/queue";
 import { deleteS3Object, getPresignedUploadUrl, getPublicUrl, getS3ObjectSize, processImageUrl } from "../lib/s3";
 import { getStockStatus } from "../lib/stock-status";
-import { businessScopedProcedure } from "../trpc";
+import { permissionProcedure } from "../trpc";
 
 const VariantInput = z.object({
   id: z.string().optional(),
@@ -44,9 +44,9 @@ const ProductInput = z.object({
 export const productsRouter = {
   /** Powers the "X of Y products, Z remaining" banner shown above both the manual add
    * form and the CSV bulk importer, before either one hits assertPlanLimit at save time. */
-  getUsage: businessScopedProcedure.query(({ ctx }) => getProductUsage(ctx)),
+  getUsage: permissionProcedure("products", "view").query(({ ctx }) => getProductUsage(ctx)),
 
-  list: businessScopedProcedure
+  list: permissionProcedure("products", "view")
     .input(z.object({ filterStatus: z.enum(["all", "in_stock", "low_stock", "out_of_stock"]).optional() }).optional())
     .query(async ({ ctx, input }) => {
       const businessId = ctx.businessId;
@@ -92,7 +92,7 @@ export const productsRouter = {
       return { products: filteredProducts, variants: variantsWithStatus };
     }),
 
-  create: businessScopedProcedure.input(ProductInput).mutation(async ({ ctx, input }) => {
+  create: permissionProcedure("products", "create").input(ProductInput).mutation(async ({ ctx, input }) => {
     const userId = ctx.businessOwnerId;
     const businessId = ctx.businessId;
 
@@ -178,7 +178,7 @@ export const productsRouter = {
     return newProduct;
   }),
 
-  update: businessScopedProcedure.input(ProductInput).mutation(async ({ ctx, input }) => {
+  update: permissionProcedure("products", "edit").input(ProductInput).mutation(async ({ ctx, input }) => {
     if (!input.id) {
       throw new Error("Missing product id");
     }
@@ -312,7 +312,7 @@ export const productsRouter = {
     return updatedProduct;
   }),
 
-  delete: businessScopedProcedure.input(z.object({ productId: z.string() })).mutation(async ({ ctx, input }) => {
+  delete: permissionProcedure("products", "delete").input(z.object({ productId: z.string() })).mutation(async ({ ctx, input }) => {
     const businessId = ctx.businessId;
 
     const [deleted] = await ctx.db
@@ -327,7 +327,7 @@ export const productsRouter = {
     return deleted ?? null;
   }),
 
-  testImageSearch: businessScopedProcedure
+  testImageSearch: permissionProcedure("products", "view")
     .input(z.object({ imageUrl: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const businessId = ctx.businessId;
@@ -349,7 +349,7 @@ export const productsRouter = {
       }));
     }),
 
-  bulkCreate: businessScopedProcedure
+  bulkCreate: permissionProcedure("products", "create")
     .input(z.object({
       products: z.array(z.object({
         title: z.string().min(1),
@@ -444,7 +444,7 @@ export const productsRouter = {
    * Returns a presigned S3 URL for uploading a product image.
    * Checks plan storage capacity before issuing presigned URL.
    */
-  getImageUploadUrl: businessScopedProcedure
+  getImageUploadUrl: permissionProcedure("products", "edit")
     .input(z.object({ contentType: z.string(), fileSize: z.number().optional() }))
     .mutation(async ({ ctx, input }) => {
       // Pre-flight storage limit check (defaults to 5MB check if fileSize omitted)
@@ -462,7 +462,7 @@ export const productsRouter = {
   /**
    * Confirms upload to S3 and atomically increments DB storageUsedBytes in real-time.
    */
-  confirmUpload: businessScopedProcedure
+  confirmUpload: permissionProcedure("products", "edit")
     .input(z.object({ key: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const sizeBytes = await getS3ObjectSize(input.key);
@@ -482,7 +482,7 @@ export const productsRouter = {
   /**
    * Deletes image from S3 and atomically decrements DB storageUsedBytes in real-time.
    */
-  deleteImage: businessScopedProcedure
+  deleteImage: permissionProcedure("products", "edit")
     .input(z.object({ key: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const sizeBytes = await getS3ObjectSize(input.key);

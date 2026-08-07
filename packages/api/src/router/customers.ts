@@ -4,10 +4,10 @@ import { z } from "zod";
 import { desc, eq, and, count, sum } from "@acme/db";
 import { customer, order } from "@acme/db/schema";
 
-import { businessScopedProcedure } from "../trpc";
+import { permissionProcedure } from "../trpc";
 
 export const customersRouter = {
-  list: businessScopedProcedure.query(async ({ ctx }) => {
+  list: permissionProcedure("customers", "view").query(async ({ ctx }) => {
     const businessId = ctx.businessId;
     const customers = await ctx.db
       .select()
@@ -43,7 +43,7 @@ export const customersRouter = {
     }));
   }),
 
-  getById: businessScopedProcedure
+  getById: permissionProcedure("customers", "view")
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
       const businessId = ctx.businessId;

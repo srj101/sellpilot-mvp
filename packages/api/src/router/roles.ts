@@ -1,15 +1,16 @@
 import type { TRPCRouterRecord } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
 import { desc, eq, and } from "@acme/db";
 import { role, businessMember, businessInvitation, user, business } from "@acme/db/schema";
 
-import { DEFAULT_ROLES, perms, resolvePermissions } from "../lib/permissions";
+import { DEFAULT_ROLES, resolvePermissions } from "../lib/permissions";
 import { assertPlanLimit } from "../lib/plan-limits";
-import { businessProcedure, protectedProcedure, publicProcedure, businessScopedProcedure } from "../trpc";
+import { businessProcedure, protectedProcedure, permissionProcedure, publicProcedure, businessScopedProcedure } from "../trpc";
 
 export const rolesRouter = {
-  list: businessScopedProcedure.query(async ({ ctx }) => {
+  list: permissionProcedure("users", "view").query(async ({ ctx }) => {
     const roles = await ctx.db
       .select()
       .from(role)
@@ -42,7 +43,7 @@ export const rolesRouter = {
     return { role: ctx.memberRole, permissions };
   }),
 
-  create: businessScopedProcedure
+  create: permissionProcedure("users", "create")
     .input(
       z.object({
         name: z.string().min(1),
@@ -59,7 +60,7 @@ export const rolesRouter = {
         .limit(1);
 
       if (existing.length > 0) {
-        throw new Error("Role with this key already exists");
+        throw new TRPCError({ code: "CONFLICT", message: "Role with this key already exists" });
       }
 
       const [newRole] = await ctx.db
@@ -77,7 +78,7 @@ export const rolesRouter = {
       return newRole;
     }),
 
-  update: businessScopedProcedure
+  update: permissionProcedure("users", "edit")
     .input(
       z.object({
         key: z.string(),
@@ -100,7 +101,7 @@ export const rolesRouter = {
       return updated ?? null;
     }),
 
-  delete: businessScopedProcedure
+  delete: permissionProcedure("users", "delete")
     .input(z.object({ key: z.string() }))
     .mutation(async ({ ctx, input }) => {
       await ctx.db.delete(role).where(and(eq(role.businessId, ctx.businessId), eq(role.key, input.key)));
@@ -150,6 +151,16 @@ export const rolesRouter = {
    * even for an account that owns more than one store.
    */
   listMembers: businessProcedure.query(async ({ ctx }) => {
+    if (
+      ctx.businessId &&
+      !ctx.permissions.includes("*") &&
+      !ctx.permissions.includes("users:view")
+    ) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Your role doesn't allow you to view team members.",
+      });
+    }
     const userId = ctx.session.user.id;
 
     if (!ctx.businessId) {
@@ -211,6 +222,17 @@ export const rolesRouter = {
       // assertPlanLimit would otherwise block the owner's very first invite.
       const hadExistingBusiness = Boolean(ctx.businessId);
 
+      if (
+        ctx.businessId &&
+        !ctx.permissions.includes("*") &&
+        !ctx.permissions.includes("users:create")
+      ) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Your role doesn't allow you to invite team members.",
+        });
+      }
+
       let businessId = ctx.businessId;
       let memberRole = ctx.memberRole;
       let customRoleKey = ctx.customRoleKey;
@@ -233,11 +255,11 @@ export const rolesRouter = {
         });
 
         const [membership] = await ctx.db.select().from(businessMember).where(eq(businessMember.userId, userId)).limit(1);
-        if (!membership) throw new Error("Failed to create business");
+        if (!membership) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create business" });
         memberRole = membership.role;
         customRoleKey = membership.customRoleKey;
       } else if (memberRole !== "owner" && customRoleKey !== "admin") {
-        throw new Error("Only the store owner or an Admin can invite team members");
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only the store owner or an Admin can invite team members" });
       }
 
       if (hadExistingBusiness) {
@@ -259,11 +281,11 @@ export const rolesRouter = {
       return { success: true };
     }),
 
-  cancelInvitation: businessScopedProcedure
+  cancelInvitation: permissionProcedure("users", "edit")
     .input(z.object({ invitationId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.memberRole !== "owner" && ctx.customRoleKey !== "admin") {
-        throw new Error("Only the store owner or an Admin can manage team members");
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only the store owner or an Admin can manage team members" });
       }
       await ctx.authApi.cancelInvitation({ body: { invitationId: input.invitationId }, headers: ctx.headers });
       return { success: true };
@@ -273,7 +295,7 @@ export const rolesRouter = {
     .input(z.object({ invitationId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const [inv] = await ctx.db.select().from(businessInvitation).where(eq(businessInvitation.id, input.invitationId)).limit(1);
-      if (!inv) throw new Error("Invitation not found or already used");
+      if (!inv) throw new TRPCError({ code: "NOT_FOUND", message: "Invitation not found or already used" });
 
       await ctx.authApi.acceptInvitation({ body: { invitationId: input.invitationId }, headers: ctx.headers });
 
@@ -317,11 +339,11 @@ export const rolesRouter = {
       return { success: true };
     }),
 
-  updateMemberRole: businessScopedProcedure
+  updateMemberRole: permissionProcedure("users", "edit")
     .input(z.object({ memberId: z.string(), customRoleKey: z.string() }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.memberRole !== "owner" && ctx.customRoleKey !== "admin") {
-        throw new Error("Only the store owner or an Admin can manage team members");
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only the store owner or an Admin can manage team members" });
       }
       await ctx.db
         .update(businessMember)
@@ -330,11 +352,11 @@ export const rolesRouter = {
       return { success: true };
     }),
 
-  removeMember: businessScopedProcedure
+  removeMember: permissionProcedure("users", "delete")
     .input(z.object({ memberId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.memberRole !== "owner" && ctx.customRoleKey !== "admin") {
-        throw new Error("Only the store owner or an Admin can manage team members");
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only the store owner or an Admin can manage team members" });
       }
       await ctx.authApi.removeMember({
         body: { memberIdOrEmail: input.memberId, businessId: ctx.businessId },

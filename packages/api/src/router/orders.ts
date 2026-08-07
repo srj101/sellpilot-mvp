@@ -9,7 +9,7 @@ import { sendEmail } from "@acme/auth/email";
 
 import { recordOrderStatusChange } from "../lib/order-audit";
 import { sendMetaInboxReply } from "../lib/meta";
-import { businessScopedProcedure } from "../trpc";
+import { permissionProcedure } from "../trpc";
 
 const ORDER_STATUSES = ["pending", "confirmed", "paid", "shipped", "delivered", "cancelled", "returned"] as const;
 type OrderStatus = (typeof ORDER_STATUSES)[number];
@@ -136,7 +136,7 @@ export const ordersRouter = {
    * uses. The form itself is still single-product + one optional combo item (see
    * create-order-sheet.tsx); translated to quoteOrder's items[] shape here so the
    * underlying pricing helper only has one calling convention to support. */
-  quote: businessScopedProcedure
+  quote: permissionProcedure("orders", "view")
     .input(
       z.object({
         productId: z.string(),
@@ -166,7 +166,7 @@ export const ordersRouter = {
    * phone/address are optional here too: if this thread already has a linked customer (from
    * an earlier order), omitted fields are filled in from that record automatically.
    */
-  create: businessScopedProcedure
+  create: permissionProcedure("orders", "create")
     .input(
       z.object({
         threadId: z.string(),
@@ -257,7 +257,7 @@ export const ordersRouter = {
       return result;
     }),
 
-  list: businessScopedProcedure.query(async ({ ctx }) => {
+  list: permissionProcedure("orders", "view").query(async ({ ctx }) => {
     const businessId = ctx.businessId;
     const orders = await ctx.db
       .select()
@@ -273,7 +273,7 @@ export const ordersRouter = {
     return { orders, items };
   }),
 
-  getById: businessScopedProcedure
+  getById: permissionProcedure("orders", "view")
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
       const businessId = ctx.businessId;
@@ -294,7 +294,7 @@ export const ordersRouter = {
       return { ...ord, items };
     }),
 
-  updateStatus: businessScopedProcedure
+  updateStatus: permissionProcedure("orders", "edit")
     .input(
       z.object({
         id: z.string(),
@@ -359,7 +359,7 @@ export const ordersRouter = {
       return { success: true };
     }),
 
-  getStatusHistory: businessScopedProcedure
+  getStatusHistory: permissionProcedure("orders", "view")
     .input(z.object({ orderId: z.string() }))
     .query(async ({ ctx, input }) => {
       const history = await ctx.db
@@ -370,7 +370,7 @@ export const ordersRouter = {
       return history;
     }),
 
-  delete: businessScopedProcedure
+  delete: permissionProcedure("orders", "delete")
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const businessId = ctx.businessId;

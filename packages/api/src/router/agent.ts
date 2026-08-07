@@ -16,7 +16,7 @@ import {
   productVariant,
   shippingRate,
 } from "@acme/db/schema";
-import { businessScopedProcedure } from "../trpc";
+import { permissionProcedure } from "../trpc";
 
 const CustomerInput = z.object({
   id: z.string().optional(),
@@ -162,13 +162,13 @@ function buildPaymentLink() {
 }
 
 export const agentRouter = {
-  getBusinessProfile: businessScopedProcedure.query(async ({ ctx }) => {
+  getBusinessProfile: permissionProcedure("agent", "view").query(async ({ ctx }) => {
     return ctx.db.query.businessProfile.findFirst({
       where: eq(businessProfile.businessId, ctx.businessId),
     });
   }),
 
-  upsertBusinessProfile: businessScopedProcedure
+  upsertBusinessProfile: permissionProcedure("agent", "edit")
     .input(
       z.object({
         name: z.string().min(1),
@@ -212,7 +212,7 @@ export const agentRouter = {
       return created;
     }),
 
-  getNotificationPreferences: businessScopedProcedure.query(async ({ ctx }) => {
+  getNotificationPreferences: permissionProcedure("agent", "view").query(async ({ ctx }) => {
     const NOTIFICATION_EVENTS = ["new_order", "low_stock", "human_handoff", "quota_alert", "weekly_insights"] as const;
     const existing = await ctx.db
       .select()
@@ -228,7 +228,7 @@ export const agentRouter = {
     }));
   }),
 
-  updateNotificationPreferences: businessScopedProcedure
+  updateNotificationPreferences: permissionProcedure("agent", "edit")
     .input(
       z.array(
         z.object({
@@ -261,7 +261,7 @@ export const agentRouter = {
       return { success: true };
     }),
 
-  listProducts: businessScopedProcedure
+  listProducts: permissionProcedure("agent", "view")
     .input(z.object({ query: z.string().optional() }))
     .query(async ({ ctx, input }) => {
       const products = await ctx.db.query.product.findMany({
@@ -281,7 +281,7 @@ export const agentRouter = {
       );
     }),
 
-  getProductById: businessScopedProcedure
+  getProductById: permissionProcedure("agent", "view")
     .input(z.object({ productId: z.string() }))
     .query(async ({ ctx, input }) => {
       const productRow = await ctx.db.query.product.findFirst({
@@ -299,21 +299,21 @@ export const agentRouter = {
       return { product: productRow, variants };
     }),
 
-  listOffers: businessScopedProcedure.query(({ ctx }) => {
+  listOffers: permissionProcedure("agent", "view").query(({ ctx }) => {
     return ctx.db.query.offer.findMany({
       where: and(eq(offer.businessId, ctx.businessId), eq(offer.active, true)),
       orderBy: desc(offer.createdAt),
     });
   }),
 
-  listShippingRates: businessScopedProcedure.query(({ ctx }) => {
+  listShippingRates: permissionProcedure("agent", "view").query(({ ctx }) => {
     return ctx.db.query.shippingRate.findMany({
       where: eq(shippingRate.businessId, ctx.businessId),
       orderBy: desc(shippingRate.createdAt),
     });
   }),
 
-  listPolicies: businessScopedProcedure
+  listPolicies: permissionProcedure("agent", "view")
     .input(z.object({ type: z.string().optional() }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.query.policy.findMany({
@@ -328,7 +328,7 @@ export const agentRouter = {
       return rows.filter((row) => row.type === input.type);
     }),
 
-  listFaqs: businessScopedProcedure
+  listFaqs: permissionProcedure("agent", "view")
     .input(z.object({ tag: z.string().optional() }))
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.query.faq.findMany({
@@ -344,13 +344,13 @@ export const agentRouter = {
       return rows.filter((row) => row.tags.includes(searchTag));
     }),
 
-  createOrUpdateCustomer: businessScopedProcedure
+  createOrUpdateCustomer: permissionProcedure("customers", "create")
     .input(CustomerInput)
     .mutation(async ({ ctx, input }) => {
       return getCustomerForUser(ctx, ctx.businessOwnerId, ctx.businessId, input);
     }),
 
-  createOrder: businessScopedProcedure.input(CreateOrderInput).mutation(async ({ ctx, input }) => {
+  createOrder: permissionProcedure("orders", "create").input(CreateOrderInput).mutation(async ({ ctx, input }) => {
       const userId = ctx.businessOwnerId;
       const businessId = ctx.businessId;
 
@@ -472,7 +472,7 @@ export const agentRouter = {
       return createdOrder;
     }),
 
-  listOrders: businessScopedProcedure
+  listOrders: permissionProcedure("agent", "view")
     .input(z.object({ status: z.string().optional() }))
     .query(async ({ ctx, input }) => {
       const baseFilter = and(eq(order.businessId, ctx.businessId));
@@ -483,7 +483,7 @@ export const agentRouter = {
       return rows;
     }),
 
-  getOrderById: businessScopedProcedure
+  getOrderById: permissionProcedure("agent", "view")
     .input(z.object({ orderId: z.string() }))
     .query(async ({ ctx, input }) => {
       const orderRow = await ctx.db.query.order.findFirst({
@@ -498,7 +498,7 @@ export const agentRouter = {
       return { ...orderRow, items };
     }),
 
-  updateOrderStatus: businessScopedProcedure
+  updateOrderStatus: permissionProcedure("orders", "edit")
     .input(z.object({ orderId: z.string(), status: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const [updated] = await ctx.db
@@ -509,7 +509,7 @@ export const agentRouter = {
       return updated;
     }),
 
-  getOrCreateAgentSession: businessScopedProcedure
+  getOrCreateAgentSession: permissionProcedure("agent", "edit")
     .input(z.object({ channel: z.string(), threadId: z.string(), senderId: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
       const existing = await ctx.db.query.agentSession.findFirst({
@@ -533,7 +533,7 @@ export const agentRouter = {
       return created;
     }),
 
-  setAgentSessionState: businessScopedProcedure
+  setAgentSessionState: permissionProcedure("agent", "edit")
     .input(z.object({ id: z.string(), state: z.any() }))
     .mutation(async ({ ctx, input }) => {
       const [updated] = await ctx.db
@@ -544,7 +544,7 @@ export const agentRouter = {
       return updated;
     }),
 
-  clearAgentSession: businessScopedProcedure
+  clearAgentSession: permissionProcedure("agent", "edit")
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const [cleared] = await ctx.db

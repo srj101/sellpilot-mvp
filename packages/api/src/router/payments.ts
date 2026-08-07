@@ -5,7 +5,7 @@ import { and, desc, eq, ilike, or } from "@acme/db";
 import { businessProfile, order, transaction } from "@acme/db/schema";
 
 import { hasCredentials } from "../lib/sslcommerz";
-import { businessScopedProcedure, ownerOnlyProcedure } from "../trpc";
+import { ownerOnlyProcedure, permissionProcedure } from "../trpc";
 
 const DAY = 86_400_000;
 const RANGE_DAYS = { "7d": 7, "30d": 30, "90d": 90, "1y": 365 } as const;
@@ -27,7 +27,7 @@ export const paymentsRouter = {
   /** One "Online" status covering card/bank/bKash/Nagad (all one SSLCommerz gateway) —
    * there's nothing to connect per-rail, see billing plan S5-C. Per-business now, not a
    * global env check — each business's own SSLCommerz store, see checkout.ts. */
-  getGatewayStatus: businessScopedProcedure.query(async ({ ctx }) => {
+  getGatewayStatus: permissionProcedure("orders", "view").query(async ({ ctx }) => {
     const profile = await ctx.db.query.businessProfile.findFirst({ where: eq(businessProfile.businessId, ctx.businessId) });
     return {
       online: hasCredentials({
@@ -66,7 +66,7 @@ export const paymentsRouter = {
       return { success: true };
     }),
 
-  getSummary: businessScopedProcedure
+  getSummary: permissionProcedure("orders", "view")
     .input(
       z.object({
         range: z.enum(["7d", "30d", "90d", "1y", "custom"]).default("30d"),
@@ -122,7 +122,7 @@ export const paymentsRouter = {
       };
     }),
 
-  list: businessScopedProcedure
+  list: permissionProcedure("orders", "view")
     .input(
       z.object({
         method: z.enum(["bkash", "nagad", "card", "internetbank", "cod"]).optional(),
@@ -169,7 +169,7 @@ export const paymentsRouter = {
     }),
 
   /** Refund a transaction — partial refunds allowed, never more than was actually charged. */
-  refund: businessScopedProcedure
+  refund: permissionProcedure("orders", "edit")
     .input(z.object({ id: z.string(), amount: z.number().positive() }))
     .mutation(async ({ ctx, input }) => {
       const [row] = await ctx.db

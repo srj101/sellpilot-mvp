@@ -14,7 +14,7 @@ import {
   subscribeWhatsAppWebhooks,
 } from "../lib/meta";
 import { assertChannelAllowed, getPlanChannels } from "../lib/plan-limits";
-import { ownerOnlyProcedure, businessScopedProcedure } from "../trpc";
+import { ownerOnlyProcedure, permissionProcedure } from "../trpc";
 
 async function persistWhatsAppSignup(
   db: typeof Db,
@@ -144,11 +144,11 @@ async function persistWhatsAppSignup(
 export const integrationsRouter = {
   /** Which channels the current plan allows — the Integrations page uses this to show a
    * locked/upgrade state instead of a dead Connect button (billing plan channel gating). */
-  getChannelAccess: businessScopedProcedure.query(({ ctx }) => {
+  getChannelAccess: permissionProcedure("integrations", "view").query(({ ctx }) => {
     return getPlanChannels(ctx);
   }),
 
-  list: businessScopedProcedure.query(async ({ ctx }) => {
+  list: permissionProcedure("integrations", "view").query(async ({ ctx }) => {
     return ctx.db
       .select({
         id: metaConnection.id,
@@ -171,7 +171,7 @@ export const integrationsRouter = {
    * receive a single message). Deliberately returns only the IDs, never the other
    * business's name/id, to avoid leaking one tenant's data to another.
    */
-  checkExternalConnections: businessScopedProcedure
+  checkExternalConnections: permissionProcedure("integrations", "view")
     .input(
       z.object({
         platform: z.enum(["facebook_page", "instagram", "whatsapp"]),

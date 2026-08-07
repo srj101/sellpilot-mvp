@@ -3,7 +3,7 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { eq } from "@acme/db";
 import { customer, offer, order, pageView, product, productVariant } from "@acme/db/schema";
 
-import { businessScopedProcedure } from "../trpc";
+import { permissionProcedure } from "../trpc";
 import { getFeatureTier } from "../lib/plan-limits";
 
 const DAY = 86_400_000;
@@ -17,9 +17,9 @@ function trendPct(curr: number, prev: number) {
 }
 
 export const ecommerceRouter = {
-  getAccessTier: businessScopedProcedure.query(({ ctx }) => getFeatureTier(ctx, "ecommerce")),
+  getAccessTier: permissionProcedure("analytics", "view").query(({ ctx }) => getFeatureTier(ctx, "ecommerce")),
 
-  getOverview: businessScopedProcedure.query(async ({ ctx }) => {
+  getOverview: permissionProcedure("analytics", "view").query(async ({ ctx }) => {
     const businessId = ctx.businessId;
     const now = Date.now();
     const windowStart = now - WINDOW_DAYS * DAY;

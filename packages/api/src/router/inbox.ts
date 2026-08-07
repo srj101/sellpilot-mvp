@@ -17,7 +17,7 @@ import { sendMetaInboxReply } from "../lib/meta";
 import { buildInboxData } from "../lib/meta-inbox";
 import { getQueueStatus } from "../lib/queue-status";
 import { resolveContactNames } from "../lib/resolve-contact-names";
-import { businessScopedProcedure } from "../trpc";
+import { permissionProcedure } from "../trpc";
 
 const CLOSED_ORDER_STATUSES = ["delivered", "cancelled", "returned"];
 const STATUS_VALUES = ["open", "ticket", "resolved", "archived"] as const;
@@ -25,9 +25,9 @@ const STATUS_VALUES = ["open", "ticket", "resolved", "archived"] as const;
 export const inboxRouter = {
   /** FR-INB-04 — polled by the Inbox page (not pushed live) since a busy signal has no
    * need for sub-second latency; see queue-status.ts for why this is platform-wide. */
-  getQueueStatus: businessScopedProcedure.query(() => getQueueStatus()),
+  getQueueStatus: permissionProcedure("inbox", "view").query(() => getQueueStatus()),
 
-  getInboxData: businessScopedProcedure
+  getInboxData: permissionProcedure("inbox", "view")
     .input(z.object({ threadId: z.string().optional() }))
     .query(async ({ ctx, input }) => {
       const businessId = ctx.businessId;
@@ -112,7 +112,7 @@ export const inboxRouter = {
       return { threads: data.threads, selectedThread, connections, markedRead };
     }),
 
-  sendReply: businessScopedProcedure
+  sendReply: permissionProcedure("inbox", "edit")
     .input(
       z.object({
         threadId: z.string(),
@@ -199,7 +199,7 @@ export const inboxRouter = {
       return { ok: true as const };
     }),
 
-  setStatus: businessScopedProcedure
+  setStatus: permissionProcedure("inbox", "edit")
     .input(z.object({ threadId: z.string(), status: z.enum(STATUS_VALUES) }))
     .mutation(async ({ ctx, input }) => {
       await ctx.db
@@ -212,7 +212,7 @@ export const inboxRouter = {
       return { ok: true as const };
     }),
 
-  toggleStar: businessScopedProcedure
+  toggleStar: permissionProcedure("inbox", "edit")
     .input(z.object({ threadId: z.string(), starred: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       await ctx.db
@@ -227,7 +227,7 @@ export const inboxRouter = {
 
   /** Take a thread over from the AI, or hand it back (spec FR-AGT-15). While "human", the
    * DM-reply worker skips generating an AI reply entirely — see dm-reply.ts. */
-  setHandlingMode: businessScopedProcedure
+  setHandlingMode: permissionProcedure("inbox", "edit")
     .input(z.object({ threadId: z.string(), handlingMode: z.enum(["ai", "human"]) }))
     .mutation(async ({ ctx, input }) => {
       await ctx.db
@@ -240,7 +240,7 @@ export const inboxRouter = {
       return { ok: true as const };
     }),
 
-  getContactDetails: businessScopedProcedure
+  getContactDetails: permissionProcedure("inbox", "view")
     .input(z.object({ customerId: z.string() }))
     .query(async ({ ctx, input }) => {
       const businessId = ctx.businessId;
@@ -269,11 +269,11 @@ export const inboxRouter = {
       return { customer: cust, recentOrders, tags: tagRows };
     }),
 
-  listTags: businessScopedProcedure.query(async ({ ctx }) => {
+  listTags: permissionProcedure("inbox", "view").query(async ({ ctx }) => {
     return ctx.db.select().from(tag).where(eq(tag.businessId, ctx.businessId)).orderBy(tag.label);
   }),
 
-  createTag: businessScopedProcedure
+  createTag: permissionProcedure("inbox", "edit")
     .input(z.object({ label: z.string().min(1), color: z.string().default("slate") }))
     .mutation(async ({ ctx, input }) => {
       const [created] = await ctx.db
@@ -290,14 +290,14 @@ export const inboxRouter = {
       return existing ?? null;
     }),
 
-  deleteTag: businessScopedProcedure
+  deleteTag: permissionProcedure("inbox", "edit")
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       await ctx.db.delete(tag).where(and(eq(tag.id, input.id), eq(tag.businessId, ctx.businessId)));
       return { ok: true as const };
     }),
 
-  tagCustomer: businessScopedProcedure
+  tagCustomer: permissionProcedure("inbox", "edit")
     .input(z.object({ customerId: z.string(), tagId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       // Verify both the customer and the tag actually belong to this store before linking them —
@@ -314,7 +314,7 @@ export const inboxRouter = {
       return { ok: true as const };
     }),
 
-  untagCustomer: businessScopedProcedure
+  untagCustomer: permissionProcedure("inbox", "edit")
     .input(z.object({ customerId: z.string(), tagId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       await ctx.db
@@ -323,7 +323,7 @@ export const inboxRouter = {
       return { ok: true as const };
     }),
 
-  listNotes: businessScopedProcedure
+  listNotes: permissionProcedure("inbox", "view")
     .input(z.object({ customerId: z.string() }))
     .query(async ({ ctx, input }) => {
       return ctx.db
@@ -333,7 +333,7 @@ export const inboxRouter = {
         .orderBy(desc(customerNote.createdAt));
     }),
 
-  addNote: businessScopedProcedure
+  addNote: permissionProcedure("inbox", "edit")
     .input(z.object({ customerId: z.string(), body: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const [created] = await ctx.db
@@ -354,7 +354,7 @@ export const inboxRouter = {
    * in @acme/db/helpers/aiHelpers, which this reuses rather than duplicating the OpenAI
    * call here). Reads straight from this thread's own message history in the DB rather
    * than trusting whatever the client currently has loaded. */
-  generateSummary: businessScopedProcedure
+  generateSummary: permissionProcedure("inbox", "edit")
     .input(z.object({ threadId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const summary = await generateAndSaveConversationSummary(ctx.businessOwnerId, ctx.businessId, input.threadId);
