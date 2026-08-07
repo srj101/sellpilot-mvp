@@ -484,7 +484,9 @@ export const subscriptionRouter = {
       // double-apply (billing plan E1/E2).
       if (invoice.status === "paid") return { ok: true as const, businessSlug: biz?.slug };
 
-      if (result.amount !== undefined && Math.abs(result.amount - invoice.amount) > 1) {
+      // Fail closed: no amount in the gateway response is not proof of payment, and a
+      // validated amount that doesn't match the invoice means the customer underpaid.
+      if (result.amount === undefined || Math.abs(result.amount - invoice.amount) > 1) {
         console.error(`[billing] amount mismatch on invoice ${invoice.id}: expected ${invoice.amount}, got ${result.amount}`);
         return { ok: false as const };
       }

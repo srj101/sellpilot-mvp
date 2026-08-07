@@ -185,6 +185,16 @@ export const checkoutRouter = {
       const result = await validatePayment(input.valId, credentials);
       if (!result.valid || result.transactionId !== input.tranId) return { ok: false };
 
+      // Fail closed: a gateway response with no amount is not proof of payment, and a
+      // validated amount that doesn't match the order total means the customer paid
+      // less than they owe (same 1-taka tolerance as the billing-side guard).
+      if (result.amount === undefined || Math.abs(result.amount - orderRow.total) > 1) {
+        console.error(
+          `[checkout] amount mismatch on order ${orderRow.id}: expected ${orderRow.total}, got ${result.amount}`,
+        );
+        return { ok: false };
+      }
+
       // The real rail (bkash/nagad/card/internetbank), not the flat "sslcommerz" string —
       // see billing plan D8. Without this the Payments page can never show a per-method
       // breakdown, no matter how the UI is built.
