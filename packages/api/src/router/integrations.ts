@@ -157,7 +157,6 @@ export const integrationsRouter = {
         platformAccountName: metaConnection.platformAccountName,
         webhookSubscriptionStatus: metaConnection.webhookSubscriptionStatus,
         connectedAt: metaConnection.connectedAt,
-        accessToken: metaConnection.accessToken,
       })
       .from(metaConnection)
       .where(eq(metaConnection.businessId, ctx.businessId));
