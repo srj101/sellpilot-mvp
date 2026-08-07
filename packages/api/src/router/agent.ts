@@ -1,4 +1,5 @@
 import type { TRPCRouterRecord } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
 import { and, desc, eq, inArray } from "@acme/db";
@@ -16,6 +17,7 @@ import {
   productVariant,
   shippingRate,
 } from "@acme/db/schema";
+import { getMultiProductCartLimit } from "../lib/plan-limits";
 import { permissionProcedure } from "../trpc";
 
 const CustomerInput = z.object({
@@ -351,6 +353,14 @@ export const agentRouter = {
     }),
 
   createOrder: permissionProcedure("orders", "create").input(CreateOrderInput).mutation(async ({ ctx, input }) => {
+      const limit = await getMultiProductCartLimit(ctx);
+      if (input.items.length > limit) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `Your plan allows up to ${limit} products per order. Split the order or upgrade.`,
+        });
+      }
+
       const userId = ctx.businessOwnerId;
       const businessId = ctx.businessId;
 

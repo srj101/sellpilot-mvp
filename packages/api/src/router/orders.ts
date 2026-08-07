@@ -1,4 +1,5 @@
 import type { TRPCRouterRecord } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { desc, eq, and, inArray, sql, createCustomerAndOrder, quoteOrder } from "@acme/db";
@@ -8,6 +9,7 @@ import { getNotificationPreference, resolveNotificationRecipient } from "@acme/d
 import { sendEmail } from "@acme/auth/email";
 
 import { recordOrderStatusChange } from "../lib/order-audit";
+import { getMultiProductCartLimit } from "../lib/plan-limits";
 import { sendMetaInboxReply } from "../lib/meta";
 import { permissionProcedure } from "../trpc";
 
@@ -135,7 +137,9 @@ export const ordersRouter = {
   /** Live price/stock preview for the manual order form — same pricing logic the AI agent
    * uses. The form itself is still single-product + one optional combo item (see
    * create-order-sheet.tsx); translated to quoteOrder's items[] shape here so the
-   * underlying pricing helper only has one calling convention to support. */
+   * underlying pricing helper only has one calling convention to support.
+   * PLAN-03 note: this pricing query is single-product + optional combo (max 2 items), so
+   * the cart limit doesn't apply yet — re-check if the input schema ever grows to N items. */
   quote: permissionProcedure("orders", "view")
     .input(
       z.object({
@@ -198,6 +202,16 @@ export const ordersRouter = {
         { productId, variantId, quantity },
         ...(comboProductId ? [{ productId: comboProductId, variantId: comboVariantId, quantity: comboQuantity ?? 1 }] : []),
       ];
+
+      // PLAN-03: defensive gate — this path is a single product + optional combo (max 2
+      // today), but future multi-item payloads must respect the plan's cart limit too.
+      const cartLimit = await getMultiProductCartLimit(ctx);
+      if (items.length > cartLimit) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `Your plan allows up to ${cartLimit} products per order. Split the order or upgrade.`,
+        });
+      }
 
       const result = await createCustomerAndOrder({
         userId: ctx.businessOwnerId,

@@ -137,6 +137,14 @@ export async function getProductUsage(ctx: { db: typeof Db; businessId: string }
   return { plan: planKey, planName: name, limit: limits.products, used, remaining: Math.max(0, limits.products - used) };
 }
 
+/** Max items a single order can carry on the current plan (5/12/28) — the API-side source
+ * of truth for the tRPC order paths. The AI-agent keeps its own synced mirror
+ * (MULTI_PRODUCT_CART_LIMIT in ai-agent/types.ts); leave both in sync. */
+export async function getMultiProductCartLimit(ctx: { db: typeof Db; businessId: string }): Promise<number> {
+  const planKey = await resolvePlanKey(ctx.db, ctx.businessId);
+  return PLAN_CATALOG[planKey].limits.multiProductCartLimit;
+}
+
 /**
  * Gates connecting a messaging channel by the current plan's `channels` list (spec §6:
  * Starter = Messenger only, Growth = +Instagram, Pro = +WhatsApp). Call this BEFORE
