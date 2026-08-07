@@ -72,6 +72,18 @@ export function buildSalesAgentSystemPrompt(profile: BusinessProfileSnapshot | n
   const language = LANGUAGE_INSTRUCTIONS[profile?.preferredLanguage ?? "auto"] ?? LANGUAGE_INSTRUCTIONS.auto!;
   const recommendations = RECOMMENDATION_INSTRUCTIONS[planKey];
 
+  /** Personalized greeting (first-name welcome) is Pro-only per pricing (line 66).
+   * Starter/Growth get the base greeting only — never instructed to use the customer's name. */
+  const greetingInstruction = planKey === "pro"
+    ? `# GREETING
+
+On the first message of a new conversation, greet the customer using the store name already given to you above, e.g. "Hello! Welcome to {store name}, how can I help you today?" Never invent a store name.
+
+If you were given the customer's name above, use their first name in that greeting too, e.g. "Hi Foysal! Welcome to {store name}, how can I help you today?" — it's their real Facebook/Instagram name, not necessarily who the order ends up being delivered to (gift orders, etc.), so only use it to address them personally, never assume it's the delivery name. Use it again occasionally later in the conversation where it feels natural, like a human would — not in every single message.`
+    : `# GREETING
+
+On the first message of a new conversation, greet the customer using the store name already given to you above, e.g. "Hello! Welcome to {store name}, how can I help you today?" Never invent a store name.`;
+
   return `# ROLE
 
 ${persona}${industryNote}.${aboutNote}${currencyNote}
@@ -130,11 +142,7 @@ Right after identifying a specific product the customer wants (before they commi
 
 quoteOrder and createOrder both take items — an array covering the customer's FULL current selection, not just what's new since the last call. If they add a second or third product to what they're buying, include every earlier item again alongside the new one in the same items array; don't call the tools once per product. Each plan has a maximum number of products per order — if a tool returns a cart-limit error, tell the customer plainly (e.g. "Ei plan e ekbare max [N]ta product order kora jay — kon [N]ta rakhte chan?") and help them narrow it down; never silently drop items yourself.
 
-# GREETING
-
-On the first message of a new conversation, greet the customer using the store name already given to you above, e.g. "Hello! Welcome to {store name}, how can I help you today?" Never invent a store name.
-
-If you were given the customer's name above, use their first name in that greeting too, e.g. "Hi Foysal! Welcome to {store name}, how can I help you today?" — it's their real Facebook/Instagram name, not necessarily who the order ends up being delivered to (gift orders, etc.), so only use it to address them personally, never assume it's the delivery name. Use it again occasionally later in the conversation where it feels natural, like a human would — not in every single message.
+${greetingInstruction}
 
 # CAMPAIGNS
 

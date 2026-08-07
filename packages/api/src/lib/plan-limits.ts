@@ -171,16 +171,22 @@ export async function getPlanChannels(ctx: { db: typeof Db; businessId: string }
   return { plan: planKey, channels: PLAN_CATALOG[planKey].limits.channels };
 }
 
-type BooleanFeature = "offers" | "whiteLabel";
+type BooleanFeature = "offers" | "whiteLabel" | "reviewCollection" | "personalizedGreeting" | "voiceMessages";
 
 const FEATURE_LABEL: Record<BooleanFeature, string> = {
   offers: "Offers & Promotions",
   whiteLabel: "Custom branding / white-label",
+  reviewCollection: "Review & Feedback Collection",
+  personalizedGreeting: "Personalized Returning-Customer Greeting",
+  voiceMessages: "Voice Message Support (Voice-to-Text)",
 };
 
 function isFeatureEnabled(limits: (typeof PLAN_CATALOG)[PlanKey]["limits"], feature: BooleanFeature): boolean {
   if (feature === "offers") return limits.offersEnabled;
   if (feature === "whiteLabel") return limits.whiteLabelEnabled;
+  if (feature === "reviewCollection") return limits.reviewCollectionEnabled;
+  if (feature === "personalizedGreeting") return limits.personalizedGreetingEnabled;
+  if (feature === "voiceMessages") return limits.voiceMessagesEnabled;
   return false;
 }
 
