@@ -9,13 +9,13 @@ import { protectedProcedure } from "../trpc";
 
 /**
  * Platform-wide user management — every account on this SellPilot instance (all
- * merchants, plus any admin/super_admin staff), not to be confused with roles.ts's
- * per-store team members (an org's invited teammates). Restricted to admin/super_admin
+ * merchants, plus any admin/superadmin staff), not to be confused with roles.ts's
+ * per-store team members (an org's invited teammates). Restricted to admin/superadmin
  * since it exposes other merchants' account info.
  */
 function assertPlatformAdmin(ctx: { session: { user: { role?: string | null } } }) {
   const platformRole = ctx.session.user.role;
-  if (platformRole !== "admin" && platformRole !== "super_admin") {
+  if (platformRole !== "admin" && platformRole !== "superadmin") {
     throw new TRPCError({ code: "FORBIDDEN", message: "Only SellPilot staff can manage platform users." });
   }
 }
@@ -39,10 +39,10 @@ export const usersRouter = {
   }),
 
   setRole: protectedProcedure
-    .input(z.object({ userId: z.string(), role: z.enum(["client", "admin", "super_admin"]) }))
+    .input(z.object({ userId: z.string(), role: z.enum(["client", "admin", "superadmin"]) }))
     .mutation(async ({ ctx, input }) => {
       assertPlatformAdmin(ctx);
-      if (ctx.session.user.role !== "super_admin") {
+      if (ctx.session.user.role !== "superadmin") {
         throw new TRPCError({ code: "FORBIDDEN", message: "Only a super admin can change platform roles." });
       }
       await ctx.authApi.setRole({ body: { userId: input.userId, role: input.role }, headers: ctx.headers });

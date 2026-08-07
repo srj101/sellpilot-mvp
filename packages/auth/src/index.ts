@@ -80,7 +80,7 @@ export function initAuth<
         productionURL: options.productionUrl,
       }),
       expo(),
-      admin(),
+      admin({ adminRoles: ["admin", "superadmin"] }),
       ...(options.extraPlugins ?? []),
     ],
     socialProviders: {

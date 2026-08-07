@@ -81,18 +81,18 @@ export function UsersClient() {
                         </div>
                       </td>
                       <td className="p-4">
-                        {myRole === "super_admin" && u.id !== myId ? (
+                        {myRole === "superadmin" && u.id !== myId ? (
                           <select
                             value={role}
-                            onChange={(e) => setRole.mutate({ userId: u.id, role: e.target.value as "client" | "admin" | "super_admin" })}
+                            onChange={(e) => setRole.mutate({ userId: u.id, role: e.target.value as "client" | "admin" | "superadmin" })}
                             className="h-7 rounded-md border bg-background px-2 text-xs capitalize"
                           >
                             <option value="client">Client</option>
                             <option value="admin">Admin</option>
-                            <option value="super_admin">Super Admin</option>
+                            <option value="superadmin">Super Admin</option>
                           </select>
                         ) : (
-                          <Badge className="capitalize" variant={role === "super_admin" ? "default" : "secondary"}>
+                          <Badge className="capitalize" variant={role === "superadmin" ? "default" : "secondary"}>
                             {role.replace("_", " ")}
                           </Badge>
                         )}
@@ -109,7 +109,7 @@ export function UsersClient() {
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {role !== "super_admin" && u.id !== myId && (
+                          {role !== "superadmin" && u.id !== myId && (
                             <Button
                               size="icon"
                               variant="ghost"

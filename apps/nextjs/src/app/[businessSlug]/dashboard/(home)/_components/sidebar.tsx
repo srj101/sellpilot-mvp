@@ -168,7 +168,7 @@ function useFilteredNavGroups() {
   const trpc = useTRPC();
   const session = authClient.useSession();
   const role = session.data?.user?.role ?? "client";
-  const isPlatformAdmin = role === "admin" || role === "super_admin";
+  const isPlatformAdmin = role === "admin" || role === "superadmin";
 
   const { data: myPermissions } = useQuery(trpc.roles.getMyPermissions.queryOptions());
   const permissionsLoaded = myPermissions !== undefined;
