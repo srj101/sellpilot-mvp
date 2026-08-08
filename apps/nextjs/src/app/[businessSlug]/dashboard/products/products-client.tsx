@@ -15,6 +15,7 @@ import {
   Loader2,
   Lock,
   Plus,
+  Search,
   Sparkles,
   Trash2,
   Upload,
@@ -26,6 +27,7 @@ import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
 import { Input } from "@acme/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@acme/ui/dialog";
+import { Sheet, SheetContent, SheetTitle } from "@acme/ui/sheet";
 import { Skeleton } from "@acme/ui/skeleton";
 import { toast } from "@acme/ui/toast";
 import { cn } from "@acme/ui";
@@ -81,6 +83,7 @@ export function ProductsClient() {
   const atLimit = usage?.remaining === 0;
 
   const [filterStatus, setFilterStatus] = useState<"all" | "in_stock" | "low_stock" | "out_of_stock">("all");
+  const [search, setSearch] = useState("");
   const { data: productsData, isPending } = useQuery(trpc.products.list.queryOptions({ filterStatus }));
   const products = productsData?.products ?? [];
   const variants = productsData?.variants ?? [];
@@ -127,6 +130,22 @@ export function ProductsClient() {
     if (prodVariants.length === 0) return 0;
     return prodVariants.reduce((sum, v) => sum + v.inventoryQuantity, 0);
   };
+
+  // Inverse of bulkCreate's discountPercent -> compareAtPrice conversion (products.ts) —
+  // derives a display percentage from whatever the default/first variant's price vs
+  // compareAtPrice already is, rather than storing a separate discount field.
+  const getProductDiscount = (productId: string): number | null => {
+    const prodVariants = getProductVariants(productId);
+    const primary = prodVariants[0];
+    if (!primary?.compareAtPrice || primary.compareAtPrice <= primary.price) return null;
+    return Math.round((1 - primary.price / primary.compareAtPrice) * 100);
+  };
+
+  const visibleProducts = products.filter((p) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return p.title.toLowerCase().includes(q) || (p.category ?? "").toLowerCase().includes(q);
+  });
 
   const handleEditClick = (product: any) => {
     const prodVariants = getProductVariants(product.id);
@@ -293,26 +312,37 @@ export function ProductsClient() {
     reader.readAsDataURL(file);
   };
 
-  if (view === "create") {
-    return (
-      <ProductForm
-        onSave={() => window.location.reload()}
-        onCancel={() => setView("list")}
-      />
-    );
-  }
+  const closeForm = () => {
+    void qc.invalidateQueries({ queryKey: trpc.products.list.queryKey() });
+    setView("list");
+  };
 
-  if (view === "edit") {
-    return (
-      <ProductForm
-        initialProduct={editingProduct}
-        onSave={() => window.location.reload()}
-        onCancel={() => setView("list")}
-      />
-    );
-  }
+  const productFormSheet = (
+    <Sheet open={view === "create" || view === "edit"} onOpenChange={(open) => !open && setView("list")}>
+      <SheetContent side="right" scrollBody className="w-full sm:max-w-2xl">
+        <SheetTitle className="sr-only">{view === "edit" ? "Edit Product" : "Add Product"}</SheetTitle>
+        {(view === "create" || view === "edit") && (
+          <ProductForm
+            initialProduct={view === "edit" ? editingProduct : undefined}
+            onSave={closeForm}
+            onCancel={() => setView("list")}
+            onDelete={
+              view === "edit"
+                ? () => {
+                    setView("list");
+                    setDeleteTarget(editingProduct.id);
+                  }
+                : undefined
+            }
+          />
+        )}
+      </SheetContent>
+    </Sheet>
+  );
 
   return (
+    <>
+      {productFormSheet}
     <div className="space-y-6">
       {/* Page Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" style={{ marginBottom: "var(--haze-section-gap, 24px)" }}>
@@ -518,6 +548,15 @@ export function ProductsClient() {
       ) : (
         /* PRODUCT CATALOG LISTING */
         <div className="space-y-4">
+          <div className="relative max-w-xs">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search products by name or category..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
           <div className="flex items-center gap-1 border-b pb-2 text-xs">
             {(["all", "in_stock", "low_stock", "out_of_stock"] as const).map((st) => (
               <button
@@ -542,9 +581,12 @@ export function ProductsClient() {
                 <thead>
                   <tr className="border-b border-border bg-muted/40 text-left">
                     <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Product</th>
+                    <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Category</th>
                     <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Status</th>
                     <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Price</th>
+                    <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Discount</th>
                     <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Stock</th>
+                    <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Rating</th>
                     <th className="px-4 py-3 text-xs font-medium text-muted-foreground">Variants</th>
                     <th className="px-4 py-3 text-xs font-medium text-muted-foreground text-right">Actions</th>
                   </tr>
@@ -562,16 +604,19 @@ export function ProductsClient() {
                             </div>
                           </div>
                         </td>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
                         <td className="px-4 py-3"><Skeleton className="h-5 w-14 rounded-full" /></td>
                         <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-12" /></td>
                         <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
+                        <td className="px-4 py-3"><Skeleton className="h-4 w-12" /></td>
                         <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
                         <td className="px-4 py-3"><Skeleton className="ml-auto h-4 w-12" /></td>
                       </tr>
                     ))
                   )}
 
-                  {!isPending && products.map((p) => (
+                  {!isPending && visibleProducts.map((p) => (
                     <tr
                       key={p.id}
                       className="hover:bg-muted/30 transition-colors"
@@ -601,6 +646,9 @@ export function ProductsClient() {
                           </div>
                         </div>
                       </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                        {p.category || "—"}
+                      </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                           p.status === "active"
@@ -613,11 +661,17 @@ export function ProductsClient() {
                       <td className="px-4 py-3 text-sm font-semibold text-foreground">
                         {getProductPriceRange(p.id)}
                       </td>
+                      <td className="px-4 py-3 text-xs font-medium text-muted-foreground">
+                        {getProductDiscount(p.id) !== null ? `${getProductDiscount(p.id)}% off` : "—"}
+                      </td>
                       <td className="px-4 py-3">
                         <StockBadge
                           status={(p as any).stockStatus ?? "in_stock"}
                           qty={(p as any).totalInventoryQuantity ?? getProductTotalStock(p.id)}
                         />
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                        {p.rating ? `★ ${p.rating}` : "—"}
                       </td>
                     <td className="px-4 py-3 text-xs font-medium text-muted-foreground">
                       {getProductVariants(p.id).length || 1} variants
@@ -647,9 +701,9 @@ export function ProductsClient() {
                   </tr>
                 ))}
 
-                {!isPending && products.length === 0 && (
+                {!isPending && visibleProducts.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-16 text-center text-muted-foreground">
+                    <td colSpan={9} className="px-4 py-16 text-center text-muted-foreground">
                       <div className="flex flex-col items-center justify-center">
                         <div className="bg-background mb-4 flex h-12 w-12 items-center justify-center rounded-xl border shadow-sm">
                           <Archive className="h-5 w-5 text-muted-foreground" />
@@ -658,14 +712,18 @@ export function ProductsClient() {
                           No products found
                         </h3>
                         <p className="text-muted-foreground max-w-sm mt-1 text-xs leading-relaxed">
-                          Create your first product to generate variation image vector embeddings for AI recommendations.
+                          {products.length === 0
+                            ? "Create your first product to generate variation image vector embeddings for AI recommendations."
+                            : "No products match your search — try a different name or category."}
                         </p>
-                        <Button
-                          onClick={() => setView("create")}
-                          className="mt-4 h-8 text-xs gap-1.5"
-                        >
-                          <Plus className="h-4 w-4" /> Create Product
-                        </Button>
+                        {products.length === 0 && (
+                          <Button
+                            onClick={() => setView("create")}
+                            className="mt-4 h-8 text-xs gap-1.5"
+                          >
+                            <Plus className="h-4 w-4" /> Create Product
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -823,5 +881,6 @@ export function ProductsClient() {
         onConfirm={handleConfirmDelete}
       />
     </div>
+    </>
   );
 }

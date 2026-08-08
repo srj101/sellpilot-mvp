@@ -8,6 +8,7 @@ import {
   Image as ImageIcon,
   Plus,
   Sparkles,
+  Star,
   Trash2,
   Upload,
   X,
@@ -16,19 +17,45 @@ import {
 import { Button } from "@acme/ui/button";
 import { Input } from "@acme/ui/input";
 import { Separator } from "@acme/ui/separator";
+import { cn } from "@acme/ui";
 
 import { useTRPC } from "~/trpc/react";
+
+function StarPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  return (
+    <div className="flex items-center gap-1">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          type="button"
+          onClick={() => onChange(value === n ? 0 : n)}
+          className="p-0.5"
+          aria-label={`${n} star${n > 1 ? "s" : ""}`}
+        >
+          <Star
+            className={cn(
+              "h-5 w-5 transition-colors",
+              n <= value ? "fill-amber-400 text-amber-400" : "text-muted-foreground",
+            )}
+          />
+        </button>
+      ))}
+    </div>
+  );
+}
 
 interface ProductFormProps {
   initialProduct?: any; // If editing
   onSave: () => void;
   onCancel: () => void;
+  onDelete?: () => void;
 }
 
 export function ProductForm({
   initialProduct,
   onSave,
   onCancel,
+  onDelete,
 }: ProductFormProps) {
   const isEditing = !!initialProduct;
   const trpc = useTRPC();
@@ -43,6 +70,7 @@ export function ProductForm({
   );
   const [category, setCategory] = useState(initialProduct?.category ?? "");
   const [gender, setGender] = useState(initialProduct?.gender ?? "");
+  const [rating, setRating] = useState<number>(initialProduct?.rating ?? 0);
   const [status, setStatus] = useState(initialProduct?.status ?? "active");
   const [images, setImages] = useState<string[]>(initialProduct?.images ?? []);
   const [newImageUrl, setNewImageUrl] = useState("");
@@ -192,6 +220,19 @@ export function ProductForm({
     setOptions((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // One-click shortcuts for the two most common option types — the builder above stays
+  // fully freeform (any option name, e.g. Material/Style), this just skips typing for
+  // the common Colour/Size case.
+  const handleQuickAddOption = (name: string) => {
+    if (options.some((o) => o.name.toLowerCase() === name.toLowerCase())) return;
+    if (options.length >= 3) {
+      setError("Maximum 3 options are allowed (Shopify limit)");
+      return;
+    }
+    setOptions((prev) => [...prev, { name, values: [] }]);
+    setError("");
+  };
+
   const handleAddOptionValue = (optionIndex: number, value: string) => {
     if (value.trim() === "") return;
     const updated = [...options];
@@ -265,6 +306,7 @@ export function ProductForm({
         images,
         options: hasVariants ? options : [],
         variants: finalVariants,
+        rating: rating || undefined,
         lowStockThreshold: Number(lowStockThreshold) || 5,
       };
 
@@ -300,6 +342,11 @@ export function ProductForm({
           </p>
         </div>
         <div className="flex gap-3">
+          {onDelete && (
+            <Button type="button" variant="destructive" onClick={onDelete}>
+              <Trash2 className="mr-2 h-4 w-4" /> Delete product
+            </Button>
+          )}
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
           </Button>
@@ -362,6 +409,12 @@ export function ProductForm({
                   <option value="unisex">Unisex</option>
                   <option value="kids">Kids</option>
                 </select>
+              </div>
+              <div>
+                <label className="text-muted-foreground mb-1.5 block text-xs font-semibold uppercase tracking-wider">
+                  Rating
+                </label>
+                <StarPicker value={rating} onChange={setRating} />
               </div>
               <div>
                 <label className="text-muted-foreground mb-1.5 block text-xs font-semibold uppercase tracking-wider">
@@ -559,21 +612,39 @@ export function ProductForm({
                   ))}
 
                   {options.length < 3 && (
-                    <div className="flex items-center gap-3">
-                      <Input
-                        value={newOptionName}
-                        onChange={(e) => setNewOptionName(e.target.value)}
-                        placeholder="Option name (e.g. Size, Color)..."
-                        className="rounded-xl border bg-background/50 focus:bg-background"
-                      />
-                      <Button
-                        type="button"
-                        onClick={handleAddOption}
-                        variant="outline"
-                        className="shrink-0"
-                      >
-                        <Plus className="mr-2 h-4 w-4" /> Add Option
-                      </Button>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleQuickAddOption("Colour")}
+                          className="rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-muted"
+                        >
+                          + Colour
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickAddOption("Size")}
+                          className="rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-muted"
+                        >
+                          + Size
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Input
+                          value={newOptionName}
+                          onChange={(e) => setNewOptionName(e.target.value)}
+                          placeholder="Or type a custom option name (e.g. Material)..."
+                          className="rounded-xl border bg-background/50 focus:bg-background"
+                        />
+                        <Button
+                          type="button"
+                          onClick={handleAddOption}
+                          variant="outline"
+                          className="shrink-0"
+                        >
+                          <Plus className="mr-2 h-4 w-4" /> Add Option
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
