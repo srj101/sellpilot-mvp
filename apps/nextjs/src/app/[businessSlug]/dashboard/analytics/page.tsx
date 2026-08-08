@@ -24,6 +24,7 @@ const EMPTY_SUMMARY: {
   weeklyInquiries: { total: number; days: { label: string; count: number }[] };
   topProducts: { name: string; qty: number; revenue: number }[];
   customersByCity: { city: string; count: number; pct: number }[];
+  channelPerformance: { channel: string; conversations: number; orders: number; pct: number }[];
   revenueStats: {
     revenue: number;
     revenueTrend: number | null;
@@ -48,6 +49,7 @@ const EMPTY_SUMMARY: {
   weeklyInquiries: { total: 0, days: [] },
   topProducts: [],
   customersByCity: [],
+  channelPerformance: [],
   revenueStats: {
     revenue: 0,
     revenueTrend: null,

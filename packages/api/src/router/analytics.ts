@@ -108,11 +108,11 @@ export const analyticsRouter = {
           .innerJoin(order, eq(orderItem.orderId, order.id))
           .where(eq(order.businessId, businessId)),
         ctx.db
-          .select({ id: order.id, createdAt: order.createdAt, total: order.total, status: order.status })
+          .select({ id: order.id, createdAt: order.createdAt, total: order.total, status: order.status, channel: order.channel })
           .from(order)
           .where(eq(order.businessId, businessId)),
         ctx.db
-          .select({ createdAt: agentSession.createdAt })
+          .select({ createdAt: agentSession.createdAt, channel: agentSession.channel })
           .from(agentSession)
           .where(eq(agentSession.businessId, businessId)),
         ctx.db
@@ -217,7 +217,40 @@ export const analyticsRouter = {
       const currentSessions = sessions.filter((s) => inWindow(s.createdAt.getTime(), windowStart, windowEnd));
       const prevSessions = sessions.filter((s) => inWindow(s.createdAt.getTime(), prevStart, prevEnd));
 
-      // FR-ANA-01/02/03 — Revenue, AOV, and Return Rate, same "exclude cancelled/returned
+      // FR-ANA-03 — proportion of conversations/orders per connected channel. Same
+      // vocabulary as agentSession.channel/order.channel everywhere else in the app
+      // (e.g. orders-client.tsx's channelLabel).
+      const CHANNEL_LABEL: Record<string, string> = {
+        messenger: "Messenger",
+        instagram: "Instagram",
+        whatsapp: "WhatsApp",
+        web: "Web",
+      };
+      const channelCounts = new Map<string, { conversations: number; orders: number }>();
+      for (const s of currentSessions) {
+        const key = CHANNEL_LABEL[s.channel] ?? s.channel;
+        const entry = channelCounts.get(key) ?? { conversations: 0, orders: 0 };
+        entry.conversations++;
+        channelCounts.set(key, entry);
+      }
+      for (const o of currentOrders) {
+        if (!o.channel) continue;
+        const key = CHANNEL_LABEL[o.channel] ?? o.channel;
+        const entry = channelCounts.get(key) ?? { conversations: 0, orders: 0 };
+        entry.orders++;
+        channelCounts.set(key, entry);
+      }
+      const totalConversations = currentSessions.length || 1;
+      const channelPerformance = [...channelCounts.entries()]
+        .map(([channel, c]) => ({
+          channel,
+          conversations: c.conversations,
+          orders: c.orders,
+          pct: Math.round((c.conversations / totalConversations) * 1000) / 10,
+        }))
+        .sort((a, b) => b.conversations - a.conversations);
+
+      // FR-ANA-01 — Revenue, AOV, and Return Rate, same "exclude cancelled/returned
       // from revenue" convention the Dashboard home page already uses.
       const isRevenueEligible = (o: (typeof orders)[number]) => o.status !== "cancelled" && o.status !== "returned";
       const revenueOf = (rows: typeof orders) => rows.filter(isRevenueEligible).reduce((sum, o) => sum + o.total, 0);
@@ -363,6 +396,7 @@ export const analyticsRouter = {
         topCountries,
         revenueByCategory,
         customersByCity,
+        channelPerformance,
         chatOrderSeries,
         messagingStats,
         weeklyInquiries,

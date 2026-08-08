@@ -44,6 +44,13 @@ interface CityRow {
   pct: number;
 }
 
+interface ChannelRow {
+  channel: string;
+  conversations: number;
+  orders: number;
+  pct: number;
+}
+
 interface RevenueStats {
   revenue: number;
   revenueTrend: number | null;
@@ -77,6 +84,7 @@ export function AnalyticsClient({
   weeklyInquiries,
   topProducts,
   customersByCity,
+  channelPerformance,
   revenueStats,
   revenueSeries,
 }: {
@@ -90,6 +98,7 @@ export function AnalyticsClient({
   weeklyInquiries: WeeklyInquiries;
   topProducts: TopProductRow[];
   customersByCity: CityRow[];
+  channelPerformance: ChannelRow[];
   revenueStats: RevenueStats;
   revenueSeries: RevenuePoint[];
 }) {
@@ -526,6 +535,52 @@ export function AnalyticsClient({
           </CardContent>
         </Card>
       </div>
+      )}
+
+      {/* FR-ANA-03: Channel Performance Split — Pro only, same tier as the rest of Segment 3 */}
+      {tier === "full" && (
+      <Card className="card-hover">
+        <CardHeader className="border-b py-4">
+          <CardTitle>Channel Performance</CardTitle>
+          <CardDescription>Conversations and orders by connected channel</CardDescription>
+        </CardHeader>
+        <CardContent className="py-2">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th className="py-3 font-medium">Channel</th>
+                  <th className="py-3 font-medium">Progress</th>
+                  <th className="py-3 text-right font-medium">Conversations</th>
+                  <th className="py-3 text-right font-medium">Orders</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {channelPerformance.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-6 text-center text-muted-foreground">
+                      No conversations in this range yet
+                    </td>
+                  </tr>
+                ) : (
+                  channelPerformance.map((c, idx) => (
+                    <tr key={idx}>
+                      <td className="py-3 font-medium text-foreground">{c.channel}</td>
+                      <td className="py-3 w-40">
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full bg-primary rounded-full" style={{ width: `${c.pct}%` }} />
+                        </div>
+                      </td>
+                      <td className="py-3 text-right font-bold text-foreground">{c.conversations.toLocaleString()}</td>
+                      <td className="py-3 text-right text-muted-foreground">{c.orders.toLocaleString()}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
       )}
 
       <CustomKpiPanel businessSlug={businessSlug} />

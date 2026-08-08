@@ -44,6 +44,7 @@ type Order = {
   shippingDistrict: string | null;
   couponCode: string | null;
   channel: string | null;
+  paymentMethod: string | null;
   notes: string | null;
   createdAt: Date;
 };
@@ -96,6 +97,14 @@ function channelLabel(channel: string | null) {
   };
   return map[channel] ?? channel;
 }
+
+const PAYMENT_METHOD_LABEL: Record<string, string> = {
+  bkash: "bKash",
+  nagad: "Nagad",
+  card: "Card",
+  sslcommerz: "Card/Online",
+  cod: "Cash on Delivery",
+};
 
 export function OrdersClient() {
   const trpc = useTRPC();
@@ -293,6 +302,12 @@ export function OrdersClient() {
                           {channel}
                         </Badge>
                       )}
+                      {o.paymentMethod && (
+                        <Badge variant="outline" className="gap-1 text-[10px]">
+                          <CreditCard className="h-3 w-3" />
+                          {PAYMENT_METHOD_LABEL[o.paymentMethod] ?? o.paymentMethod}
+                        </Badge>
+                      )}
                     </div>
                     <p className="mt-0.5 text-sm text-muted-foreground">
                       {o.customerName}
@@ -381,6 +396,10 @@ export function OrdersClient() {
                           Breakdown
                         </h4>
                         <div className="space-y-0.5 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Payment Method</span>
+                            <span>{o.paymentMethod ? (PAYMENT_METHOD_LABEL[o.paymentMethod] ?? o.paymentMethod) : "—"}</span>
+                          </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Subtotal</span>
                             <span>{formatCurrency(o.subtotal)}</span>
