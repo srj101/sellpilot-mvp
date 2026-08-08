@@ -33,12 +33,12 @@ function TrendBadge({ value }: { value: number | null }) {
   );
 }
 
-function TrendBadgeDay({ value }: { value: number | null }) {
+function TrendBadgeDay({ value, invert = false }: { value: number | null; invert?: boolean }) {
   if (value === null) return null;
-  const positive = value >= 0;
+  const positive = invert ? value <= 0 : value >= 0;
   return (
     <p className={cn("mt-0.5 text-xs", positive ? "text-green-500" : "text-rose-500")}>
-      {positive ? "+" : ""}
+      {value >= 0 ? "+" : ""}
       {value.toFixed(1)}% vs yesterday
     </p>
   );
@@ -50,6 +50,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
   const [now] = useState(() => Date.now());
   const { data, isPending } = useQuery(trpc.dashboard.getOverview.queryOptions());
   const orders: SerializedOrder[] = data?.orders ?? [];
+  const sessions: { id: string; createdAt: string | Date }[] = data?.sessions ?? [];
   const customerCount = data?.customerCount ?? 0;
   const recentItems = data?.recentItems ?? [];
   const messageStats = data?.messageStats ?? {
@@ -84,14 +85,43 @@ export function DashboardClient({ userName }: DashboardClientProps) {
     const todayCustomers = new Set(todayOrders.map((o) => o.customerPhone ?? o.customerName)).size;
     const yesterdayCustomers = new Set(yesterdayOrders.map((o) => o.customerPhone ?? o.customerName)).size;
 
+    // Unfiltered by status — conversion/return rate both need every order placed today,
+    // not just the revenue-eligible subset (matches analytics.ts's conversionRateOf/
+    // returnRateOf, which both work off the raw per-window order set).
     const todaysOrders = orders.filter((o) => new Date(o.createdAt).getTime() >= todayStart.getTime());
+    const yesterdaysOrders = orders.filter((o) => inWindow(o, yesterdayStart.getTime(), todayStart.getTime()));
     const todaysRevenue = todaysOrders
       .filter((o) => o.status !== "cancelled" && o.status !== "returned")
       .reduce((s, o) => s + o.total, 0);
 
+    // Conversations (FR-DSH-01) — distinct chat sessions, not raw message events.
+    const sessionInWindow = (s: { createdAt: string | Date }, start: number, end: number) => {
+      const t = new Date(s.createdAt).getTime();
+      return t >= start && t < end;
+    };
+    const todaySessions = sessions.filter((s) => sessionInWindow(s, todayStart.getTime(), now));
+    const yesterdaySessions = sessions.filter((s) => sessionInWindow(s, yesterdayStart.getTime(), todayStart.getTime()));
+
+    // Conversion Rate — today's/yesterday's rate is the displayed value itself (a rate
+    // has no meaningful running total), same numerator convention as analytics.ts's
+    // conversionRateOf: every order placed in the window, regardless of status.
+    const conversionRateOf = (orderCount: number, sessionCount: number) =>
+      sessionCount > 0 ? (orderCount / sessionCount) * 100 : 0;
+    const todayConversionRate = conversionRateOf(todaysOrders.length, todaySessions.length);
+    const yesterdayConversionRate = conversionRateOf(yesterdaysOrders.length, yesterdaySessions.length);
+
+    // Return Rate — same shape as analytics.ts's returnRateOf, scoped by order createdAt.
+    const returnRateOf = (rows: SerializedOrder[]) =>
+      rows.length > 0 ? (rows.filter((o) => o.status === "returned").length / rows.length) * 100 : 0;
+    const todayReturnRate = returnRateOf(todaysOrders);
+    const yesterdayReturnRate = returnRateOf(yesterdaysOrders);
+
     return {
       totalRevenue,
       totalOrders: orders.length,
+      totalConversations: sessions.length,
+      todayConversionRate,
+      todayReturnRate,
       currentRevenue,
       prevRevenue,
       currentCustomers,
@@ -107,9 +137,12 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         revenue: trendPctDay(todayRevenue, yesterdayRevenue),
         orders: trendPctDay(todayOrders.length, yesterdayOrders.length),
         customers: trendPctDay(todayCustomers, yesterdayCustomers),
+        conversations: trendPctDay(todaySessions.length, yesterdaySessions.length),
+        conversionRate: trendPctDay(todayConversionRate, yesterdayConversionRate),
+        returnRate: trendPctDay(todayReturnRate, yesterdayReturnRate),
       },
     };
-  }, [orders, now]);
+  }, [orders, sessions, now]);
 
   // Channel breakdown percentages
   const { waPct, fbPct, igPct } = useMemo(() => {
@@ -242,8 +275,8 @@ export function DashboardClient({ userName }: DashboardClientProps) {
         </svg>
       </div>
 
-      {/* ─── Stat Cards Section (4 columns) ────────────────────────── */}
-      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+      {/* ─── Stat Cards Section (6 cards, 3 columns) ────────────────── */}
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {/* Total Revenue */}
         <Card className="card-hover p-5">
           <CardContent className="p-0">
@@ -307,11 +340,11 @@ export function DashboardClient({ userName }: DashboardClientProps) {
           </CardContent>
         </Card>
 
-        {/* Total Chat Sessions */}
+        {/* Conversations */}
         <Card className="card-hover p-5">
           <CardContent className="p-0">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-muted-foreground">Total Chat Sessions</p>
+              <p className="text-sm font-medium text-muted-foreground">Conversations</p>
               <div className="rounded-xl bg-pink-500/10 p-2 text-pink-500">
                 <MessageCircle className="h-4 w-4" />
               </div>
@@ -320,8 +353,48 @@ export function DashboardClient({ userName }: DashboardClientProps) {
               <><Skeleton className="mt-3 h-7 w-16" /><Skeleton className="mt-1.5 h-3 w-32" /></>
             ) : (
               <>
-                <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{messageStats.total.toLocaleString()}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Messages received & sent</p>
+                <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{stats.totalConversations.toLocaleString()}</p>
+                <TrendBadgeDay value={stats.trendsDay.conversations} />
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Conversion Rate */}
+        <Card className="card-hover p-5">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">Conversion Rate</p>
+              <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-500">
+                <TrendingUp className="h-4 w-4" />
+              </div>
+            </div>
+            {isPending ? (
+              <><Skeleton className="mt-3 h-7 w-16" /><Skeleton className="mt-1.5 h-3 w-32" /></>
+            ) : (
+              <>
+                <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{stats.todayConversionRate.toFixed(1)}%</p>
+                <TrendBadgeDay value={stats.trendsDay.conversionRate} />
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Return Rate */}
+        <Card className="card-hover p-5">
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">Return Rate</p>
+              <div className="rounded-xl bg-rose-500/10 p-2 text-rose-500">
+                <XCircle className="h-4 w-4" />
+              </div>
+            </div>
+            {isPending ? (
+              <><Skeleton className="mt-3 h-7 w-16" /><Skeleton className="mt-1.5 h-3 w-32" /></>
+            ) : (
+              <>
+                <p className="mt-3 text-2xl font-bold tabular-nums text-foreground">{stats.todayReturnRate.toFixed(1)}%</p>
+                <TrendBadgeDay value={stats.trendsDay.returnRate} invert />
               </>
             )}
           </CardContent>
