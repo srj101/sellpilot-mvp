@@ -7,8 +7,6 @@ await jiti.import("./src/env");
 
 /** @type {import("next").NextConfig} */
 const config = {
-  allowedDevOrigins: ["simaroubaceous-avah-pseudocandidly.ngrok-free.dev", "gnarliest-supermarginal-nehemiah.ngrok-free.dev"],
-
   /** Enables hot reloading for local packages without a build step */
   transpilePackages: [
     "@acme/ai-agent",
