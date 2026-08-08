@@ -30,6 +30,8 @@ import { runSubscriptionRenewal, runTrialExpirySweep } from "./handlers/subscrip
 import { runConversationFollowUp } from "./handlers/conversation-followup.js";
 import { runReviewRequestSweep } from "./handlers/review-request.js";
 import { handleOrderStatusNotify } from "./handlers/order-status-notify.js";
+import { handleActivityLog } from "./handlers/activity-log.js";
+import type { ActivityLogJob } from "@acme/queue";
 
 const DAY_MS = 86_400_000;
 const FIVE_MIN_MS = 5 * 60_000;
@@ -252,6 +254,11 @@ function registerHandlers() {
   // Order status -> chat notification (COD confirmed / payment succeeded on /pay/[token])
   queue.process<OrderStatusNotifyJob>("order-status-notify", async (job) => {
     await handleOrderStatusNotify(job);
+  });
+
+  // Activity Log audit handler
+  queue.process<ActivityLogJob>("activity-log", async (job) => {
+    await handleActivityLog(job);
   });
 
   // Billing jobs (billing plan D6) — no native "repeat" option on the shared queue

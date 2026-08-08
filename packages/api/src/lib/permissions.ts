@@ -14,6 +14,7 @@ export const RESOURCES = [
   "offers",
   "integrations",
   "settings",
+  "activity",
 ] as const;
 export const ACTIONS = ["view", "create", "edit", "delete"] as const;
 
@@ -40,7 +41,7 @@ export const DEFAULT_ROLES = [
     description: "Full access to every resource. Cannot connect/disconnect integrations (owner only).",
     permissions: [
       ...perms(["orders", "products", "customers", "invoices", "users"], ACTIONS),
-      ...perms(["inbox", "analytics", "agent", "offers", "settings"], ACTIONS),
+      ...perms(["inbox", "analytics", "agent", "offers", "settings", "activity"], ACTIONS),
       "integrations:view",
     ],
   },

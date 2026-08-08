@@ -9,6 +9,7 @@ import { getNotificationPreference, resolveNotificationRecipient } from "@acme/d
 import { sendEmail } from "@acme/auth/email";
 
 import { recordOrderStatusChange } from "../lib/order-audit";
+import { enqueueActivityLog } from "../lib/activity-queue";
 import { getMultiProductCartLimit } from "../lib/plan-limits";
 import { sendMetaInboxReply } from "../lib/meta";
 import { permissionProcedure } from "../trpc";
@@ -266,6 +267,19 @@ export const ordersRouter = {
         }
       }
 
+      if (result.success && result.orderId) {
+        await enqueueActivityLog({
+          businessId: ctx.businessId,
+          actorUserId: ctx.session.user.id,
+          actorName: ctx.session.user.name ?? "Staff Member",
+          actorType: "staff",
+          action: "order.create",
+          entityType: "order",
+          entityId: result.orderId,
+          summary: `${ctx.session.user.name ?? "Staff"} created order #${result.orderNumber ?? ""} (৳${(result.total ?? 0).toLocaleString()})`,
+        });
+      }
+
       return result;
     }),
 
@@ -384,6 +398,18 @@ export const ordersRouter = {
         note: input.note,
       });
 
+      await enqueueActivityLog({
+        businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Staff Member",
+        actorType: "staff",
+        action: "order.update_status",
+        entityType: "order",
+        entityId: input.id,
+        summary: `${ctx.session.user.name ?? "Staff"} changed order #${updated.orderNumber} status from ${existingOrder?.status ?? "unknown"} to ${input.status}`,
+        metadata: { fromStatus: existingOrder?.status, toStatus: input.status },
+      });
+
       // COD money is only actually collected at the doorstep — flip the ledger entry from
       // "pending" to "success" once delivery is confirmed, so the Payments page's Pending
       // COD vs Total Collected split reflects reality, not just order status.
@@ -431,6 +457,17 @@ export const ordersRouter = {
       await ctx.db
         .delete(order)
         .where(and(eq(order.id, input.id), eq(order.businessId, businessId)));
+
+      await enqueueActivityLog({
+        businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Staff Member",
+        actorType: "staff",
+        action: "order.delete",
+        entityType: "order",
+        entityId: input.id,
+        summary: `${ctx.session.user.name ?? "Staff"} deleted order`,
+      });
 
       return { success: true };
     }),

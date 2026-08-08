@@ -200,7 +200,6 @@ export default async function InboxPage(props: {
                   <ThreadHeaderActions
                     threadId={selectedThread.id}
                     status={selectedThread.status}
-                    starred={selectedThread.starred}
                     handlingMode={selectedThread.handlingMode}
                   />
                 </div>

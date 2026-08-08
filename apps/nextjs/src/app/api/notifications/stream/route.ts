@@ -65,7 +65,18 @@ export async function GET(req: NextRequest) {
         }
       });
 
+      // Send a heartbeat comment every 15 s to keep the connection alive through
+      // proxies / CDNs that drop idle connections after ~60 s.
+      const heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(`:heartbeat\n\n`));
+        } catch {
+          clearInterval(heartbeat);
+        }
+      }, 15_000);
+
       req.signal.addEventListener("abort", () => {
+        clearInterval(heartbeat);
         unsubscribe();
         try {
           controller.close();

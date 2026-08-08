@@ -8,6 +8,7 @@ import { sendEmail } from "@acme/auth/email";
 
 import { priceForCycle } from "../lib/plans";
 
+import { enqueueActivityLog } from "../lib/activity-queue";
 import { ownerOnlyProcedure, protectedProcedure, businessScopedProcedure, publicProcedure } from "../trpc";
 
 function slugify(name: string) {
@@ -317,6 +318,17 @@ export const businessRouter = {
    * by the ON DELETE CASCADE constraints on their businessId foreign keys.
    */
   delete: ownerOnlyProcedure.mutation(async ({ ctx }) => {
+    await enqueueActivityLog({
+      businessId: ctx.businessId,
+      actorUserId: ctx.session.user.id,
+      actorName: ctx.session.user.name ?? "Staff Member",
+      actorType: "staff",
+      action: "business.delete",
+      entityType: "business",
+      entityId: ctx.businessId,
+      summary: `${ctx.session.user.name ?? "Staff"} deleted the store`,
+    });
+
     await ctx.db.delete(business).where(eq(business.id, ctx.businessId));
     return { success: true };
   }),
@@ -369,6 +381,18 @@ export const businessRouter = {
           metadata: input.description?.trim() || null,
         })
         .where(eq(business.id, ctx.businessId));
+
+      await enqueueActivityLog({
+        businessId: ctx.businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Staff Member",
+        actorType: "staff",
+        action: "business.update_profile",
+        entityType: "business",
+        entityId: ctx.businessId,
+        summary: `${ctx.session.user.name ?? "Staff"} updated store settings`,
+      });
+
       return { success: true };
     }),
 

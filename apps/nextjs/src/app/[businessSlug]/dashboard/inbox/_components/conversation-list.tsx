@@ -30,14 +30,14 @@ export function ConversationList({
 
   const filtered = useMemo(() => {
     return threads.filter((t) => {
+      if (statusTab !== "archived" && t.status === "archived") return false;
       if (statusTab === "order_requests" && !t.hasOrderRequest) return false;
       if (statusTab === "unreplied" && !isUnreplied(t)) return false;
-      if (["ticket", "resolved", "archived"].includes(statusTab) && t.status !== statusTab) return false;
+      if (["ticket", "resolved"].includes(statusTab) && t.status !== statusTab) return false;
       if (channel !== "all" && t.platform !== channel) return false;
       if (search && !t.contactLabel.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threads, search, statusTab, channel]);
 
   return (

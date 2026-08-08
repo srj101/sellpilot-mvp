@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
-import { Send } from "lucide-react";
+import { Loader2, Send } from "lucide-react";
 
 import { useTRPC } from "~/trpc/react";
 
@@ -68,7 +68,11 @@ export function ReplyForm({
           aria-label="Send message"
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-transform hover:scale-105 disabled:opacity-50 disabled:hover:scale-105"
         >
-          <Send className="h-4 w-4" />
+          {sendReply.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Send className="h-4 w-4" />
+          )}
         </button>
       </form>
     </div>

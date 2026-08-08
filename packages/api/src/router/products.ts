@@ -10,6 +10,7 @@ import { assertPlanLimit, getProductUsage } from "../lib/plan-limits";
 import { queueProductImageIndexing } from "../lib/queue";
 import { deleteS3Object, getPresignedUploadUrl, getPublicUrl, getS3ObjectSize, processImageUrl } from "../lib/s3";
 import { getStockStatus } from "../lib/stock-status";
+import { enqueueActivityLog } from "../lib/activity-queue";
 import { permissionProcedure } from "../trpc";
 
 const VariantInput = z.object({
@@ -175,6 +176,17 @@ export const productsRouter = {
       }
     }
 
+    await enqueueActivityLog({
+      businessId,
+      actorUserId: ctx.session.user.id,
+      actorName: ctx.session.user.name ?? "Staff Member",
+      actorType: "staff",
+      action: "product.create",
+      entityType: "product",
+      entityId: newProduct.id,
+      summary: `${ctx.session.user.name ?? "Staff"} added product "${newProduct.title}"`,
+    });
+
     return newProduct;
   }),
 
@@ -310,6 +322,17 @@ export const productsRouter = {
       }
     }
 
+    await enqueueActivityLog({
+      businessId,
+      actorUserId: ctx.session.user.id,
+      actorName: ctx.session.user.name ?? "Staff Member",
+      actorType: "staff",
+      action: "product.update",
+      entityType: "product",
+      entityId: updatedProduct.id,
+      summary: `${ctx.session.user.name ?? "Staff"} updated product "${updatedProduct.title}"`,
+    });
+
     return updatedProduct;
   }),
 
@@ -323,6 +346,16 @@ export const productsRouter = {
 
     if (deleted) {
       void deleteProductImageFromVectorDb({ productId: input.productId });
+      await enqueueActivityLog({
+        businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Staff Member",
+        actorType: "staff",
+        action: "product.delete",
+        entityType: "product",
+        entityId: deleted.id,
+        summary: `${ctx.session.user.name ?? "Staff"} deleted product "${deleted.title}"`,
+      });
     }
 
     return deleted ?? null;

@@ -1,6 +1,8 @@
 import { and, desc, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
 
-import { publishNotificationEvent } from "@acme/queue";
+import { createQueue, publishNotificationEvent } from "@acme/queue";
+
+const activityQueue = createQueue();
 
 import {
   agentSession,
@@ -744,6 +746,19 @@ export async function createCustomerAndOrder(params: {
       body: `${itemsSummary} — ৳${created.total.toLocaleString()} (${customerName})`,
       link: "/dashboard/orders",
     }).catch((err) => console.error("[createCustomerAndOrder] Failed to create notification:", err));
+
+    await activityQueue
+      .enqueue("activity-log", {
+        businessId,
+        actorUserId: null,
+        actorName: "SellPilot AI",
+        actorType: "ai_agent",
+        action: "ai_agent.create_order",
+        entityType: "order",
+        entityId: created.id,
+        summary: `SellPilot AI placed order #${created.orderNumber} for ${customerName} (৳${created.total.toLocaleString()})`,
+      })
+      .catch((err) => console.error("[createCustomerAndOrder] Failed to enqueue activity log:", err));
   }
 
   // Mark this thread's session as no longer "abandoned mid-purchase" — RECOVERABLE_STEPS
@@ -978,6 +993,19 @@ export async function escalateToHuman(businessId: string, threadId: string, reas
       body: reason,
       link: "/dashboard/inbox",
     }).catch((err) => console.error("[escalateToHuman] Failed to create notification:", err));
+
+    await activityQueue
+      .enqueue("activity-log", {
+        businessId,
+        actorUserId: null,
+        actorName: "SellPilot AI",
+        actorType: "ai_agent",
+        action: "ai_agent.escalated",
+        entityType: "conversation",
+        entityId: threadId,
+        summary: `SellPilot AI escalated thread to human support (${reason})`,
+      })
+      .catch((err) => console.error("[escalateToHuman] Failed to enqueue activity log:", err));
   }
 }
 

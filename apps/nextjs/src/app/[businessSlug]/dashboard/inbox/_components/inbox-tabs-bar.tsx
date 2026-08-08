@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Archive, CheckCircle2, Filter, Inbox, MessageCircle, MoreHorizontal, Tag, X } from "lucide-react";
+import { Archive, CheckCircle2, Inbox, MessageCircle, Tag, X } from "lucide-react";
 
 import type { InboxThread } from "@acme/api/meta-inbox";
 import { Button } from "@acme/ui/button";
@@ -110,17 +110,19 @@ export function InboxTabsBar({ threads }: { threads: InboxThread[] }) {
   const activeStatus = searchParams.get("status") ?? "all";
   const activeChannel = searchParams.get("channel") ?? "all";
 
-  const counts = useMemo(
-    () => ({
-      all: threads.length,
-      order_requests: threads.filter((t) => t.hasOrderRequest).length,
-      unreplied: threads.filter(isUnreplied).length,
+  const counts = useMemo(() => {
+    // Archived threads only count toward the Archived tab — they're hidden from every
+    // other view, so their badges must not inflate the active counts.
+    const active = threads.filter((t) => t.status !== "archived");
+    return {
+      all: active.length,
+      order_requests: active.filter((t) => t.hasOrderRequest).length,
+      unreplied: active.filter(isUnreplied).length,
       ticket: threads.filter((t) => t.status === "ticket").length,
       resolved: threads.filter((t) => t.status === "resolved").length,
       archived: threads.filter((t) => t.status === "archived").length,
-    }),
-    [threads],
-  );
+    };
+  }, [threads]);
 
   return (
     <div className="flex shrink-0 items-center justify-between border-b bg-card px-3 py-2 md:px-4 md:py-2.5">

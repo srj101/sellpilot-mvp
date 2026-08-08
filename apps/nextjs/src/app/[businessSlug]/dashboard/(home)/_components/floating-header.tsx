@@ -31,7 +31,7 @@ const capitalize = (s: string) => {
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
 
-/* ─── Header notification bell + dropdown ────────────────────────────
+/**
  * Polls rather than opens its own SSE connection — the sidebar's bell already
  * holds a live connection for instant toast/chime; a second one here would just
  * double up those side effects for the same event. This stays "eventually

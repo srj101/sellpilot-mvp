@@ -87,7 +87,7 @@ interface NavGroup {
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    title: "Overview",
+    title: "Dashboard",
     items: [
       { href: "/dashboard", icon: LayoutDashboard, label: "Overview" },
       { href: "/dashboard/analytics", icon: BarChart3, label: "Analytics" },
@@ -95,44 +95,49 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    title: "Apps",
+    title: "Conversations",
     items: [
-      { href: "/dashboard/inbox", icon: Inbox, label: "Inbox" },
+      { href: "/dashboard/inbox", icon: Inbox, label: "Inbox & DMs" },
       { href: "/dashboard/support", icon: LifeBuoy, label: "Support" },
     ],
   },
   {
-    title: "SaaS",
-    items: [
-      { href: "/dashboard/saas", icon: Sparkles, label: "SaaS Dashboard" },
-      { href: "/dashboard/pricing", icon: Tags, label: "Pricing" },
-      { href: "/dashboard/billing", icon: CreditCard, label: "Billing" },
-    ],
-  },
-  {
-    title: "Management",
+    title: "Sales & Catalog",
     items: [
       { href: "/dashboard/orders", icon: Package, label: "Orders" },
-      { href: "/dashboard/payments", icon: Wallet, label: "Payments" },
       { href: "/dashboard/products", icon: ShoppingBag, label: "Products" },
       { href: "/dashboard/customers", icon: Users, label: "Customers" },
+      { href: "/dashboard/payments", icon: Wallet, label: "Payments" },
       { href: "/dashboard/invoices", icon: Receipt, label: "Invoices" },
-      { href: "/dashboard/offers", icon: Percent, label: "Offers" },
-      { href: "/dashboard/users", icon: User, label: "Users" },
-      { href: "/dashboard/roles", icon: Shield, label: "Roles" },
+      { href: "/dashboard/offers", icon: Percent, label: "Offers & Discounts" },
     ],
   },
   {
-    title: "AI",
+    title: "Channels & AI",
     items: [
-      { href: "/dashboard/integrations", icon: Plug, label: "Integrations" },
+      { href: "/dashboard/integrations", icon: Plug, label: "Channel Integrations" },
     ],
   },
   {
-    title: "Account",
+    title: "Team & Security",
     items: [
-      { href: "/dashboard/settings", icon: Settings, label: "Settings" },
-      { href: "/dashboard/settings/profile", icon: User, label: "Profile" },
+      { href: "/dashboard/users", icon: User, label: "Team Members" },
+      { href: "/dashboard/roles", icon: Shield, label: "Roles & Permissions" },
+      { href: "/dashboard/activity", icon: Activity, label: "Activity Log" },
+    ],
+  },
+  {
+    title: "Platform Admin",
+    items: [
+      { href: "/dashboard/saas", icon: Sparkles, label: "SaaS Dashboard" },
+    ],
+  },
+  {
+    title: "Settings & Billing",
+    items: [
+      { href: "/dashboard/settings", icon: Settings, label: "Store Settings" },
+      { href: "/dashboard/billing", icon: CreditCard, label: "Billing & Plan" },
+      { href: "/dashboard/pricing", icon: Tags, label: "Pricing Plans" },
       { href: "/dashboard/notifications", icon: Bell, label: "Notifications" },
     ],
   },
@@ -156,15 +161,10 @@ const NAV_PERMISSIONS: Record<string, string> = {
   "/dashboard/integrations": "__owner__",
   "/dashboard/billing": "__owner__",
   "/dashboard/roles": "users:view",
+  "/dashboard/activity": "activity:view",
   "/dashboard/settings": "settings:view",
 };
 
-/**
- * Shared by the desktop and mobile sidebars (was previously copy-pasted in both, only
- * covering the platform-admin-only items). Layers the granular business-permission check
- * (roles.getMyPermissions) on top of that existing platform-role check — they're different
- * axes (platform role vs. business-member permission) and both still apply.
- */
 function useFilteredNavGroups() {
   const trpc = useTRPC();
   const session = authClient.useSession();
@@ -180,7 +180,7 @@ function useFilteredNavGroups() {
   return NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) => {
-      if ((item.label === "SaaS Dashboard" || item.label === "Users") && !isPlatformAdmin) {
+      if ((item.href === "/dashboard/saas" || item.href === "/dashboard/users") && !isPlatformAdmin) {
         return false;
       }
 
@@ -243,6 +243,12 @@ function useInboxStream() {
   const router = useRouter();
   const businessSlug = useBusinessSlug();
 
+  // Store router in a ref so the Effect below never re-runs when the
+  // component re-renders (useRouter() can return a new object reference
+  // in App Router, which would tear down and reopen the SSE connection).
+  const routerRef = useRef(router);
+  routerRef.current = router;
+
   useEffect(() => {
     const eventSource = new EventSource(`/api/inbox/stream?businessSlug=${encodeURIComponent(businessSlug)}`);
     eventSource.onmessage = (event: MessageEvent<string>) => {
@@ -259,7 +265,7 @@ function useInboxStream() {
           if (latestEventIdRef.current !== null) {
             playChime();
             if (window.location.pathname.endsWith("/dashboard/inbox")) {
-              router.refresh();
+              routerRef.current.refresh();
             }
           }
           latestEventIdRef.current = data.latestEventId;
@@ -273,7 +279,7 @@ function useInboxStream() {
     return () => {
       eventSource.close();
     };
-  }, [router, businessSlug]);
+  }, [businessSlug]);
 
   return unreadCount;
 }

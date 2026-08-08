@@ -183,6 +183,18 @@ export interface OrderStatusNotifyJob {
   orderId: string;
 }
 
+export interface ActivityLogJob {
+  businessId: string;
+  actorUserId?: string | null;
+  actorName: string;
+  actorType: "staff" | "ai_agent" | "system";
+  action: string;
+  entityType: string;
+  entityId?: string | null;
+  summary: string;
+  metadata?: Record<string, unknown>;
+}
+
 export type QueueJobMap = {
   "meta-dm-reply": MetaDMReplyJob;
   "meta-comment-reply": MetaCommentReplyJob;
@@ -191,6 +203,7 @@ export type QueueJobMap = {
   "trial-expiry-sweep": TrialExpirySweepJob;
   "conversation-followup": ConversationFollowUpJob;
   "order-status-notify": OrderStatusNotifyJob;
+  "activity-log": ActivityLogJob;
 };
 
 export type QueueJobName = keyof QueueJobMap;

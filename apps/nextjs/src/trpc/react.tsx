@@ -49,8 +49,10 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
             // Mirrors the middleware's server-side injection (see middleware.ts) so
             // client-fetched queries resolve against the business the URL is actually on,
             // not a possibly-stale session.activeBusinessId.
-            const match = /^\/([^/]+)\/dashboard(?:\/|$)/.exec(window.location.pathname);
-            if (match) headers.set("x-business-slug", match[1]!);
+            if (typeof window !== "undefined") {
+              const match = /^\/([^/]+)\/dashboard(?:\/|$)/.exec(window.location.pathname);
+              if (match) headers.set("x-business-slug", match[1]!);
+            }
             return headers;
           },
         }),

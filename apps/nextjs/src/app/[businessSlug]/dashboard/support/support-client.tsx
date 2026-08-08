@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { Clock, CheckCircle2, Inbox } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CheckCircle2, Clock, Inbox, Loader2 } from "lucide-react";
 
+import { Button } from "@acme/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@acme/ui/card";
 import { Skeleton } from "@acme/ui/skeleton";
 import { useTRPC } from "~/trpc/react";
@@ -24,7 +25,17 @@ function formatDate(date: Date | string) {
 export function SupportClient() {
   const trpc = useTRPC();
   const businessSlug = useBusinessSlug();
-  const { data, isPending } = useQuery(trpc.inbox.getInboxData.queryOptions({}));
+  const queryClient = useQueryClient();
+  const inboxQuery = trpc.inbox.getInboxData.queryOptions({});
+  const { data, isPending } = useQuery(inboxQuery);
+
+  const resolveTicket = useMutation(
+    trpc.inbox.setStatus.mutationOptions({
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: inboxQuery.queryKey });
+      },
+    }),
+  );
 
   const threads = data?.threads ?? [];
   const tickets = threads.filter((t) => t.status === "ticket");
@@ -87,6 +98,7 @@ export function SupportClient() {
                     <th className="py-3 font-medium">Channel</th>
                     <th className="py-3 font-medium">Summary</th>
                     <th className="py-3 text-right font-medium">Last Updated</th>
+                    <th className="py-3 text-right font-medium">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -100,6 +112,25 @@ export function SupportClient() {
                       <td className="py-3 capitalize text-muted-foreground">{t.platform.replace("_", " ")}</td>
                       <td className="py-3 max-w-xs truncate text-muted-foreground">{t.summary ?? "No summary yet"}</td>
                       <td className="py-3 text-right text-muted-foreground">{formatDate(t.lastMessageAt)}</td>
+                      <td className="py-3 text-right">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400"
+                          disabled={resolveTicket.isPending}
+                          onClick={() =>
+                            resolveTicket.mutate({ threadId: t.id, status: "resolved" })
+                          }
+                        >
+                          {resolveTicket.isPending ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          )}
+                          Resolve
+                        </Button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

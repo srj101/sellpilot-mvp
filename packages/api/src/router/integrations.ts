@@ -14,6 +14,7 @@ import {
   subscribeWhatsAppWebhooks,
 } from "../lib/meta";
 import { assertChannelAllowed, getPlanChannels } from "../lib/plan-limits";
+import { enqueueActivityLog } from "../lib/activity-queue";
 import { ownerOnlyProcedure, permissionProcedure } from "../trpc";
 
 async function persistWhatsAppSignup(
@@ -206,6 +207,17 @@ export const integrationsRouter = {
         });
       }
 
+      await enqueueActivityLog({
+        businessId: ctx.businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Staff Member",
+        actorType: "staff",
+        action: "integration.disconnect",
+        entityType: "integration",
+        entityId: input.connectionId,
+        summary: `${ctx.session.user.name ?? "Staff"} disconnected integration channel`,
+      });
+
       return { ok: true };
     }),
 
@@ -221,13 +233,25 @@ export const integrationsRouter = {
     .mutation(async ({ ctx, input }) => {
       try {
         await assertChannelAllowed(ctx, "whatsapp");
-        return await persistWhatsAppSignup(ctx.db, {
+        const res = await persistWhatsAppSignup(ctx.db, {
           businessId: ctx.businessId,
           code: input.code,
           redirectUri: input.redirectUri,
           wabaId: input.wabaId,
           phoneNumberId: input.phoneNumberId,
         });
+
+        await enqueueActivityLog({
+          businessId: ctx.businessId,
+          actorUserId: ctx.session.user.id,
+          actorName: ctx.session.user.name ?? "Staff Member",
+          actorType: "staff",
+          action: "integration.connect_whatsapp",
+          entityType: "integration",
+          summary: `${ctx.session.user.name ?? "Staff"} connected WhatsApp integration`,
+        });
+
+        return res;
       } catch (err) {
         console.error("WhatsApp signup error:", err);
         return {

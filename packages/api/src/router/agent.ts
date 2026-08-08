@@ -18,6 +18,7 @@ import {
   shippingRate,
 } from "@acme/db/schema";
 import { getMultiProductCartLimit } from "../lib/plan-limits";
+import { enqueueActivityLog } from "../lib/activity-queue";
 import { permissionProcedure } from "../trpc";
 
 const CustomerInput = z.object({
@@ -197,20 +198,26 @@ export const agentRouter = {
         where: eq(businessProfile.businessId, ctx.businessId),
       });
 
-      if (existing) {
-        const [updated] = await ctx.db
+      const res = existing ? (await ctx.db
           .update(businessProfile)
           .set({ ...input })
           .where(eq(businessProfile.id, existing.id))
-          .returning();
-        return updated;
-      }
+          .returning())[0] : (await ctx.db
+          .insert(businessProfile)
+          .values({ businessId: ctx.businessId, ...input })
+          .returning())[0];
 
-      const [created] = await ctx.db
-        .insert(businessProfile)
-        .values({ businessId: ctx.businessId, ...input })
-        .returning();
-      return created;
+      await enqueueActivityLog({
+        businessId: ctx.businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Staff Member",
+        actorType: "staff",
+        action: "agent_config.update",
+        entityType: "agent",
+        summary: `${ctx.session.user.name ?? "Staff"} updated AI agent settings`,
+      });
+
+      return res;
     }),
 
   getNotificationPreferences: permissionProcedure("agent", "view").query(async ({ ctx }) => {

@@ -1,7 +1,16 @@
 import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod/v4";
 
-import { and, desc, eq, inArray, notInArray, generateAndSaveConversationSummary } from "@acme/db";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  notInArray,
+  generateAndSaveConversationSummary,
+  createNotification,
+} from "@acme/db";
+import { getNotificationPreference } from "@acme/db/helpers/notification-preferences";
 import {
   customer,
   customerNote,
@@ -14,6 +23,7 @@ import {
 } from "@acme/db/schema";
 
 import { sendMetaInboxReply } from "../lib/meta";
+import { enqueueActivityLog } from "../lib/activity-queue";
 import { buildInboxData } from "../lib/meta-inbox";
 import { getQueueStatus } from "../lib/queue-status";
 import { resolveContactNames } from "../lib/resolve-contact-names";
@@ -195,19 +205,91 @@ export const inboxRouter = {
           set: { handlingMode: "human" },
         });
 
+      await enqueueActivityLog({
+        businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Staff Member",
+        actorType: "staff",
+        action: "inbox.reply_manual",
+        entityType: "conversation",
+        entityId: input.threadId,
+        summary: `${ctx.session.user.name ?? "Staff"} manually messaged customer on ${input.platform}`,
+      });
+
       return { ok: true as const };
     }),
 
   setStatus: permissionProcedure("inbox", "edit")
     .input(z.object({ threadId: z.string(), status: z.enum(STATUS_VALUES) }))
     .mutation(async ({ ctx, input }) => {
+      const [existing] = await ctx.db
+        .select({ status: conversationMeta.status })
+        .from(conversationMeta)
+        .where(
+          and(
+            eq(conversationMeta.businessId, ctx.businessId),
+            eq(conversationMeta.threadId, input.threadId),
+          ),
+        )
+        .limit(1);
+
+      const prevStatus = existing?.status ?? "open";
+
+      // A non-open status closes the thread: the AI auto-reply worker only fires while a
+      // thread is "ai"-handled, so flipping the thread to human mode stops the AI from
+      // talking over a closed/flagged conversation. Reopening (status back to "open") or
+      // resolving (status back to "resolved") hands control back to the AI. Only flipped
+      // when the status actually changes, so re-clicking "Mark as Open" on an
+      // already-open thread never undoes a real takeover.
+      let handlingMode: "ai" | "human" | undefined;
+      if (input.status !== prevStatus) {
+        handlingMode = input.status === "open" || input.status === "resolved" ? "ai" : "human";
+      }
+
       await ctx.db
         .insert(conversationMeta)
-        .values({ businessId: ctx.businessId, threadId: input.threadId, status: input.status })
+        .values({
+          businessId: ctx.businessId,
+          threadId: input.threadId,
+          status: input.status,
+          ...(handlingMode ? { handlingMode } : {}),
+        })
         .onConflictDoUpdate({
           target: [conversationMeta.businessId, conversationMeta.threadId],
-          set: { status: input.status },
+          set: {
+            status: input.status,
+            ...(handlingMode ? { handlingMode } : {}),
+          },
         });
+
+      // Flagging a conversation as a ticket surfaces it to the team on the Support page
+      // AND alerts them via the bell — best-effort, never blocking the status change.
+      if (input.status === "ticket" && prevStatus !== "ticket") {
+        const { inAppEnabled } = await getNotificationPreference(ctx.businessId, "ticket_created");
+        if (inAppEnabled) {
+          await createNotification({
+            businessId: ctx.businessId,
+            type: "ticket_created",
+            title: "New support ticket",
+            body: "A conversation was flagged as a support ticket and needs attention.",
+            link: `/dashboard/inbox?thread=${input.threadId}`,
+          }).catch((err) => console.error("[setStatus] Failed to create ticket notification:", err));
+        }
+      }
+
+      await enqueueActivityLog({
+        businessId: ctx.businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name,
+        actorType: "staff",
+        action: "inbox.update_status",
+        entityType: "conversation",
+        entityId: input.threadId,
+        summary: handlingMode
+          ? `${ctx.session.user.name} set conversation status to ${input.status} and switched handling to ${handlingMode}`
+          : `${ctx.session.user.name} set conversation status to ${input.status}`,
+      });
+
       return { ok: true as const };
     }),
 
@@ -236,6 +318,17 @@ export const inboxRouter = {
           target: [conversationMeta.businessId, conversationMeta.threadId],
           set: { handlingMode: input.handlingMode },
         });
+      await enqueueActivityLog({
+        businessId: ctx.businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Staff Member",
+        actorType: "staff",
+        action: "inbox.update_handling",
+        entityType: "conversation",
+        entityId: input.threadId,
+        summary: `${ctx.session.user.name ?? "Staff"} ${input.handlingMode === "human" ? "took over thread from AI" : "handed thread back to AI"}`,
+      });
+
       return { ok: true as const };
     }),
 

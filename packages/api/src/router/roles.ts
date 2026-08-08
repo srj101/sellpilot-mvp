@@ -6,6 +6,7 @@ import { desc, eq, and } from "@acme/db";
 import { role, businessMember, businessInvitation, user, business } from "@acme/db/schema";
 
 import { DEFAULT_ROLES, resolvePermissions } from "../lib/permissions";
+import { enqueueActivityLog } from "../lib/activity-queue";
 import { assertPlanLimit } from "../lib/plan-limits";
 import { businessProcedure, protectedProcedure, permissionProcedure, publicProcedure, businessScopedProcedure } from "../trpc";
 
@@ -73,6 +74,19 @@ export const rolesRouter = {
           permissions: input.permissions,
         })
         .returning();
+
+      if (newRole) {
+        await enqueueActivityLog({
+          businessId: ctx.businessId,
+          actorUserId: ctx.session.user.id,
+          actorName: ctx.session.user.name ?? "Staff Member",
+          actorType: "staff",
+          action: "team.create_custom_role",
+          entityType: "role",
+          entityId: newRole.id,
+          summary: `${ctx.session.user.name ?? "Staff"} created role "${newRole.name}"`,
+        });
+      }
 
       return newRole;
     }),
@@ -277,6 +291,16 @@ export const rolesRouter = {
         customRoleKey: input.customRoleKey,
       });
 
+      await enqueueActivityLog({
+        businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Staff Member",
+        actorType: "staff",
+        action: "team.invite_member",
+        entityType: "user",
+        summary: `${ctx.session.user.name ?? "Staff"} invited ${input.email} to the team (${input.customRoleKey ?? "member"})`,
+      });
+
       return { success: true };
     }),
 
@@ -348,6 +372,17 @@ export const rolesRouter = {
         .update(businessMember)
         .set({ customRoleKey: input.customRoleKey })
         .where(and(eq(businessMember.id, input.memberId), eq(businessMember.businessId, ctx.businessId)));
+      await enqueueActivityLog({
+        businessId: ctx.businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Staff Member",
+        actorType: "staff",
+        action: "team.update_role",
+        entityType: "user",
+        entityId: input.memberId,
+        summary: `${ctx.session.user.name ?? "Staff"} updated team member role to ${input.customRoleKey}`,
+      });
+
       return { success: true };
     }),
 
@@ -361,6 +396,17 @@ export const rolesRouter = {
         body: { memberIdOrEmail: input.memberId, businessId: ctx.businessId },
         headers: ctx.headers,
       });
+      await enqueueActivityLog({
+        businessId: ctx.businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Staff Member",
+        actorType: "staff",
+        action: "team.remove_member",
+        entityType: "user",
+        entityId: input.memberId,
+        summary: `${ctx.session.user.name ?? "Staff"} removed team member from business`,
+      });
+
       return { success: true };
     }),
 } satisfies TRPCRouterRecord;

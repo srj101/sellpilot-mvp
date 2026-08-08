@@ -2,36 +2,24 @@
 
 import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
-import { Archive, CheckCircle2, Filter, MoreHorizontal, Star, Headset, Bot } from "lucide-react";
+import { Archive, CheckCircle2, Loader2, Headset, RotateCcw, Tag } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@acme/ui/dropdown-menu";
 import { cn } from "@acme/ui";
 import { useTRPC } from "~/trpc/react";
-
-import { InboxFilterSheet } from "./inbox-tabs-bar";
 
 export function ThreadHeaderActions({
   threadId,
   status,
-  starred,
   handlingMode,
 }: {
   threadId: string;
   status: string;
-  starred: boolean;
   handlingMode: string;
 }) {
   const trpc = useTRPC();
   const router = useRouter();
   const setStatus = useMutation(trpc.inbox.setStatus.mutationOptions());
-  const toggleStar = useMutation(trpc.inbox.toggleStar.mutationOptions());
   const setHandlingMode = useMutation(trpc.inbox.setHandlingMode.mutationOptions());
   const isHuman = handlingMode === "human";
 
@@ -40,13 +28,18 @@ export function ThreadHeaderActions({
   }
 
   return (
-    <div className="flex items-center gap-1.5">
-      {/* Take over button — always visible */}
+    <div className="flex items-center gap-1.5 sm:gap-2">
+      {/* Take Over / Hand Back */}
       <Button
         type="button"
         variant="outline"
         size="sm"
-        className={cn("h-8 gap-1.5", isHuman && "border-primary/40 bg-primary/10 text-primary")}
+        className={cn(
+          "h-8.5 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all active:scale-95 shadow-2xs",
+          isHuman
+            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/50"
+            : "border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 hover:border-primary/50"
+        )}
         disabled={setHandlingMode.isPending}
         onClick={() =>
           setHandlingMode.mutate(
@@ -54,78 +47,75 @@ export function ThreadHeaderActions({
             { onSuccess: () => router.refresh() },
           )
         }
-        title={isHuman ? "Hand this conversation back to the AI" : "Take over this conversation from the AI"}
+        title={isHuman ? "Hand back to AI" : "Take over from AI"}
       >
-        {isHuman ? <Headset className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}
-        <span className="hidden sm:inline">{isHuman ? "You're handling" : "Take over"}</span>
+        {setHandlingMode.isPending ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : isHuman ? (
+          <RotateCcw className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+        ) : (
+          <Headset className="h-3.5 w-3.5 text-primary" />
+        )}
+        <span className="hidden md:inline">{isHuman ? "Hand Back" : "Take Over"}</span>
       </Button>
 
-      {/* Star — desktop only */}
+      {/* Resolve Ticket — only when flagged as ticket */}
+      {status === "ticket" && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8.5 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all active:scale-95 shadow-2xs border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/50"
+          disabled={setStatus.isPending}
+          onClick={() => updateStatus("resolved")}
+          title="Resolve ticket"
+        >
+          {setStatus.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <CheckCircle2 className="h-3.5 w-3.5" />
+          )}
+          <span className="hidden md:inline">Resolve</span>
+        </Button>
+      )}
+
+      {/* Archive / Unarchive */}
       <Button
         type="button"
         variant="outline"
-        size="icon"
-        className={cn("hidden h-8 w-8 sm:inline-flex", starred && "border-primary/40 bg-primary/10 text-primary")}
-        disabled={toggleStar.isPending}
-        onClick={() => toggleStar.mutate({ threadId, starred: !starred }, { onSuccess: () => router.refresh() })}
-        aria-label={starred ? "Unstar" : "Star"}
+        size="sm"
+        className="h-8.5 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all active:scale-95 shadow-2xs border-slate-500/30 bg-slate-500/10 text-slate-600 dark:text-slate-400 hover:bg-slate-500/20 hover:border-slate-500/50"
+        disabled={setStatus.isPending}
+        onClick={() => updateStatus(status === "archived" ? "open" : "archived")}
+        title={status === "archived" ? "Unarchive" : "Archive"}
       >
-        <Star className={cn("h-4 w-4", starred && "fill-amber-400 text-amber-400")} />
+        {setStatus.isPending ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Archive className="h-3.5 w-3.5" />
+        )}
+        <span className="hidden md:inline">{status === "archived" ? "Unarchive" : "Archive"}</span>
       </Button>
 
-      {/* More menu — always visible, contains all actions */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button type="button" variant="outline" size="icon" className="h-8 w-8" aria-label="More options">
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuItem
-            disabled={toggleStar.isPending}
-            onSelect={() => toggleStar.mutate({ threadId, starred: !starred }, { onSuccess: () => router.refresh() })}
-          >
-            <Star className={cn("h-4 w-4 mr-2", starred && "fill-amber-400 text-amber-400")} />
-            {starred ? "Unstar" : "Star"}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={setStatus.isPending}
-            onSelect={() => updateStatus(status === "resolved" ? "open" : "resolved")}
-          >
-            <CheckCircle2 className="h-4 w-4 mr-2" />
-            {status === "resolved" ? "Mark as Open" : "Mark Resolved"}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={setStatus.isPending}
-            onSelect={() => updateStatus(status === "archived" ? "open" : "archived")}
-          >
-            <Archive className="h-4 w-4 mr-2" />
-            {status === "archived" ? "Unarchive" : "Archive"}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem disabled={setStatus.isPending} onSelect={() => updateStatus("open")}>
-            Mark as Open
-          </DropdownMenuItem>
-          <DropdownMenuItem disabled={setStatus.isPending} onSelect={() => updateStatus("ticket")}>
-            Mark as Ticket
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {/* Filters — mobile only, opens bottom sheet */}
-          <div className="md:hidden">
-            <InboxFilterSheet>
-              <div
-                role="menuitem"
-                className="flex cursor-pointer items-center gap-2.5 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-muted focus:bg-muted"
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Filter className="h-4 w-4" />
-                Filters
-              </div>
-            </InboxFilterSheet>
-          </div>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {/* Mark as Support Ticket */}
+      {(status === "open" || status === "resolved") && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8.5 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all active:scale-95 shadow-2xs border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 hover:border-amber-500/50"
+          disabled={setStatus.isPending}
+          onClick={() => updateStatus("ticket")}
+          title="Flag as support ticket"
+        >
+          {setStatus.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Tag className="h-3.5 w-3.5" />
+          )}
+          <span className="hidden md:inline">Ticket</span>
+        </Button>
+      )}
     </div>
   );
 }

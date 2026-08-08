@@ -4,6 +4,7 @@ import { z } from "zod";
 import { desc, eq, and, count, sum } from "@acme/db";
 import { customer, order } from "@acme/db/schema";
 
+import { enqueueActivityLog } from "../lib/activity-queue";
 import { permissionProcedure } from "../trpc";
 
 export const customersRouter = {
@@ -110,6 +111,17 @@ export const customersRouter = {
         })
         .returning();
 
+      await enqueueActivityLog({
+        businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Staff Member",
+        actorType: "staff",
+        action: "customer.create",
+        entityType: "customer",
+        entityId: newCustomer?.id,
+        summary: `${ctx.session.user.name ?? "Staff"} created customer "${newCustomer?.name}"`,
+      });
+
       return newCustomer;
     }),
 
@@ -139,6 +151,19 @@ export const customersRouter = {
         .where(and(eq(customer.id, id), eq(customer.businessId, businessId)))
         .returning();
 
+      if (updated) {
+        await enqueueActivityLog({
+          businessId,
+          actorUserId: ctx.session.user.id,
+          actorName: ctx.session.user.name ?? "Staff Member",
+          actorType: "staff",
+          action: "customer.update",
+          entityType: "customer",
+          entityId: updated.id,
+          summary: `${ctx.session.user.name ?? "Staff"} updated customer "${updated.name}"`,
+        });
+      }
+
       return updated ?? null;
     }),
 
@@ -150,6 +175,17 @@ export const customersRouter = {
       await ctx.db
         .delete(customer)
         .where(and(eq(customer.id, input.id), eq(customer.businessId, businessId)));
+
+      await enqueueActivityLog({
+        businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Staff Member",
+        actorType: "staff",
+        action: "customer.delete",
+        entityType: "customer",
+        entityId: input.id,
+        summary: `${ctx.session.user.name ?? "Staff"} deleted customer`,
+      });
 
       return { ok: true as const };
     }),

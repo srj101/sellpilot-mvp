@@ -6,6 +6,7 @@ import { and, desc, eq, inArray } from "@acme/db";
 import type { db as Db } from "@acme/db/client";
 import { offer, product } from "@acme/db/schema";
 
+import { enqueueActivityLog } from "../lib/activity-queue";
 import { permissionProcedure } from "../trpc";
 import { assertPlanFeature, getPlanFeatureEnabled } from "../lib/plan-limits";
 
@@ -75,6 +76,17 @@ export const offersRouter = {
           ...input,
         })
         .returning();
+      await enqueueActivityLog({
+        businessId: ctx.businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Staff Member",
+        actorType: "staff",
+        action: "offer.create",
+        entityType: "offer",
+        entityId: newOffer?.id,
+        summary: `${ctx.session.user.name ?? "Staff"} created offer "${newOffer?.title}"`,
+      });
+
       return newOffer;
     }),
 
@@ -105,6 +117,19 @@ export const offersRouter = {
         .set(data)
         .where(and(eq(offer.id, id), eq(offer.businessId, ctx.businessId)))
         .returning();
+      if (updatedOffer) {
+        await enqueueActivityLog({
+          businessId: ctx.businessId,
+          actorUserId: ctx.session.user.id,
+          actorName: ctx.session.user.name ?? "Staff Member",
+          actorType: "staff",
+          action: "offer.update",
+          entityType: "offer",
+          entityId: updatedOffer.id,
+          summary: `${ctx.session.user.name ?? "Staff"} updated offer "${updatedOffer.title}"`,
+        });
+      }
+
       return updatedOffer;
     }),
 
@@ -116,6 +141,19 @@ export const offersRouter = {
         .delete(offer)
         .where(and(eq(offer.id, input.id), eq(offer.businessId, ctx.businessId)))
         .returning();
+      if (deletedOffer) {
+        await enqueueActivityLog({
+          businessId: ctx.businessId,
+          actorUserId: ctx.session.user.id,
+          actorName: ctx.session.user.name ?? "Staff Member",
+          actorType: "staff",
+          action: "offer.delete",
+          entityType: "offer",
+          entityId: deletedOffer.id,
+          summary: `${ctx.session.user.name ?? "Staff"} deleted offer "${deletedOffer.title}"`,
+        });
+      }
+
       return deletedOffer;
     }),
 } satisfies TRPCRouterRecord;

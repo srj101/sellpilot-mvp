@@ -10,6 +10,7 @@ import type { BillingCycle, PlanKey } from "../lib/plans";
 import { BILLING_CYCLES, CYCLE_META, PLAN_CATALOG, PLAN_KEYS, priceForCycle } from "../lib/plans";
 import { getStorageUsage } from "../lib/plan-limits";
 import { CARD_AND_BANK_GATEWAYS, initiatePayment, resolvePlatformCredentials as resolvePlatformCredentialsRaw, validatePayment } from "../lib/sslcommerz";
+import { enqueueActivityLog } from "../lib/activity-queue";
 import { businessScopedProcedure, ownerOnlyProcedure, publicProcedure } from "../trpc";
 
 /** Thin TRPCError wrapper around sslcommerz.ts's shared resolvePlatformCredentials (also
@@ -251,6 +252,15 @@ export const subscriptionRouter = {
         }
 
         await ctx.db.update(subscription).set({ pendingPlan: input.plan }).where(eq(subscription.businessId, ctx.businessId));
+        await enqueueActivityLog({
+          businessId: ctx.businessId,
+          actorUserId: ctx.session.user.id,
+          actorName: ctx.session.user.name ?? "Store Owner",
+          actorType: "staff",
+          action: "subscription.downgrade_scheduled",
+          entityType: "subscription",
+          summary: `${ctx.session.user.name ?? "Owner"} scheduled plan downgrade to ${PLAN_CATALOG[input.plan].name}`,
+        });
         return { applied: false as const, effectiveAt: sub.currentPeriodEnd };
       }
 
@@ -318,11 +328,29 @@ export const subscriptionRouter = {
     const sub = await getSubscriptionRow(ctx.db, ctx.businessId);
     if (!sub) throw new TRPCError({ code: "NOT_FOUND", message: "No subscription found." });
     await ctx.db.update(subscription).set({ cancelAtPeriodEnd: true, cancelledAt: new Date() }).where(eq(subscription.businessId, ctx.businessId));
+    await enqueueActivityLog({
+      businessId: ctx.businessId,
+      actorUserId: ctx.session.user.id,
+      actorName: ctx.session.user.name ?? "Store Owner",
+      actorType: "staff",
+      action: "subscription.cancel",
+      entityType: "subscription",
+      summary: `${ctx.session.user.name ?? "Owner"} scheduled subscription cancellation`,
+    });
     return { effectiveAt: sub.currentPeriodEnd };
   }),
 
   resume: ownerOnlyProcedure.mutation(async ({ ctx }) => {
     await ctx.db.update(subscription).set({ cancelAtPeriodEnd: false, cancelledAt: null }).where(eq(subscription.businessId, ctx.businessId));
+    await enqueueActivityLog({
+      businessId: ctx.businessId,
+      actorUserId: ctx.session.user.id,
+      actorName: ctx.session.user.name ?? "Store Owner",
+      actorType: "staff",
+      action: "subscription.resume",
+      entityType: "subscription",
+      summary: `${ctx.session.user.name ?? "Owner"} resumed subscription`,
+    });
     return { ok: true };
   }),
 

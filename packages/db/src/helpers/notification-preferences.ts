@@ -15,7 +15,8 @@ export type NotificationEventType =
   | "low_stock"
   | "human_handoff"
   | "quota_alert"
-  | "weekly_insights";
+  | "weekly_insights"
+  | "ticket_created";
 
 export async function getNotificationPreference(
   businessId: string,
