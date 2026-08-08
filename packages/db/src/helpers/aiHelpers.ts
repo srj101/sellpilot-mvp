@@ -157,6 +157,62 @@ export async function getTopSellingProducts(businessId: string, limit = 5) {
   return ordered;
 }
 
+/**
+ * Real "customers who bought this also bought" — tallies co-occurring products across
+ * this business's actual order history, distinct from getComboOffersForProduct's
+ * manually-configured (and discount-bearing) pairs. Same full-scan-then-tally-in-JS
+ * pattern as getTopSellingProducts, reasonable given the plan-tier SKU/order volumes
+ * this app operates at. Requires the product to have co-occurred in at least 2 orders —
+ * a single coincidental order shouldn't produce a suggestion.
+ */
+export async function getFrequentlyBoughtTogether(businessId: string, productId: string, limit = 3) {
+  const orderRows = await db.select().from(order).where(eq(order.businessId, businessId));
+  const orderIds = orderRows.map((o) => o.id);
+  if (orderIds.length === 0) return [];
+
+  const allItems = await db.select().from(orderItem).where(inArray(orderItem.orderId, orderIds));
+
+  const ordersWithProduct = new Set(
+    allItems.filter((i) => i.productId === productId).map((i) => i.orderId),
+  );
+  if (ordersWithProduct.size < 2) return [];
+
+  const coOccurCount = new Map<string, number>();
+  for (const item of allItems) {
+    if (!item.productId || item.productId === productId) continue;
+    if (!ordersWithProduct.has(item.orderId)) continue;
+    coOccurCount.set(item.productId, (coOccurCount.get(item.productId) ?? 0) + 1);
+  }
+
+  const sortedIds = Array.from(coOccurCount.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([id]) => id);
+  if (sortedIds.length === 0) return [];
+
+  const [products, variants] = await Promise.all([
+    db.select().from(product).where(inArray(product.id, sortedIds)),
+    db.select().from(productVariant).where(inArray(productVariant.productId, sortedIds)),
+  ]);
+
+  const minPriceByProduct = new Map<string, number>();
+  for (const v of variants) {
+    const cur = minPriceByProduct.get(v.productId);
+    if (cur === undefined || v.price < cur) minPriceByProduct.set(v.productId, v.price);
+  }
+
+  return sortedIds
+    .map((id) => products.find((p) => p.id === id))
+    .filter((p): p is typeof product.$inferSelect => Boolean(p))
+    .map((p) => ({
+      id: p.id,
+      title: p.title,
+      images: p.images ?? [],
+      startingPrice: minPriceByProduct.get(p.id) ?? null,
+      coOccurrenceCount: coOccurCount.get(p.id) ?? 0,
+    }));
+}
+
 // Get product by id
 export async function getProductById(businessId: string, id: string) {
   const [p] = await db
@@ -1331,6 +1387,51 @@ export async function upsertActiveCart(
   });
 }
 
+/**
+ * FR-AGT-13 — marks a session "product_selected" (+ which product) the first time a
+ * customer looks at a specific product, so an abandoned-conversation follow-up can later
+ * reference it even when they never reach a cart. Upserts the agentSession row exactly
+ * like upsertActiveCart above does (nothing else in the live DM flow creates it before a
+ * quote), but never downgrades a session already past "browsing" — cart_active and
+ * beyond are left exactly as they are.
+ */
+export async function markProductSelected(
+  businessId: string,
+  platform: string,
+  threadId: string,
+  senderId: string | undefined,
+  productId: string,
+): Promise<void> {
+  const channel = CHANNEL_FROM_PLATFORM[platform] ?? platform;
+
+  const [existing] = await db
+    .select({ id: agentSession.id, state: agentSession.state })
+    .from(agentSession)
+    .where(and(eq(agentSession.businessId, businessId), eq(agentSession.threadId, threadId)));
+
+  if (existing) {
+    const step = existing.state.currentStep;
+    if (step && step !== "browsing") return;
+    await db
+      .update(agentSession)
+      .set({
+        state: { ...existing.state, currentStep: "product_selected", lastViewedProductId: productId },
+        lastMessageAt: new Date(),
+        senderId: senderId ?? undefined,
+      })
+      .where(eq(agentSession.id, existing.id));
+    return;
+  }
+
+  await db.insert(agentSession).values({
+    businessId,
+    channel,
+    threadId,
+    senderId,
+    state: { currentStep: "product_selected", lastViewedProductId: productId },
+  });
+}
+
 // Log an AI-generated reply so future turns in this thread have it as history.
 export async function logOutboundMessage(params: {
   businessId: string;
@@ -1382,6 +1483,7 @@ export const aiHelpers = {
   getBusinessProfile,
   getOfferByCode,
   getComboOffersForProduct,
+  getFrequentlyBoughtTogether,
   getFAQMatches,
   getLowStockProducts,
   getProductsByTag,
@@ -1389,6 +1491,7 @@ export const aiHelpers = {
   logOutboundMessage,
   quoteOrder,
   upsertActiveCart,
+  markProductSelected,
   getShippingCost,
   getConversationHandlingMode,
   escalateToHuman,

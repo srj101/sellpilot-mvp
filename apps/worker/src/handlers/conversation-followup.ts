@@ -15,7 +15,7 @@
 import { and, eq, inArray, isNull, lt } from "@acme/db";
 import { db } from "@acme/db/client";
 import { agentSession, businessProfile, cart, metaConnection } from "@acme/db/schema";
-import { getBusinessProfile, getComboOffersForProduct, createNotification } from "@acme/db/helpers/aiHelpers";
+import { getBusinessProfile, getComboOffersForProduct, getProductById, createNotification } from "@acme/db/helpers/aiHelpers";
 import type { ActiveCartItem } from "@acme/db/helpers/aiHelpers";
 import { MessagingService } from "@acme/messaging";
 import type { PlatformConnection, PlatformType } from "@acme/messaging";
@@ -111,10 +111,62 @@ async function generatePersonalizedFollowUp(
   }
 }
 
+/** Pro tier, FR-AGT-13's browse-only case: no cart was ever recorded, but the session
+ * has a lastViewedProductId (see aiHelpers.ts's markProductSelected). Same one-shot LLM
+ * shape as generatePersonalizedFollowUp above, describing a single viewed product
+ * instead of cart line items. Falls back to the generic text on any failure or if the
+ * product no longer exists. */
+async function generatePersonalizedFollowUpForProduct(
+  businessId: string,
+  productId: string,
+): Promise<{ text: string; usedAi: boolean }> {
+  try {
+    const productResult = await getProductById(businessId, productId);
+    if (!productResult) return { text: buildGenericFollowUpText(), usedAi: false };
+
+    const [profile, combos] = await Promise.all([
+      getBusinessProfile(businessId).catch(() => null),
+      getComboOffersForProduct(businessId, productId).catch(() => []),
+    ]);
+
+    const combo = combos[0];
+    const incentive = combo
+      ? `${combo.partnerProductName ?? "a partner product"} — ${combo.type === "fixed" ? `৳${combo.value} off` : `${combo.value}% off`} (offer: ${combo.title})`
+      : null;
+
+    const prompt = `Write ONE short follow-up message (1-2 sentences, plain text, no markdown, no emojis unless it fits naturally) to send a customer on WhatsApp/Messenger/Instagram who was asking about "${productResult.product.title}" but never placed an order. Gently remind them it's still available and invite them to continue — do not sound pushy. ${incentive ? `You may naturally mention this active combo offer if it fits: ${incentive}.` : ""} Match a ${profile?.conversationTone ?? "friendly"} tone for ${profile?.name ?? "the store"}. Never invent any price, discount, or product detail not given here. Output only the message text — nothing else, no quotes around it.`;
+
+    const agent = createSalesAgent({
+      apiKey: config.openaiApiKey,
+      baseUrl: config.openaiBaseUrl,
+      model: config.openaiModel,
+      simple: true,
+      debug: config.debug,
+    });
+
+    const result = await agent.run({
+      message: prompt,
+      context: {
+        businessId,
+        threadId: "conversation-followup",
+        platform: "whatsapp",
+        customerId: "system",
+      },
+    });
+
+    const text = result.response.trim();
+    return { text: text || buildGenericFollowUpText(), usedAi: true };
+  } catch (err) {
+    console.error("[conversation-followup] Personalized (product) message generation failed, using generic fallback:", err);
+    return { text: buildGenericFollowUpText(), usedAi: false };
+  }
+}
+
 async function resolveFollowUpText(
   businessId: string,
   threadId: string,
   planKey: PlanKey,
+  lastViewedProductId: string | undefined,
 ): Promise<{ text: string; usedAi: boolean; items: ActiveCartItem[] }> {
   const [activeCart] = await db
     .select({ items: cart.items })
@@ -123,6 +175,16 @@ async function resolveFollowUpText(
   const items = activeCart?.items ?? [];
 
   const recoveryTier = PLAN_CATALOG[planKey].limits.abandonedCartRecovery;
+
+  // Browse-only fallback (FR-AGT-13): no cart was ever recorded, but the customer did
+  // look at a specific product — only worth a personalized mention on Pro, same as the
+  // cart-based path; Growth's tier is generic regardless of what data is available.
+  if (items.length === 0 && lastViewedProductId && recoveryTier === "personalized") {
+    const hasConversations = await checkAiConversationAvailability(businessId);
+    if (!hasConversations) return { text: buildGenericFollowUpText(), usedAi: false, items };
+    const result = await generatePersonalizedFollowUpForProduct(businessId, lastViewedProductId);
+    return { ...result, items };
+  }
 
   if (recoveryTier === "none" || items.length === 0) {
     return { text: buildGenericFollowUpText(), usedAi: false, items };
@@ -160,7 +222,12 @@ async function sendFollowUp(session: typeof agentSession.$inferSelect, planKey: 
     connectedAt: conn.connectedAt,
   };
 
-  const { text, usedAi, items } = await resolveFollowUpText(session.businessId, session.threadId, planKey);
+  const { text, usedAi, items } = await resolveFollowUpText(
+    session.businessId,
+    session.threadId,
+    planKey,
+    session.state.lastViewedProductId,
+  );
 
   const result = await messagingService.sendMessage(connection, {
     platform,

@@ -139,135 +139,135 @@ export default async function InboxPage(props: {
       </div>
       <HighTrafficBanner />
 
-        <div
-          className={cn(
-            "grid h-full w-full min-h-0 grid-cols-1 overflow-hidden",
-            selectedThread ? "md:grid-cols-[320px_1fr_320px]" : "md:grid-cols-[320px_1fr]",
-          )}
-        >
-          {/* Left: Conversation list — desktop only */}
-          <div className="hidden min-h-0 overflow-y-auto border-r md:block">
-            <ConversationList threads={data.threads} selectedThreadId={selectedThread?.id ?? null} />
-          </div>
+      <div
+        className={cn(
+          "grid h-full w-full min-h-0 grid-cols-1 overflow-hidden",
+          selectedThread ? "md:grid-cols-[320px_1fr_320px]" : "md:grid-cols-[320px_1fr]",
+        )}
+      >
+        {/* Left: Conversation list — desktop only */}
+        <div className="hidden min-h-0 overflow-y-auto border-r md:block">
+          <ConversationList threads={data.threads} selectedThreadId={selectedThread?.id ?? null} />
+        </div>
 
-          {/* Center: Messages */}
-          <div className="min-h-0 flex flex-col">
-            {selectedThread ? (
-              <>
-                <div className="flex shrink-0 items-center gap-2 border-b px-3 py-3 md:gap-3 md:px-5 md:py-4">
-                  {/* Conversation list — mobile only */}
+        {/* Center: Messages */}
+        <div className="min-h-0 max-h-[calc(100vh-10vh)] lg:max-h-[calc(100vh-16vh)] flex flex-col">
+          {selectedThread ? (
+            <>
+              <div className="flex shrink-0 items-center gap-2 border-b px-3 py-3 md:gap-3 md:px-5 md:py-4">
+                {/* Conversation list — mobile only */}
+                <MobileConversationSheet
+                  threads={data.threads}
+                  selectedThreadId={selectedThread?.id ?? null}
+                />
+                <span
+                  className={cn(
+                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white md:h-9 md:w-9",
+                    avatarColor(selectedThread.contactLabel),
+                  )}
+                >
+                  {initials(selectedThread.contactLabel)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-foreground">{selectedThread.contactLabel}</p>
+                  <p className="flex items-center gap-1 truncate text-[11px] text-muted-foreground md:text-xs">
+                    {channelIcon(selectedThread.platform, "h-3 w-3")}
+                    {selectedThread.accountLabel}
+                  </p>
+                </div>
+                {/* Contact info — mobile only, opens sheet */}
+                <Sheet>
+                  <SheetTrigger asChild>
+                    <Button type="button" variant="outline" size="icon" className="h-9 w-9 md:hidden" aria-label="Contact info">
+                      <Info className="h-4 w-4" />
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="right" className="w-[85vw] p-0 sm:w-[380px]" hideClose>
+                    <ContactPanel
+                      threadId={selectedThread.id}
+                      customerId={selectedThread.customerId}
+                      contactLabel={selectedThread.contactLabel}
+                      messages={selectedThread.messages}
+                      initialSummary={selectedThread.summary}
+                    />
+                    <SheetFooter className="border-t p-4">
+                      <SheetClose asChild>
+                        <Button variant="outline" className="w-full">Close</Button>
+                      </SheetClose>
+                    </SheetFooter>
+                  </SheetContent>
+                </Sheet>
+                <ThreadHeaderActions
+                  threadId={selectedThread.id}
+                  status={selectedThread.status}
+                  handlingMode={selectedThread.handlingMode}
+                />
+              </div>
+
+              <div className="flex-1 space-y-4 overflow-y-auto p-4 md:p-6">
+                {selectedThread.messages.map((message) => (
+                  <MessageBubble
+                    key={message.id}
+                    direction={message.direction}
+                    text={message.text}
+                    timestamp={message.timestamp}
+                    imageUrl={message.imageUrl}
+                    sentBy={message.sentBy}
+                  />
+                ))}
+                <ScrollToBottom />
+              </div>
+
+              <Separator />
+
+              <div className="shrink-0 p-3 md:p-4">
+                <ReplyForm
+                  threadId={selectedThread.id}
+                  platform={selectedThread.platform}
+                  accountId={selectedThread.accountId}
+                  recipientId={selectedThread.replyTargetId}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Mobile: select conversation button */}
+              <div className="flex h-full flex-col items-center justify-center p-10 text-center md:hidden">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border bg-background shadow-sm">
+                  <Inbox className="h-8 w-8 text-muted-foreground" />
+                </div>
+                <h2 className="text-xl font-semibold tracking-tight">Your Inbox</h2>
+                <p className="text-muted-foreground mt-2 max-w-md text-sm leading-6">
+                  Select a conversation to view messages and reply.
+                </p>
+                <div className="mt-6">
                   <MobileConversationSheet
                     threads={data.threads}
-                    selectedThreadId={selectedThread?.id ?? null}
-                  />
-                  <span
-                    className={cn(
-                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white md:h-9 md:w-9",
-                      avatarColor(selectedThread.contactLabel),
-                    )}
-                  >
-                    {initials(selectedThread.contactLabel)}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-foreground">{selectedThread.contactLabel}</p>
-                    <p className="flex items-center gap-1 truncate text-[11px] text-muted-foreground md:text-xs">
-                      {channelIcon(selectedThread.platform, "h-3 w-3")}
-                      {selectedThread.accountLabel}
-                    </p>
-                  </div>
-                  {/* Contact info — mobile only, opens sheet */}
-                  <Sheet>
-                    <SheetTrigger asChild>
-                      <Button type="button" variant="outline" size="icon" className="h-9 w-9 md:hidden" aria-label="Contact info">
-                        <Info className="h-4 w-4" />
-                      </Button>
-                    </SheetTrigger>
-                    <SheetContent side="right" className="w-[85vw] p-0 sm:w-[380px]" hideClose>
-                      <ContactPanel
-                        threadId={selectedThread.id}
-                        customerId={selectedThread.customerId}
-                        contactLabel={selectedThread.contactLabel}
-                        messages={selectedThread.messages}
-                        initialSummary={selectedThread.summary}
-                      />
-                      <SheetFooter className="border-t p-4">
-                        <SheetClose asChild>
-                          <Button variant="outline" className="w-full">Close</Button>
-                        </SheetClose>
-                      </SheetFooter>
-                    </SheetContent>
-                  </Sheet>
-                  <ThreadHeaderActions
-                    threadId={selectedThread.id}
-                    status={selectedThread.status}
-                    handlingMode={selectedThread.handlingMode}
+                    selectedThreadId={null}
+                    showLabel
                   />
                 </div>
-
-                <div className="flex-1 space-y-4 overflow-y-auto p-4 md:p-6">
-                  {selectedThread.messages.map((message) => (
-                    <MessageBubble
-                      key={message.id}
-                      direction={message.direction}
-                      text={message.text}
-                      timestamp={message.timestamp}
-                      imageUrl={message.imageUrl}
-                      sentBy={message.sentBy}
-                    />
-                  ))}
-                  <ScrollToBottom />
-                </div>
-
-                <Separator />
-
-                <div className="shrink-0 p-3 md:p-4">
-                  <ReplyForm
-                    threadId={selectedThread.id}
-                    platform={selectedThread.platform}
-                    accountId={selectedThread.accountId}
-                    recipientId={selectedThread.replyTargetId}
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                {/* Mobile: select conversation button */}
-                <div className="flex h-full flex-col items-center justify-center p-10 text-center md:hidden">
-                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border bg-background shadow-sm">
-                    <Inbox className="h-8 w-8 text-muted-foreground" />
-                  </div>
-                  <h2 className="text-xl font-semibold tracking-tight">Your Inbox</h2>
-                  <p className="text-muted-foreground mt-2 max-w-md text-sm leading-6">
-                    Select a conversation to view messages and reply.
-                  </p>
-                  <div className="mt-6">
-                    <MobileConversationSheet
-                      threads={data.threads}
-                      selectedThreadId={null}
-                      showLabel
-                    />
-                  </div>
-                </div>
-                {/* Desktop: empty state */}
-                <EmptyState businessSlug={businessSlug} hasThreads={data.threads.length > 0} />
-              </>
-            )}
-          </div>
-
-          {/* Right: Contact panel — desktop only */}
-          {selectedThread && (
-            <div className="hidden min-h-0 overflow-y-auto border-l md:block">
-              <ContactPanel
-                key={selectedThread.id}
-                threadId={selectedThread.id}
-                customerId={selectedThread.customerId}
-                contactLabel={selectedThread.contactLabel}
-                messages={selectedThread.messages}
-                initialSummary={selectedThread.summary}
-              />
-            </div>
+              </div>
+              {/* Desktop: empty state */}
+              <EmptyState businessSlug={businessSlug} hasThreads={data.threads.length > 0} />
+            </>
           )}
         </div>
+
+        {/* Right: Contact panel — desktop only */}
+        {selectedThread && (
+          <div className="hidden min-h-0 overflow-y-auto border-l md:block">
+            <ContactPanel
+              key={selectedThread.id}
+              threadId={selectedThread.id}
+              customerId={selectedThread.customerId}
+              contactLabel={selectedThread.contactLabel}
+              messages={selectedThread.messages}
+              initialSummary={selectedThread.summary}
+            />
+          </div>
+        )}
       </div>
+    </div>
   );
 }

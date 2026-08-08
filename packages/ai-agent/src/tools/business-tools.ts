@@ -17,6 +17,14 @@ export interface ComboOffer {
   partnerProductName: string | null;
 }
 
+export interface FrequentlyBoughtTogetherItem {
+  id: string;
+  title: string;
+  images: string[];
+  startingPrice: number | null;
+  coOccurrenceCount: number;
+}
+
 export interface CampaignOffer {
   offerId: string;
   title: string;
@@ -32,6 +40,9 @@ export interface BusinessHelpers {
   getBusinessProfile(businessId: string): Promise<BusinessProfileSnapshot | null>;
   getOfferByCode(businessId: string, code: string): Promise<unknown>;
   getComboOffersForProduct(businessId: string, productId: string): Promise<ComboOffer[]>;
+  /** FR-AGT-08 — real co-purchase history, no discount attached. Distinct from
+   * getComboOffersForProduct's owner-configured, discount-bearing pairs. */
+  getFrequentlyBoughtTogether(businessId: string, productId: string): Promise<FrequentlyBoughtTogetherItem[]>;
   /** B.7 — offers flagged for proactive, unprompted mention (festival/seasonal campaigns). */
   getActiveCampaigns(businessId: string): Promise<CampaignOffer[]>;
   /** Growth's "limited" campaign targeting rule — only mention to repeat customers. */
@@ -110,6 +121,21 @@ export const getComboOffersForProductTool = new DynamicStructuredTool({
     const { businessId } = getToolContext();
     console.log("[Tool] getComboOffersForProduct", { businessId, productId });
     const result = await getHelpers().getComboOffersForProduct(businessId, productId);
+    return JSON.stringify(result);
+  },
+});
+
+export const getFrequentlyBoughtTogetherTool = new DynamicStructuredTool({
+  name: "getFrequentlyBoughtTogether",
+  description: "Real customer purchase patterns — products actually bought together in past orders, no discount attached. Use alongside getComboOffersForProduct, not instead of it: check this too after identifying what the customer wants, and if it returns items, mention them plainly as \"customers who bought this also got X\" — never imply a discount unless getComboOffersForProduct separately confirms one. May return an empty list for a new or rarely-ordered product — say nothing in that case.",
+  schema: z.object({
+    productId: z.string().describe("The product the customer is currently interested in"),
+  }),
+  func: async (input: unknown) => {
+    const { productId } = input as { productId: string };
+    const { businessId } = getToolContext();
+    console.log("[Tool] getFrequentlyBoughtTogether", { businessId, productId });
+    const result = await getHelpers().getFrequentlyBoughtTogether(businessId, productId);
     return JSON.stringify(result);
   },
 });
@@ -203,6 +229,7 @@ export const businessTools = [
   getBusinessProfileTool,
   getOfferByCodeTool,
   getComboOffersForProductTool,
+  getFrequentlyBoughtTogetherTool,
   getActiveCampaignsTool,
   getFAQMatchesTool,
   reportComplaintTool,

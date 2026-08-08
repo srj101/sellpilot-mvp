@@ -113,9 +113,9 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    title: "Channels & AI",
+    title: "Channels",
     items: [
-      { href: "/dashboard/integrations", icon: Plug, label: "Channel Integrations" },
+      { href: "/dashboard/integrations", icon: Plug, label: "Integrations" },
     ],
   },
   {

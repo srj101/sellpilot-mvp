@@ -19,6 +19,15 @@ export interface AIHelpers {
   ): Promise<unknown[]>;
   getProductById(businessId: string, productId: string): Promise<unknown>;
   checkProductStock(productId: string): Promise<{ stock: number; variants: unknown[] }>;
+  /** FR-AGT-13 — records that the customer looked at this product, so an abandoned-
+   * conversation follow-up can reference it even if they never reach a cart. */
+  markProductSelected(
+    businessId: string,
+    platform: string,
+    threadId: string,
+    senderId: string | undefined,
+    productId: string
+  ): Promise<void>;
   getTopSellingProducts(businessId: string, limit?: number): Promise<unknown[]>;
   listActiveProducts(businessId: string, limit?: number): Promise<unknown[]>;
   getProductVariants(productId: string): Promise<unknown[]>;
@@ -101,9 +110,14 @@ export const getProductTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { id } = input as { id: string };
-    const { businessId } = getToolContext();
+    const { businessId, platform, threadId, customerId } = getToolContext();
     console.log("[Tool] getProduct", { id, businessId });
     const result = await getHelpers().getProductById(businessId, id);
+    if (result) {
+      getHelpers()
+        .markProductSelected(businessId, platform, threadId, customerId, id)
+        .catch((err) => console.error("[getProduct] Failed to mark product selected:", err));
+    }
     return JSON.stringify(result);
   },
 });
@@ -118,6 +132,12 @@ export const checkStockTool = new DynamicStructuredTool({
     const { id } = input as { id: string };
     console.log("[Tool] checkStock", { id });
     const result = await getHelpers().checkProductStock(id);
+    if (result.variants.length > 0) {
+      const { businessId, platform, threadId, customerId } = getToolContext();
+      getHelpers()
+        .markProductSelected(businessId, platform, threadId, customerId, id)
+        .catch((err) => console.error("[checkStock] Failed to mark product selected:", err));
+    }
     return JSON.stringify({ stock: result.stock, variants: result.variants });
   },
 });

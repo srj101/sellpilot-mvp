@@ -655,6 +655,10 @@ export interface AgentSessionState {
   | "awaiting_confirmation"
   | "order_placed"
   | "support";
+  /** Set alongside currentStep: "product_selected" — the last product the customer asked
+   * about, so an abandoned-conversation follow-up (FR-AGT-13) can reference it even when
+   * they never got as far as a cart. */
+  lastViewedProductId?: string;
   pendingOrderId?: string;
   notes?: string;
 }

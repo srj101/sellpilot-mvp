@@ -23,6 +23,7 @@ export {
 export {
   businessTools,
   getComboOffersForProductTool,
+  getFrequentlyBoughtTogetherTool,
   getActiveCampaignsTool,
   setBusinessHelpers,
   getBusinessHelpers,
@@ -46,7 +47,7 @@ export {
 
 import { productTools } from "./product-tools";
 import { orderTools, getCustomerPurchaseHistoryTool } from "./order-tools";
-import { businessTools, getComboOffersForProductTool, getActiveCampaignsTool } from "./business-tools";
+import { businessTools, getComboOffersForProductTool, getFrequentlyBoughtTogetherTool, getActiveCampaignsTool } from "./business-tools";
 import { checkoutTools } from "./checkout-tools";
 import { mediaTools } from "./media-tools";
 import type { PlanKey } from "../types";
@@ -57,19 +58,30 @@ const STARTER_EXCLUDED_TOOL_NAMES = new Set<string>([
   getActiveCampaignsTool.name,
 ]);
 
+/** FR-AGT-08 cross-selling is Pro-only (plans.ts's recommendationTier is "advanced" only
+ * on Pro — Starter/Growth are "basic"/"upsell"), so it's filtered separately from the
+ * Starter-only set above rather than folded into it. */
+const SUB_PRO_EXCLUDED_TOOL_NAMES = new Set<string>([
+  getFrequentlyBoughtTogetherTool.name,
+]);
+
 /**
  * Get all available tools for a given plan tier. Starter is excluded from the
  * combo-offer tool (the upsell/cross-sell mechanism — see prompts.ts's
  * RECOMMENDATION_INSTRUCTIONS, Starter is "basic only"), from purchase-history
  * lookups (Growth+ only, see plans.ts's purchaseHistoryEnabled), and from campaign
  * automation (Growth+ only, see plans.ts's campaignAutomation — "none" for Starter).
- * Omitting planKey keeps the old unrestricted behavior (defensive default for any
- * caller that hasn't been updated to pass one).
+ * Frequently-bought-together cross-selling is excluded below Pro. Omitting planKey
+ * keeps the old unrestricted behavior (defensive default for any caller that hasn't
+ * been updated to pass one).
  */
 export function getAllTools(planKey?: PlanKey) {
-  const all = [...productTools, ...orderTools, ...businessTools, ...checkoutTools, ...mediaTools];
+  let all = [...productTools, ...orderTools, ...businessTools, ...checkoutTools, ...mediaTools];
   if (planKey === "starter") {
-    return all.filter((tool) => !STARTER_EXCLUDED_TOOL_NAMES.has(tool.name));
+    all = all.filter((tool) => !STARTER_EXCLUDED_TOOL_NAMES.has(tool.name));
+  }
+  if (planKey && planKey !== "pro") {
+    all = all.filter((tool) => !SUB_PRO_EXCLUDED_TOOL_NAMES.has(tool.name));
   }
   return all;
 }

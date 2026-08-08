@@ -92,6 +92,7 @@ async function initializeAIHelpers() {
         discoverProducts: aiHelpers.discoverProducts,
         getProductById: aiHelpers.getProductById,
         checkProductStock: aiHelpers.checkProductStock,
+        markProductSelected: aiHelpers.markProductSelected,
         getTopSellingProducts: aiHelpers.getTopSellingProducts,
         listActiveProducts: aiHelpers.listActiveProducts,
         getProductVariants: aiHelpers.getProductVariants,
@@ -151,6 +152,7 @@ async function initializeAIHelpers() {
         getBusinessProfile: aiHelpers.getBusinessProfile,
         getOfferByCode: aiHelpers.getOfferByCode,
         getComboOffersForProduct: aiHelpers.getComboOffersForProduct,
+        getFrequentlyBoughtTogether: aiHelpers.getFrequentlyBoughtTogether,
         getFAQMatches: aiHelpers.getFAQMatches,
         escalateToHuman: async (businessId, threadId, reason) => {
           await aiHelpers.escalateToHuman(businessId, threadId, reason);
