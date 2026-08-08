@@ -1,7 +1,7 @@
 import { relations } from "drizzle-orm";
 import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
-import { user, business } from "./auth-schema";
+import { business } from "./auth-schema";
 import { order } from "./agent-schema";
 
 /**
@@ -16,9 +16,6 @@ export const pageView = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     businessId: text("business_id")
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
@@ -41,9 +38,9 @@ export const pageView = pgTable(
 );
 
 export const pageViewRelations = relations(pageView, ({ one }) => ({
-  user: one(user, {
-    fields: [pageView.userId],
-    references: [user.id],
+  business: one(business, {
+    fields: [pageView.businessId],
+    references: [business.id],
   }),
   order: one(order, {
     fields: [pageView.orderId],

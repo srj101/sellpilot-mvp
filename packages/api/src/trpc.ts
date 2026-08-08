@@ -189,7 +189,6 @@ export const businessProcedure = protectedProcedure.use(async ({ ctx, next }) =>
       memberships[0];
   }
 
-  let businessOwnerId = userId;
   let memberRole = "owner";
   let customRoleKey: string | null = null;
   let businessId: string | null = null;
@@ -198,14 +197,6 @@ export const businessProcedure = protectedProcedure.use(async ({ ctx, next }) =>
     businessId = membership.businessId;
     memberRole = membership.role;
     customRoleKey = membership.customRoleKey;
-    if (membership.role !== "owner") {
-      const [owner] = await ctx.db
-        .select({ userId: businessMember.userId })
-        .from(businessMember)
-        .where(and(eq(businessMember.businessId, membership.businessId), eq(businessMember.role, "owner")))
-        .limit(1);
-      businessOwnerId = owner?.userId ?? userId;
-    }
   }
 
   // Effective RBAC permissions for this member, resolved once per request so the
@@ -219,7 +210,7 @@ export const businessProcedure = protectedProcedure.use(async ({ ctx, next }) =>
       : [];
 
   return next({
-    ctx: { ...ctx, businessOwnerId, memberRole, customRoleKey, businessId, permissions },
+    ctx: { ...ctx, memberRole, customRoleKey, businessId, permissions },
   });
 });
 

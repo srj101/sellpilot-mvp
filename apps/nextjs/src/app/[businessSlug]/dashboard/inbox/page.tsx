@@ -8,7 +8,6 @@ import { Sheet, SheetClose, SheetContent, SheetFooter, SheetTrigger } from "@acm
 import { cn } from "@acme/ui";
 import { Inbox, Info, MessageSquareText } from "lucide-react";
 
-import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { getSession } from "~/auth/server";
 import { triggerInboxBroadcast } from "~/lib/inbox-broadcast";
 import { createCaller } from "~/trpc/caller";
@@ -134,8 +133,7 @@ export default async function InboxPage(props: {
   const selectedThread = data.selectedThread;
 
   return (
-    <DashboardShell>
-      <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm">
+    <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm">
       <div className="hidden md:block">
         <InboxTabsBar threads={data.threads} />
       </div>
@@ -272,6 +270,5 @@ export default async function InboxPage(props: {
           )}
         </div>
       </div>
-    </DashboardShell>
   );
 }

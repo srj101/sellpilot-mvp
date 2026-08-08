@@ -39,7 +39,7 @@ export interface BusinessHelpers {
   getFAQMatches(businessId: string, query: string, limit?: number): Promise<unknown[]>;
   /** FR-AGT-15 auto-escalation — hands the thread to human handling starting with the
    * customer's next message. */
-  escalateToHuman(userId: string, businessId: string, threadId: string, reason: string): Promise<void>;
+  escalateToHuman(businessId: string, threadId: string, reason: string): Promise<void>;
   /** Pro tier's "basic logging + alert" — owner gets notified, AI keeps handling the chat. */
   logComplaint(businessId: string, customerName: string | undefined, note: string): Promise<void>;
   /** Pro tier's "automated + contact routing" — owner gets notified, agent gets the
@@ -162,12 +162,12 @@ export const reportComplaintTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { summary } = input as { summary: string };
-    const { userId, businessId, threadId, customerName, planKey } = getToolContext();
+    const { businessId, threadId, customerName, planKey } = getToolContext();
     const mode = COMPLAINT_HANDLING[planKey ?? "starter"];
     console.log("[Tool] reportComplaint", { businessId, threadId, mode, summary });
 
     if (mode === "redirect") {
-      await getHelpers().escalateToHuman(userId, businessId, threadId, `Complaint: ${summary}`);
+      await getHelpers().escalateToHuman(businessId, threadId, `Complaint: ${summary}`);
       return JSON.stringify({ action: "escalated" });
     }
 
@@ -185,12 +185,12 @@ export const reportBulkInquiryTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { summary } = input as { summary: string };
-    const { userId, businessId, threadId, customerName, planKey } = getToolContext();
+    const { businessId, threadId, customerName, planKey } = getToolContext();
     const mode = BULK_INQUIRY_HANDLING[planKey ?? "starter"];
     console.log("[Tool] reportBulkInquiry", { businessId, threadId, mode, summary });
 
     if (mode === "redirect") {
-      await getHelpers().escalateToHuman(userId, businessId, threadId, `Bulk/wholesale inquiry: ${summary}`);
+      await getHelpers().escalateToHuman(businessId, threadId, `Bulk/wholesale inquiry: ${summary}`);
       return JSON.stringify({ action: "escalated" });
     }
 

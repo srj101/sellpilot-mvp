@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
-import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { AnalyticsClient } from "./_components/analytics-client";
 
 const VALID_RANGES = ["7d", "30d", "90d", "1y", "custom"] as const;
@@ -82,8 +81,6 @@ export default async function AnalyticsPage({
   const summary = tier === "none" ? EMPTY_SUMMARY : await caller.analytics.getSummary({ range, from, to });
 
   return (
-    <DashboardShell>
       <AnalyticsClient range={range} from={from ?? null} to={to ?? null} tier={tier} copilotTier={copilotTier} {...summary} />
-    </DashboardShell>
   );
 }

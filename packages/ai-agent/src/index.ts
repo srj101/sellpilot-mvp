@@ -152,7 +152,6 @@ export async function runConversation(input: AgentInput): Promise<AgentOutput> {
 export async function chat(
   message: string,
   context: {
-    userId: string;
     businessId: string;
     threadId?: string;
     platform?: "facebook_page" | "instagram" | "whatsapp";
@@ -162,7 +161,6 @@ export async function chat(
   const result = await runConversation({
     message,
     context: {
-      userId: context.userId,
       businessId: context.businessId,
       threadId: context.threadId ?? `temp-${Date.now()}`,
       platform: context.platform ?? "whatsapp",

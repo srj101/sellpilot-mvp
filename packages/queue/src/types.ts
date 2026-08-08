@@ -126,7 +126,6 @@ export interface MetaDMReplyJob {
   eventId: string;
   platform: "facebook_page" | "instagram" | "whatsapp";
   connectionId: string;
-  userId: string;
   /** Store (business) ID — the actual tenant-scoping key; a user can own more than one store. */
   businessId: string;
   recipientId: string;
@@ -145,7 +144,6 @@ export interface MetaCommentReplyJob {
   eventId: string;
   platform: "facebook_page" | "instagram";
   connectionId: string;
-  userId: string;
   /** Store (business) ID — the actual tenant-scoping key; a user can own more than one store. */
   businessId: string;
   commentId: string;
@@ -154,7 +152,7 @@ export interface MetaCommentReplyJob {
 }
 
 export interface ProductImageIndexJob {
-  userId: string;
+  businessId: string;
   productId: string;
   variantId?: string;
   imageUrl: string;

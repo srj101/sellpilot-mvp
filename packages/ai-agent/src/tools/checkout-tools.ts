@@ -50,7 +50,6 @@ export interface CheckoutHelpers {
    * Records the full current cart (every item just priced together) as the thread's
    * active cart, consumed by the abandoned-cart follow-up job. */
   upsertActiveCart?(
-    userId: string,
     businessId: string,
     platform: string,
     threadId: string,
@@ -96,7 +95,7 @@ export const quoteOrderTool = new DynamicStructuredTool({
       district?: string;
       offerCode?: string;
     };
-    const { userId, businessId, threadId, platform, customerId, planKey } = getToolContext();
+    const { businessId, threadId, platform, customerId, planKey } = getToolContext();
     const limit = MULTI_PRODUCT_CART_LIMIT[planKey ?? "starter"];
     if (items.length > limit) {
       return JSON.stringify({
@@ -111,7 +110,6 @@ export const quoteOrderTool = new DynamicStructuredTool({
       // Best-effort: powers the abandoned-cart follow-up job, must never fail the quote itself.
       getHelpers()
         .upsertActiveCart?.(
-          userId,
           businessId,
           platform,
           threadId,

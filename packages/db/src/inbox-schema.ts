@@ -1,7 +1,7 @@
 import { relations } from "drizzle-orm";
 import { boolean, index, pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
 
-import { user, business } from "./auth-schema";
+import { business } from "./auth-schema";
 import { customer } from "./agent-schema";
 
 /**
@@ -16,9 +16,6 @@ export const conversationMeta = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     businessId: text("business_id")
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
@@ -67,9 +64,6 @@ export const tag = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     businessId: text("business_id")
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
@@ -115,15 +109,15 @@ export const customerNote = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     businessId: text("business_id")
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
     customerId: text("customer_id")
       .notNull()
       .references(() => customer.id, { onDelete: "cascade" }),
+    /** Who wrote it — the real audit field, captured as a display name at write time
+     * (inbox.addNote uses session.user.name). Deliberately a label, not a user FK: the
+     * note should survive the author leaving the team. */
     authorLabel: text("author_label").notNull(),
     body: text("body").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -135,12 +129,12 @@ export const customerNote = pgTable(
 );
 
 export const conversationMetaRelations = relations(conversationMeta, ({ one }) => ({
-  user: one(user, { fields: [conversationMeta.userId], references: [user.id] }),
+  business: one(business, { fields: [conversationMeta.businessId], references: [business.id] }),
   customer: one(customer, { fields: [conversationMeta.customerId], references: [customer.id] }),
 }));
 
 export const tagRelations = relations(tag, ({ one, many }) => ({
-  user: one(user, { fields: [tag.userId], references: [user.id] }),
+  business: one(business, { fields: [tag.businessId], references: [business.id] }),
   customerTags: many(customerTag),
 }));
 
@@ -150,6 +144,6 @@ export const customerTagRelations = relations(customerTag, ({ one }) => ({
 }));
 
 export const customerNoteRelations = relations(customerNote, ({ one }) => ({
-  user: one(user, { fields: [customerNote.userId], references: [user.id] }),
+  business: one(business, { fields: [customerNote.businessId], references: [business.id] }),
   customer: one(customer, { fields: [customerNote.customerId], references: [customer.id] }),
 }));

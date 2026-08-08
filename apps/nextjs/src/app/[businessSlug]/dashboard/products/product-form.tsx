@@ -42,6 +42,7 @@ export function ProductForm({
     initialProduct?.description ?? "",
   );
   const [category, setCategory] = useState(initialProduct?.category ?? "");
+  const [gender, setGender] = useState(initialProduct?.gender ?? "");
   const [status, setStatus] = useState(initialProduct?.status ?? "active");
   const [images, setImages] = useState<string[]>(initialProduct?.images ?? []);
   const [newImageUrl, setNewImageUrl] = useState("");
@@ -259,6 +260,7 @@ export function ProductForm({
         title,
         description,
         category,
+        gender: gender || undefined,
         status,
         images,
         options: hasVariants ? options : [],
@@ -344,6 +346,22 @@ export function ProductForm({
                   placeholder="e.g. Shirts, Panjabi, Sandals"
                   className="rounded-xl border bg-background/50 focus:bg-background"
                 />
+              </div>
+              <div>
+                <label className="text-muted-foreground mb-1.5 block text-xs font-semibold uppercase tracking-wider">
+                  Gender
+                </label>
+                <select
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value)}
+                  className="border-input bg-background/50 focus:bg-background h-10 w-full rounded-xl border px-3 text-sm outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  <option value="">Not specified</option>
+                  <option value="men">Men</option>
+                  <option value="women">Women</option>
+                  <option value="unisex">Unisex</option>
+                  <option value="kids">Kids</option>
+                </select>
               </div>
               <div>
                 <label className="text-muted-foreground mb-1.5 block text-xs font-semibold uppercase tracking-wider">

@@ -21,6 +21,7 @@ import { OnboardingShell } from "./onboarding-shell";
 interface DraftProduct {
   name: string;
   category: string;
+  gender: string;
   price: number;
   discountPercent?: number;
   stockQty: number;
@@ -34,6 +35,7 @@ interface DraftProduct {
 interface BulkRow {
   title: string;
   category?: string;
+  gender?: string;
   price: number;
   discountPercent?: number;
   stockQty: number;
@@ -42,9 +44,16 @@ interface BulkRow {
   imageUrl?: string;
 }
 
+const GENDER_VALUES = new Set(["men", "women", "unisex", "kids"]);
+function normalizeGender(raw: string | undefined) {
+  const v = raw?.trim().toLowerCase();
+  return v && GENDER_VALUES.has(v) ? v : undefined;
+}
+
 const EMPTY_DRAFT: DraftProduct = {
   name: "",
   category: "",
+  gender: "",
   price: 0,
   discountPercent: undefined,
   stockQty: 0,
@@ -70,6 +79,7 @@ function toProductInput(p: DraftProduct) {
     title: p.name,
     description: p.description || undefined,
     category: p.category || undefined,
+    gender: (p.gender as any) || undefined,
     status: "active",
     images: p.image ? [p.image] : [],
     options,
@@ -227,6 +237,7 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
           rows.push({
             title,
             category: pick(row, "category", "Category"),
+            gender: normalizeGender(pick(row, "gender", "Gender")),
             price,
             discountPercent: discountRaw ? Number(discountRaw) : undefined,
             stockQty: Number(pick(row, "stockQty", "Stock Qty", "stock") ?? 0) || 0,
@@ -268,9 +279,9 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
   }
 
   function downloadTemplate() {
-    const header = "title,category,price,discountPercent,stockQty,description,rating,imageUrl\n";
+    const header = "title,category,gender,price,discountPercent,stockQty,description,rating,imageUrl\n";
     const sample =
-      "Classic White T-Shirt,Fashion & Apparel,500,10,25,100% cotton crewneck tee,,https://example.com/tshirt.jpg\n";
+      "Classic White T-Shirt,Fashion & Apparel,unisex,500,10,25,100% cotton crewneck tee,,https://example.com/tshirt.jpg\n";
     const blob = new Blob([header + sample], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -288,7 +299,7 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
     try {
       // The server caps this at the plan's remaining product slots (first rows in file
       // order win) rather than rejecting the whole file — `skipped` reflects that cap.
-      const result = await bulkCreate.mutateAsync({ products: csvRows });
+      const result = await bulkCreate.mutateAsync({ products: csvRows as any });
       if (result.skipped > 0) {
         setImportSummary({ imported: result.imported, skipped: result.skipped });
       } else {
@@ -403,7 +414,7 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Colour</label>
                     <input
@@ -421,6 +432,20 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
                       placeholder="e.g. M"
                       className={FIELD_CLASS}
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Gender</label>
+                    <select
+                      value={draft.gender}
+                      onChange={(e) => updateDraft("gender", e.target.value)}
+                      className={FIELD_CLASS}
+                    >
+                      <option value="">Not specified</option>
+                      <option value="men">Men</option>
+                      <option value="women">Women</option>
+                      <option value="unisex">Unisex</option>
+                      <option value="kids">Kids</option>
+                    </select>
                   </div>
                 </div>
 
@@ -592,6 +617,7 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
                         <tr>
                           <th className="px-3 py-2">Title</th>
                           <th className="px-3 py-2">Category</th>
+                          <th className="px-3 py-2">Gender</th>
                           <th className="px-3 py-2">Price</th>
                           <th className="px-3 py-2">Discount%</th>
                           <th className="px-3 py-2">Stock</th>
@@ -603,6 +629,7 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
                           <tr key={i} className="border-t">
                             <td className="px-3 py-2">{r.title}</td>
                             <td className="px-3 py-2 text-muted-foreground">{r.category ?? "—"}</td>
+                            <td className="px-3 py-2 text-muted-foreground">{r.gender ?? "—"}</td>
                             <td className="px-3 py-2">{r.price}</td>
                             <td className="px-3 py-2 text-muted-foreground">{r.discountPercent ?? "—"}</td>
                             <td className="px-3 py-2 text-muted-foreground">{r.stockQty}</td>

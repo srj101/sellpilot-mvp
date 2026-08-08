@@ -66,7 +66,6 @@ export const rolesRouter = {
       const [newRole] = await ctx.db
         .insert(role)
         .values({
-          userId: ctx.businessOwnerId,
           businessId: ctx.businessId,
           name: input.name,
           key: input.key,

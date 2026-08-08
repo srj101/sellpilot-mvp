@@ -27,14 +27,13 @@ import { getNotificationPreference } from "./notification-preferences";
 // conversations otherwise have no connection to `customer` rows (keyed by platform contact
 // id, not phone/email), so this is the only point a thread gains contact details/tags/notes.
 async function linkConversationToCustomer(
-  userId: string,
   businessId: string,
   threadId: string,
   customerId: string,
 ) {
   await db
     .insert(conversationMeta)
-    .values({ userId, businessId, threadId, customerId })
+    .values({ businessId, threadId, customerId })
     .onConflictDoUpdate({
       target: [conversationMeta.businessId, conversationMeta.threadId],
       set: { customerId },
@@ -100,7 +99,7 @@ export async function getCustomerForThread(businessId: string, threadId: string)
 // placeholder string instead of a real number) is rejected rather than silently stored.
 function normalizeBdPhone(raw: string): string | null {
   const digits = raw.replace(/[\s-]/g, "");
-  const match = digits.match(/^(?:\+?880|0)(1[3-9]\d{8})$/);
+  const match = /^(?:\+?880|0)(1[3-9]\d{8})$/.exec(digits);
   return match ? `+880${match[1]}` : null;
 }
 
@@ -197,6 +196,61 @@ export async function searchProductsByKeyword(
     return words.every((w) => t.includes(w) || d.includes(w));
   });
   return matches.slice(0, limit);
+}
+
+/**
+ * Structured product discovery — budget/gender/purpose filtering (SRS FR-AGT-05), as
+ * opposed to searchProductsByKeyword's plain title/description substring match. Keyword
+ * here also matches `category`, which is what lets "office shoe" work without a
+ * dedicated purpose field. Gender, when passed, excludes untagged (null) products too —
+ * a real tradeoff over silently including them, but avoids false-positive matches for
+ * stores that haven't tagged their catalog.
+ */
+export async function discoverProducts(
+  businessId: string,
+  filters: {
+    keyword?: string;
+    gender?: string;
+    minPrice?: number;
+    maxPrice?: number;
+    limit?: number;
+  },
+) {
+  const rows = await db
+    .select()
+    .from(product)
+    .where(and(eq(product.businessId, businessId), eq(product.status, "active")));
+  if (rows.length === 0) return [];
+
+  const variants = await db
+    .select()
+    .from(productVariant)
+    .where(inArray(productVariant.productId, rows.map((p) => p.id)));
+
+  const minPriceByProduct = new Map<string, number>();
+  for (const v of variants) {
+    const cur = minPriceByProduct.get(v.productId);
+    if (cur === undefined || v.price < cur) minPriceByProduct.set(v.productId, v.price);
+  }
+
+  const keywordWords = filters.keyword?.trim().toLowerCase().split(/\s+/).filter(Boolean) ?? [];
+  const gender = filters.gender?.trim().toLowerCase();
+
+  const matches = rows
+    .map((p) => ({ ...p, startingPrice: minPriceByProduct.get(p.id) ?? null }))
+    .filter((p) => {
+      if (keywordWords.length > 0) {
+        const haystack = `${p.title} ${p.description ?? ""} ${p.category ?? ""}`.toLowerCase();
+        if (!keywordWords.every((w) => haystack.includes(w))) return false;
+      }
+      if (gender && (p.gender ?? "").toLowerCase() !== gender) return false;
+      if (filters.maxPrice !== undefined && (p.startingPrice === null || p.startingPrice > filters.maxPrice)) return false;
+      if (filters.minPrice !== undefined && (p.startingPrice === null || p.startingPrice < filters.minPrice)) return false;
+      return true;
+    })
+    .sort((a, b) => (a.startingPrice ?? Infinity) - (b.startingPrice ?? Infinity));
+
+  return matches.slice(0, filters.limit ?? 10);
 }
 
 // Get variants for a product
@@ -386,7 +440,6 @@ export async function getShippingCost(businessId: string, district?: string) {
 // Find or update a customer by phone instead of blindly inserting — repeat customers
 // would otherwise crash on the (businessId, phone) unique constraint.
 async function upsertCustomerByPhone(
-  userId: string,
   businessId: string,
   data: { name: string; phone: string; address: string },
 ) {
@@ -406,7 +459,7 @@ async function upsertCustomerByPhone(
 
   const [inserted] = await db
     .insert(customer)
-    .values({ userId, businessId, name: data.name, phone: data.phone, address: data.address })
+    .values({ businessId, name: data.name, phone: data.phone, address: data.address })
     .returning();
   return inserted;
 }
@@ -538,7 +591,6 @@ export async function quoteOrder(params: {
 
 // Create a customer + order with one or more line items.
 export async function createCustomerAndOrder(params: {
-  userId: string;
   businessId: string;
   threadId: string;
   channel: string;
@@ -557,7 +609,7 @@ export async function createCustomerAndOrder(params: {
    * (pending, payment link). */
   paymentMethod?: "cod" | "online";
 }) {
-  const { userId, businessId, threadId, channel, items, district, offerCode, paymentMethod } = params;
+  const { businessId, threadId, channel, items, district, offerCode, paymentMethod } = params;
   let { customerName, phone, address } = params;
 
   if (items.length === 0) return { success: false, error: "No items to order" };
@@ -591,7 +643,7 @@ export async function createCustomerAndOrder(params: {
     };
   }
 
-  const cust = await upsertCustomerByPhone(userId, businessId, { name: customerName, phone: normalizedPhone, address });
+  const cust = await upsertCustomerByPhone(businessId, { name: customerName, phone: normalizedPhone, address });
   if (!cust) return { success: false, error: "Unable to create customer" };
 
   const { subtotal, discountAmount } = priced;
@@ -608,7 +660,6 @@ export async function createCustomerAndOrder(params: {
   const [created] = await db
     .insert(order)
     .values({
-      userId,
       businessId,
       customerId: cust.id,
       orderNumber: generateOrderNumber(),
@@ -680,7 +731,7 @@ export async function createCustomerAndOrder(params: {
     }
   }
 
-  await linkConversationToCustomer(userId, businessId, threadId, cust.id);
+  await linkConversationToCustomer(businessId, threadId, cust.id);
 
   // FR-SET-04: gate in-app notification on inAppEnabled preference
   const { inAppEnabled } = await getNotificationPreference(businessId, "new_order");
@@ -721,7 +772,7 @@ export async function createCustomerAndOrder(params: {
     await db
       .update(cart)
       .set({ status: "converted", convertedOrderId: created.id })
-      .where(and(eq(cart.userId, userId), eq(cart.threadId, threadId), eq(cart.status, "active")));
+      .where(and(eq(cart.businessId, businessId), eq(cart.threadId, threadId), eq(cart.status, "active")));
   } catch (err) {
     console.error("[createCustomerAndOrder] Failed to mark cart converted:", err);
   }
@@ -793,7 +844,7 @@ export async function getPendingReviewOrder(businessId: string, threadId: string
  * itself is the collection mechanism (spec §6 "Review & Feedback Collection"), no
  * separate dashboard surface exists for it yet. */
 export async function submitReview(params: {
-  userId: string;
+  businessId: string;
   orderId: string;
   customerId: string | null;
   productId: string | null;
@@ -908,10 +959,10 @@ export async function getConversationHandlingMode(businessId: string, threadId: 
  * Takes effect starting with the customer's NEXT message — dm-reply.ts already checks
  * handling mode before generating each reply, so this turn's own reply still completes.
  */
-export async function escalateToHuman(userId: string, businessId: string, threadId: string, reason: string): Promise<void> {
+export async function escalateToHuman(businessId: string, threadId: string, reason: string): Promise<void> {
   await db
     .insert(conversationMeta)
-    .values({ userId, businessId, threadId, handlingMode: "human" })
+    .values({ businessId, threadId, handlingMode: "human" })
     .onConflictDoUpdate({
       target: [conversationMeta.businessId, conversationMeta.threadId],
       set: { handlingMode: "human" },
@@ -1006,7 +1057,7 @@ export async function getLowStockProducts(businessId: string, threshold?: number
   const low = variants
     .filter((v) => {
       const p = prodById.get(v.productId);
-      if (!p || p.businessId !== businessId) return false;
+      if (p?.businessId !== businessId) return false;
       const effectiveThreshold = threshold ?? v.lowStockThreshold ?? p.lowStockThreshold ?? 5;
       return (v.inventoryQuantity ?? 0) <= effectiveThreshold;
     })
@@ -1114,7 +1165,6 @@ export async function getConversationSummary(businessId: string, threadId: strin
  * Never throws — a summarization hiccup must never break either caller's real job.
  */
 export async function generateAndSaveConversationSummary(
-  userId: string,
   businessId: string,
   threadId: string,
 ): Promise<string | null> {
@@ -1155,7 +1205,7 @@ export async function generateAndSaveConversationSummary(
 
     await db
       .insert(conversationMeta)
-      .values({ userId, businessId, threadId, summary, summaryGeneratedAt: new Date() })
+      .values({ businessId, threadId, summary, summaryGeneratedAt: new Date() })
       .onConflictDoUpdate({
         target: [conversationMeta.businessId, conversationMeta.threadId],
         set: { summary, summaryGeneratedAt: new Date() },
@@ -1199,7 +1249,6 @@ export interface ActiveCartItem {
  * relies on its currentStep/lastMessageAt.
  */
 export async function upsertActiveCart(
-  userId: string,
   businessId: string,
   platform: string,
   threadId: string,
@@ -1211,9 +1260,9 @@ export async function upsertActiveCart(
 
   await db
     .insert(cart)
-    .values({ userId, customerId: null, channel, threadId, items, subtotal, status: "active" })
+    .values({ businessId, customerId: null, channel, threadId, items, subtotal, status: "active" })
     .onConflictDoUpdate({
-      target: [cart.userId, cart.threadId],
+      target: [cart.businessId, cart.threadId],
       set: {
         items,
         subtotal,
@@ -1246,7 +1295,6 @@ export async function upsertActiveCart(
   }
 
   await db.insert(agentSession).values({
-    userId,
     businessId,
     channel,
     threadId,
@@ -1257,7 +1305,6 @@ export async function upsertActiveCart(
 
 // Log an AI-generated reply so future turns in this thread have it as history.
 export async function logOutboundMessage(params: {
-  userId: string;
   businessId: string;
   threadId: string;
   platform: string;
@@ -1266,14 +1313,13 @@ export async function logOutboundMessage(params: {
   messageId?: string;
   text: string;
 }): Promise<void> {
-  const { userId, businessId, threadId, platform, platformAccountId, recipientId, messageId, text } = params;
+  const { businessId, threadId, platform, platformAccountId, recipientId, messageId, text } = params;
 
   await db.insert(metaWebhookEvent).values({
     dedupeKey: `outbound:aireply:${platform}:${threadId}:${Date.now()}:${crypto.randomUUID()}`,
     platform,
     object: "page",
     eventType: "outbound",
-    userId,
     businessId,
     platformAccountId,
     threadId,
@@ -1295,6 +1341,7 @@ export const aiHelpers = {
   getProductById,
   listActiveProducts,
   searchProductsByKeyword,
+  discoverProducts,
   getProductVariants,
   checkProductStock,
   createCustomerAndOrder,

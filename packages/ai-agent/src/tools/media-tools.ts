@@ -12,8 +12,7 @@ import { getToolContext } from "./context";
 export type SendImageFunction = (
   connectionContext: ConnectionContext,
   businessId: string,
-  productId: string,
-  userId: string
+  productId: string
 ) => Promise<{ success: boolean; error?: string }>;
 
 let sendImageFn: SendImageFunction | null = null;
@@ -36,8 +35,8 @@ export const sendProductImageTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { productId } = input as { productId: string };
-    const { userId, businessId } = getToolContext();
-    console.log("[Tool] sendProductImage", { productId, userId, businessId });
+    const { businessId } = getToolContext();
+    console.log("[Tool] sendProductImage", { productId, businessId });
 
     if (!sendImageFn) {
       return JSON.stringify({
@@ -53,7 +52,7 @@ export const sendProductImageTool = new DynamicStructuredTool({
       });
     }
 
-    const result = await sendImageFn(currentConnectionContext, businessId, productId, userId);
+    const result = await sendImageFn(currentConnectionContext, businessId, productId);
     return JSON.stringify(result);
   },
 });

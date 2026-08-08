@@ -1,7 +1,7 @@
 import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod/v4";
 
-import { and, desc, eq, ilike, or } from "@acme/db";
+import { and, desc, eq, ilike, or, lt } from "@acme/db";
 import { businessProfile, order, transaction } from "@acme/db/schema";
 
 import { hasCredentials } from "../lib/sslcommerz";
@@ -129,12 +129,16 @@ export const paymentsRouter = {
         status: z.enum(["success", "pending", "failed", "refunded"]).optional(),
         search: z.string().optional(),
         limit: z.number().min(1).max(200).default(50),
+        cursor: z.string().optional(),
       }),
     )
     .query(async ({ ctx, input }) => {
       const conditions = [eq(transaction.businessId, ctx.businessId)];
       if (input.method) conditions.push(eq(transaction.method, input.method));
       if (input.status) conditions.push(eq(transaction.status, input.status));
+      if (input.cursor) {
+        conditions.push(lt(transaction.createdAt, new Date(input.cursor)));
+      }
       if (input.search) {
         const term = `%${input.search}%`;
         const searchClause = or(
@@ -146,7 +150,9 @@ export const paymentsRouter = {
         if (searchClause) conditions.push(searchClause);
       }
 
-      return ctx.db
+      const limitPlusOne = (input.limit ?? 50) + 1;
+
+      const transactions = await ctx.db
         .select({
           id: transaction.id,
           reference: transaction.reference,
@@ -165,7 +171,13 @@ export const paymentsRouter = {
         .leftJoin(order, eq(transaction.orderId, order.id))
         .where(and(...conditions))
         .orderBy(desc(transaction.createdAt))
-        .limit(input.limit);
+        .limit(limitPlusOne);
+
+      const hasMore = transactions.length > (input.limit ?? 50);
+      const items = hasMore ? transactions.slice(0, input.limit ?? 50) : transactions;
+      const nextCursor = hasMore ? items[items.length - 1]?.createdAt.toISOString() : undefined;
+
+      return { items, nextCursor, hasMore };
     }),
 
   /** Refund a transaction — partial refunds allowed, never more than was actually charged. */

@@ -130,7 +130,6 @@ export interface SendResult {
 export interface PlatformConnection {
   id: string;
   platform: PlatformType;
-  userId: string;
   /** Platform-specific account ID */
   accountId: string;
   /** Account name/title */

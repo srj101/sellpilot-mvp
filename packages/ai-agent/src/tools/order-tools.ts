@@ -25,7 +25,6 @@ export interface CreateOrderItemInput {
 }
 
 export interface CreateOrderParams {
-  userId: string;
   businessId: string;
   threadId: string;
   channel: string;
@@ -83,7 +82,7 @@ export interface OrderHelpers {
     businessId: string,
     threadId: string,
   ): Promise<{ orderId: string; orderNumber: string; customerId: string | null; productId: string | null } | null>;
-  submitReview(params: { userId: string; orderId: string; customerId: string | null; productId: string | null; rating: number; comment?: string }): Promise<void>;
+  submitReview(params: { businessId: string; orderId: string; customerId: string | null; productId: string | null; rating: number; comment?: string }): Promise<void>;
 }
 
 let helpers: OrderHelpers | null = null;
@@ -136,7 +135,7 @@ export const createOrderTool = new DynamicStructuredTool({
       offerCode?: string;
       paymentMethod?: "cod" | "online";
     };
-    const { userId, businessId, threadId, platform, planKey } = getToolContext();
+    const { businessId, threadId, platform, planKey } = getToolContext();
 
     const limit = MULTI_PRODUCT_CART_LIMIT[planKey ?? "starter"];
     if (items.length > limit) {
@@ -150,13 +149,11 @@ export const createOrderTool = new DynamicStructuredTool({
       items,
       customerName,
       phone: phone ? phone.replace(/(\d{3})\d+(\d{2})/, "$1***$2") : phone,
-      userId,
       businessId,
       paymentMethod,
     });
 
     const result = await getHelpers().createCustomerAndOrder({
-      userId,
       businessId,
       threadId,
       channel: platform,
@@ -238,7 +235,7 @@ export const submitReviewTool = new DynamicStructuredTool({
   }),
   func: async (input: unknown) => {
     const { rating, comment } = input as { rating: number; comment?: string };
-    const { userId, businessId, threadId } = getToolContext();
+    const { businessId, threadId } = getToolContext();
     console.log("[Tool] submitReview", { businessId, threadId, rating });
 
     const pending = await getHelpers().getPendingReviewOrder(businessId, threadId);
@@ -247,7 +244,7 @@ export const submitReviewTool = new DynamicStructuredTool({
     }
 
     await getHelpers().submitReview({
-      userId,
+      businessId,
       orderId: pending.orderId,
       customerId: pending.customerId,
       productId: pending.productId,

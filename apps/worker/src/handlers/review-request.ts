@@ -53,7 +53,6 @@ async function sendReviewRequest(ord: typeof order.$inferSelect): Promise<boolea
   const connection: PlatformConnection = {
     id: conn.id,
     platform,
-    userId: conn.userId,
     accountId: conn.platformAccountId,
     accessToken: conn.accessToken,
     isActive: true,

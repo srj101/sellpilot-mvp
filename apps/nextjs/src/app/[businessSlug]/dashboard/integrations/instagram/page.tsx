@@ -7,7 +7,6 @@ import { Button } from "@acme/ui/button";
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
 import { getPagesWithInstagram, type FacebookPage } from "@acme/api/meta";
-import { DashboardShell } from "../../(home)/_components/dashboard-shell";
 import { cancelMetaSelection, connectChannel } from "../actions";
 import { ConnectedPagesList } from "../_components/connected-pages-list";
 import { InstagramIcon } from "../_components/integration-icons";
@@ -92,7 +91,6 @@ export default async function InstagramIntegrationPage(props: {
   }
 
   return (
-    <DashboardShell>
       <div className="mx-auto max-w-lg">
         <Button variant="ghost" size="sm" className="mb-6" asChild>
           <a href={`/${businessSlug}/dashboard/integrations`}>
@@ -196,6 +194,5 @@ export default async function InstagramIntegrationPage(props: {
           )}
         </div>
       </div>
-    </DashboardShell>
   );
 }

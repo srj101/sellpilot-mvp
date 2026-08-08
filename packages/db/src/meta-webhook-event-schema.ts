@@ -9,7 +9,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 
-import { user, business } from "./auth-schema";
+import { business } from "./auth-schema";
 import { metaConnection } from "./meta-connection-schema";
 
 export const metaWebhookEvent = pgTable(
@@ -39,10 +39,7 @@ export const metaWebhookEvent = pgTable(
       },
     ),
 
-    /** Resolved internal tenant (platform user). Useful for background workers and analytics. */
-    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
-
-    /** Resolved store — the actual tenant-scoping key (a user can own more than one store). */
+    /** Resolved store — the tenant-scoping key for every read of this table. */
     businessId: text("business_id").references(() => business.id, { onDelete: "set null" }),
 
     /** Platform-specific routing account identifier. */
@@ -76,7 +73,6 @@ export const metaWebhookEvent = pgTable(
       table.platform,
       table.platformAccountId,
     ),
-    index("meta_webhook_event_user_id_idx").on(table.userId),
     index("meta_webhook_event_org_id_idx").on(table.businessId),
     index("meta_webhook_event_connection_id_idx").on(table.metaConnectionId),
     index("meta_webhook_event_thread_idx").on(table.businessId, table.threadId),
@@ -90,9 +86,9 @@ export const metaWebhookEventRelations = relations(
       fields: [metaWebhookEvent.metaConnectionId],
       references: [metaConnection.id],
     }),
-    user: one(user, {
-      fields: [metaWebhookEvent.userId],
-      references: [user.id],
+    business: one(business, {
+      fields: [metaWebhookEvent.businessId],
+      references: [business.id],
     }),
   }),
 );

@@ -8,7 +8,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 
-import { user, business } from "./auth-schema";
+import { business } from "./auth-schema";
 
 /**
  * Stores connections to Meta platform channels:
@@ -22,9 +22,6 @@ export const metaConnection = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     businessId: text("business_id")
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
@@ -110,8 +107,8 @@ export const metaConnection = pgTable(
 );
 
 export const metaConnectionRelations = relations(metaConnection, ({ one }) => ({
-  user: one(user, {
-    fields: [metaConnection.userId],
-    references: [user.id],
+  business: one(business, {
+    fields: [metaConnection.businessId],
+    references: [business.id],
   }),
 }));

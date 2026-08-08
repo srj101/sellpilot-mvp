@@ -4,7 +4,6 @@ import { AlertTriangle } from "lucide-react";
 
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
-import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { IntegrationCard } from "./_components/integration-card";
 
 export default async function IntegrationsPage({
@@ -73,7 +72,7 @@ export default async function IntegrationsPage({
   ];
 
   return (
-    <DashboardShell>
+    <>
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Integrations</h1>
         <p className="text-muted-foreground mt-1 text-base">
@@ -102,7 +101,7 @@ export default async function IntegrationsPage({
           <IntegrationCard key={app.id} {...app} businessSlug={businessSlug} isOwner={isOwner} />
         ))}
       </div>
-    </DashboardShell>
+    </>
   );
 }
 

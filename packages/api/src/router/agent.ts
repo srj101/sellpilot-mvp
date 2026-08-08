@@ -52,7 +52,6 @@ const CreateOrderInput = z.object({
 
 const getCustomerForUser = async (
   ctx: any,
-  userId: string,
   businessId: string,
   customerData: z.infer<typeof CustomerInput>,
 ) => {
@@ -80,8 +79,8 @@ const getCustomerForUser = async (
 
   const existingByEmail = customerData.email
     ? await ctx.db.query.customer.findFirst({
-        where: and(eq(customer.businessId, businessId), eq(customer.email, customerData.email)),
-      })
+      where: and(eq(customer.businessId, businessId), eq(customer.email, customerData.email)),
+    })
     : null;
 
   if (existingByEmail) {
@@ -95,8 +94,8 @@ const getCustomerForUser = async (
 
   const existingByPhone = customerData.phone
     ? await ctx.db.query.customer.findFirst({
-        where: and(eq(customer.businessId, businessId), eq(customer.phone, customerData.phone)),
-      })
+      where: and(eq(customer.businessId, businessId), eq(customer.phone, customerData.phone)),
+    })
     : null;
 
   if (existingByPhone) {
@@ -110,7 +109,7 @@ const getCustomerForUser = async (
 
   const [inserted] = await ctx.db
     .insert(customer)
-    .values({ userId, businessId, ...customerInput })
+    .values({ businessId, ...customerInput })
     .returning();
 
   return inserted;
@@ -209,7 +208,7 @@ export const agentRouter = {
 
       const [created] = await ctx.db
         .insert(businessProfile)
-        .values({ userId: ctx.businessOwnerId, businessId: ctx.businessId, ...input })
+        .values({ businessId: ctx.businessId, ...input })
         .returning();
       return created;
     }),
@@ -349,138 +348,136 @@ export const agentRouter = {
   createOrUpdateCustomer: permissionProcedure("customers", "create")
     .input(CustomerInput)
     .mutation(async ({ ctx, input }) => {
-      return getCustomerForUser(ctx, ctx.businessOwnerId, ctx.businessId, input);
+      return getCustomerForUser(ctx, ctx.businessId, input);
     }),
 
   createOrder: permissionProcedure("orders", "create").input(CreateOrderInput).mutation(async ({ ctx, input }) => {
-      const limit = await getMultiProductCartLimit(ctx);
-      if (input.items.length > limit) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: `Your plan allows up to ${limit} products per order. Split the order or upgrade.`,
-        });
-      }
-
-      const userId = ctx.businessOwnerId;
-      const businessId = ctx.businessId;
-
-      let customerRow = null;
-      if (input.customerId) {
-        customerRow = await ctx.db.query.customer.findFirst({
-          where: and(eq(customer.id, input.customerId), eq(customer.businessId, businessId)),
-        });
-      }
-
-      if (!customerRow && input.customer) {
-        customerRow = await getCustomerForUser(ctx, userId, businessId, input.customer);
-      }
-
-      if (!customerRow) {
-        throw new Error("Customer information is required to create an order.");
-      }
-
-      const variantIds = input.items
-        .map((item) => item.variantId)
-        .filter(Boolean) as string[];
-
-      const variants = variantIds.length
-        ? await ctx.db.query.productVariant.findMany({
-            where: inArray(productVariant.id, variantIds),
-          })
-        : [];
-
-      const productIds = Array.from(new Set(variants.map((variant) => variant.productId)));
-      const products = productIds.length
-        ? await ctx.db.query.product.findMany({
-            where: and(inArray(product.id, productIds), eq(product.businessId, businessId)),
-          })
-        : [];
-
-      const validVariantIds = new Set(
-        variants
-          .filter((variant) => products.some((productRow) => productRow.id === variant.productId))
-          .map((variant) => variant.id),
-      );
-
-      const items = input.items.map((item) => {
-        if (item.variantId && !validVariantIds.has(item.variantId)) {
-          throw new Error(`Invalid variantId: ${item.variantId}`);
-        }
-        const selectedVariant = item.variantId ? variants.find((variant) => variant.id === item.variantId) : undefined;
-        const unitPrice = item.unitPrice ?? selectedVariant?.price ?? 0;
-        const name = selectedVariant?.title ?? "Product item";
-        return {
-          productId: item.productId,
-          variantId: item.variantId ?? null,
-          name,
-          variantTitle: selectedVariant?.title ?? null,
-          qty: item.quantity,
-          unitPrice,
-          lineTotal: unitPrice * item.quantity,
-          imageUrl: selectedVariant?.imageUrl ?? null,
-          sku: selectedVariant?.sku ?? null,
-        };
+    const limit = await getMultiProductCartLimit(ctx);
+    if (input.items.length > limit) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: `Your plan allows up to ${limit} products per order. Split the order or upgrade.`,
       });
+    }
 
-      const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
-      const shippingCost = await computeShippingCost(ctx, businessId, input.shippingDistrict);
+    const businessId = ctx.businessId;
 
-      const coupon = input.couponCode
-        ? await ctx.db.query.offer.findFirst({
-            where: and(eq(offer.businessId, businessId), eq(offer.code, input.couponCode), eq(offer.active, true)),
-          })
-        : null;
+    let customerRow = null;
+    if (input.customerId) {
+      customerRow = await ctx.db.query.customer.findFirst({
+        where: and(eq(customer.id, input.customerId), eq(customer.businessId, businessId)),
+      });
+    }
 
-      const discountAmount = calculateDiscount(coupon, subtotal);
-      const total = Math.max(0, subtotal + shippingCost - discountAmount);
-      const { paymentToken, paymentUrl } = buildPaymentLink();
+    if (!customerRow && input.customer) {
+      customerRow = await getCustomerForUser(ctx, businessId, input.customer);
+    }
 
-      const [createdOrder] = await ctx.db
-        .insert(order)
-        .values({
-          userId,
-          businessId,
-          customerId: customerRow.id,
-          orderNumber: generateOrderNumber(),
-          status: "pending",
-          subtotal,
-          shippingCost,
-          discountAmount,
-          total,
-          customerName: customerRow.name,
-          customerPhone: customerRow.phone,
-          customerEmail: customerRow.email,
-          shippingAddress: input.shippingAddress ?? customerRow.address ?? "",
-          shippingDistrict: input.shippingDistrict ?? customerRow.district ?? null,
-          couponCode: input.couponCode ?? null,
-          channel: input.channel,
-          threadId: input.threadId ?? null,
-          notes: input.notes ?? null,
-          paymentToken,
-          paymentUrl,
-        })
-        .returning();
+    if (!customerRow) {
+      throw new Error("Customer information is required to create an order.");
+    }
 
-      if (!createdOrder) {
-        throw new Error("Failed to create order.");
+    const variantIds = input.items
+      .map((item) => item.variantId)
+      .filter(Boolean) as string[];
+
+    const variants = variantIds.length
+      ? await ctx.db.query.productVariant.findMany({
+        where: inArray(productVariant.id, variantIds),
+      })
+      : [];
+
+    const productIds = Array.from(new Set(variants.map((variant) => variant.productId)));
+    const products = productIds.length
+      ? await ctx.db.query.product.findMany({
+        where: and(inArray(product.id, productIds), eq(product.businessId, businessId)),
+      })
+      : [];
+
+    const validVariantIds = new Set(
+      variants
+        .filter((variant) => products.some((productRow) => productRow.id === variant.productId))
+        .map((variant) => variant.id),
+    );
+
+    const items = input.items.map((item) => {
+      if (item.variantId && !validVariantIds.has(item.variantId)) {
+        throw new Error(`Invalid variantId: ${item.variantId}`);
       }
-
-      const orderItemRows = items.map((item) => ({
-        orderId: createdOrder.id,
+      const selectedVariant = item.variantId ? variants.find((variant) => variant.id === item.variantId) : undefined;
+      const unitPrice = item.unitPrice ?? selectedVariant?.price ?? 0;
+      const name = selectedVariant?.title ?? "Product item";
+      return {
         productId: item.productId,
-        variantId: item.variantId,
-        name: item.name,
-        variantTitle: item.variantTitle,
-        sku: item.sku ?? null,
-        qty: item.qty,
-        unitPrice: item.unitPrice,
-        lineTotal: item.lineTotal,
-        imageUrl: item.imageUrl ?? null,
-      }));
+        variantId: item.variantId ?? null,
+        name,
+        variantTitle: selectedVariant?.title ?? null,
+        qty: item.quantity,
+        unitPrice,
+        lineTotal: unitPrice * item.quantity,
+        imageUrl: selectedVariant?.imageUrl ?? null,
+        sku: selectedVariant?.sku ?? null,
+      };
+    });
 
-      await ctx.db.insert(orderItem).values(orderItemRows);
-      return createdOrder;
-    }),
+    const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
+    const shippingCost = await computeShippingCost(ctx, businessId, input.shippingDistrict);
+
+    const coupon = input.couponCode
+      ? await ctx.db.query.offer.findFirst({
+        where: and(eq(offer.businessId, businessId), eq(offer.code, input.couponCode), eq(offer.active, true)),
+      })
+      : null;
+
+    const discountAmount = calculateDiscount(coupon, subtotal);
+    const total = Math.max(0, subtotal + shippingCost - discountAmount);
+    const { paymentToken, paymentUrl } = buildPaymentLink();
+
+    const [createdOrder] = await ctx.db
+      .insert(order)
+      .values({
+        businessId,
+        customerId: customerRow.id,
+        orderNumber: generateOrderNumber(),
+        status: "pending",
+        subtotal,
+        shippingCost,
+        discountAmount,
+        total,
+        customerName: customerRow.name,
+        customerPhone: customerRow.phone,
+        customerEmail: customerRow.email,
+        shippingAddress: input.shippingAddress ?? customerRow.address ?? "",
+        shippingDistrict: input.shippingDistrict ?? customerRow.district ?? null,
+        couponCode: input.couponCode ?? null,
+        channel: input.channel,
+        threadId: input.threadId ?? null,
+        notes: input.notes ?? null,
+        paymentToken,
+        paymentUrl,
+      })
+      .returning();
+
+    if (!createdOrder) {
+      throw new Error("Failed to create order.");
+    }
+
+    const orderItemRows = items.map((item) => ({
+      orderId: createdOrder.id,
+      productId: item.productId,
+      variantId: item.variantId,
+      name: item.name,
+      variantTitle: item.variantTitle,
+      sku: item.sku ?? null,
+      qty: item.qty,
+      unitPrice: item.unitPrice,
+      lineTotal: item.lineTotal,
+      imageUrl: item.imageUrl ?? null,
+    }));
+
+    await ctx.db.insert(orderItem).values(orderItemRows);
+    return createdOrder;
+  }),
 
   listOrders: permissionProcedure("agent", "view")
     .input(z.object({ status: z.string().optional() }))
@@ -531,7 +528,6 @@ export const agentRouter = {
       const [created] = await ctx.db
         .insert(agentSession)
         .values({
-          userId: ctx.businessOwnerId,
           businessId: ctx.businessId,
           channel: input.channel,
           threadId: input.threadId,

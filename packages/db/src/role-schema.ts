@@ -1,7 +1,7 @@
 import { relations } from "drizzle-orm";
 import { boolean, index, pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
 
-import { user, business } from "./auth-schema";
+import { business } from "./auth-schema";
 
 /**
  * Roles table - defines app-resource permission templates for a business/tenant.
@@ -18,9 +18,6 @@ export const role = pgTable(
   "role",
   {
     id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     businessId: text("business_id")
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
@@ -42,8 +39,8 @@ export const role = pgTable(
 );
 
 export const roleRelations = relations(role, ({ one }) => ({
-  user: one(user, {
-    fields: [role.userId],
-    references: [user.id],
+  business: one(business, {
+    fields: [role.businessId],
+    references: [business.id],
   }),
 }));

@@ -96,7 +96,6 @@ async function generatePersonalizedFollowUp(
     const result = await agent.run({
       message: prompt,
       context: {
-        userId: "system",
         businessId,
         threadId: "conversation-followup",
         platform: "whatsapp",
@@ -114,14 +113,13 @@ async function generatePersonalizedFollowUp(
 
 async function resolveFollowUpText(
   businessId: string,
-  userId: string,
   threadId: string,
   planKey: PlanKey,
 ): Promise<{ text: string; usedAi: boolean; items: ActiveCartItem[] }> {
   const [activeCart] = await db
     .select({ items: cart.items })
     .from(cart)
-    .where(and(eq(cart.userId, userId), eq(cart.threadId, threadId), eq(cart.status, "active")));
+    .where(and(eq(cart.businessId, businessId), eq(cart.threadId, threadId), eq(cart.status, "active")));
   const items = activeCart?.items ?? [];
 
   const recoveryTier = PLAN_CATALOG[planKey].limits.abandonedCartRecovery;
@@ -156,14 +154,13 @@ async function sendFollowUp(session: typeof agentSession.$inferSelect, planKey: 
   const connection: PlatformConnection = {
     id: conn.id,
     platform,
-    userId: conn.userId,
     accountId: conn.platformAccountId,
     accessToken: conn.accessToken,
     isActive: true,
     connectedAt: conn.connectedAt,
   };
 
-  const { text, usedAi, items } = await resolveFollowUpText(session.businessId, session.userId, session.threadId, planKey);
+  const { text, usedAi, items } = await resolveFollowUpText(session.businessId, session.threadId, planKey);
 
   const result = await messagingService.sendMessage(connection, {
     platform,
@@ -195,9 +192,9 @@ export async function runConversationFollowUp(): Promise<void> {
   const [profiles, planByBusiness] = await Promise.all([
     businessIds.length
       ? db
-          .select({ businessId: businessProfile.businessId, abandonedFollowupMinutes: businessProfile.abandonedFollowupMinutes })
-          .from(businessProfile)
-          .where(inArray(businessProfile.businessId, businessIds))
+        .select({ businessId: businessProfile.businessId, abandonedFollowupMinutes: businessProfile.abandonedFollowupMinutes })
+        .from(businessProfile)
+        .where(inArray(businessProfile.businessId, businessIds))
       : Promise.resolve([]),
     getBusinessPlanKeys(businessIds),
   ]);

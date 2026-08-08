@@ -1,42 +1,78 @@
 "use client";
 
+import type { ChangeEvent, FormEvent } from "react";
 import { useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import {
-  Search,
-  Plus,
-  ChevronRight,
-} from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronRight, Loader2, Plus, Search } from "lucide-react";
 
+import { cn } from "@acme/ui";
 import { Button } from "@acme/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@acme/ui/dialog";
 import { Input } from "@acme/ui/input";
 import { Skeleton } from "@acme/ui/skeleton";
-import { initials, avatarColor, formatCurrency } from "../(home)/_components/dashboard-utils";
+import { toast } from "@acme/ui/toast";
+
 import { useBusinessSlug } from "~/hooks/use-business-slug";
 import { useTRPC } from "~/trpc/react";
+import { avatarColor, formatCurrency, initials } from "../(home)/_components/dashboard-utils";
 
 export function CustomersClient() {
   const trpc = useTRPC();
+  const qc = useQueryClient();
   const businessSlug = useBusinessSlug();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
-
-  const { data: customers, isPending } = useQuery(trpc.customers.list.queryOptions());
-  const initialCustomers = customers ?? [];
-
-  const filtered = initialCustomers.filter((c) => {
-    const s = search.toLowerCase();
-    const matchSearch =
-      c.name.toLowerCase().includes(s) ||
-      (c.phone && c.phone.includes(s)) ||
-      (c.email && c.email.toLowerCase().includes(s)) ||
-      (c.district && c.district.toLowerCase().includes(s));
-
-    if (statusFilter === "all") return matchSearch;
-    const isActive = c.totalOrders > 0;
-    return matchSearch && (statusFilter === "active" ? isActive : !isActive);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    district: "",
+    country: "",
   });
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+
+  const { data, isPending } = useQuery(
+    trpc.customers.list.queryOptions()
+  );
+  const customers = (data as any[]) ?? [];
+
+  const createCustomer = useMutation(
+    trpc.customers.create.mutationOptions({
+      onSuccess: () => {
+        setIsCreateDialogOpen(false);
+        setCreateForm({ name: "", phone: "", email: "", district: "", country: "" });
+        void qc.invalidateQueries({
+          queryKey: trpc.customers.list.queryKey(),
+        });
+        toast.success("Customer created");
+      },
+      onError: (err) => toast.error(err.message),
+    })
+  );
+
+  const handleCreateSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    createCustomer.mutate(createForm);
+  };
+
+  const handleLoadMore = () => {};
+
+  const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setSearch(e.target.value);
+  };
+
+  const handleStatusChange = (s: "all" | "active" | "inactive") => {
+    setStatusFilter(s);
+  };
 
   return (
     <div>
@@ -47,10 +83,94 @@ export function CustomersClient() {
           <p className="mt-1 text-sm text-muted-foreground">Manage your customer database</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" className="h-8 gap-1.5 px-2.5">
-            <Plus className="mr-1 h-4 w-4" />
-            New Customer
-          </Button>
+          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="h-8 gap-1.5 px-2.5">
+                <Plus className="mr-1 h-4 w-4" />
+                New Customer
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>New Customer</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleCreateSubmit}>
+                <div className="grid gap-4 py-4">
+                  <div className="space-y-2">
+                    <label htmlFor="name" className="text-sm font-medium">
+                      Name *
+                    </label>
+                    <Input
+                      id="name"
+                      value={createForm.name}
+                      onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                      placeholder="Customer name"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="phone" className="text-sm font-medium">
+                      Phone
+                    </label>
+                    <Input
+                      id="phone"
+                      value={createForm.phone}
+                      onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })}
+                      placeholder="+8801XXXXXXXXX"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="email" className="text-sm font-medium">
+                      Email
+                    </label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={createForm.email}
+                      onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
+                      placeholder="customer@example.com"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="district" className="text-sm font-medium">
+                      District
+                    </label>
+                    <Input
+                      id="district"
+                      value={createForm.district}
+                      onChange={(e) => setCreateForm({ ...createForm, district: e.target.value })}
+                      placeholder="Dhaka"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="country" className="text-sm font-medium">
+                      Country
+                    </label>
+                    <Input
+                      id="country"
+                      value={createForm.country}
+                      onChange={(e) => setCreateForm({ ...createForm, country: e.target.value })}
+                      placeholder="Bangladesh"
+                    />
+                  </div>
+                </div>
+                <DialogFooter className="gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsCreateDialogOpen(false)}
+                    disabled={createCustomer.isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={createCustomer.isPending}>
+                    {createCustomer.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Save
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -62,7 +182,7 @@ export function CustomersClient() {
               <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={handleSearchChange}
                 placeholder="Search customers..."
                 className="h-8 pl-8 text-sm rounded-lg"
               />
@@ -74,7 +194,7 @@ export function CustomersClient() {
                 key={s}
                 variant={statusFilter === s ? "default" : "outline"}
                 size="sm"
-                onClick={() => setStatusFilter(s)}
+                onClick={() => handleStatusChange(s)}
                 className="h-7 text-xs capitalize rounded-lg"
               >
                 {s}
@@ -116,13 +236,18 @@ export function CustomersClient() {
                       <td className="px-4 py-3" />
                     </tr>
                   ))
-                ) : filtered.map((c) => {
+                ) : customers.map((c) => {
                   const isActive = c.totalOrders > 0;
                   return (
                     <tr key={c.id} className="hover:bg-muted/30 transition-colors group">
                       <td className="px-4 py-3">
                         <Link href={`/${businessSlug}/dashboard/customers/${c.id}`} className="flex items-center gap-3 no-underline">
-                          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${avatarColor(c.name)}`}>
+                          <span
+                            className={cn(
+                              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white",
+                              avatarColor(c.name),
+                            )}
+                          >
                             {initials(c.name)}
                           </span>
                           <div>
@@ -134,7 +259,7 @@ export function CustomersClient() {
                         </Link>
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">
-                        {c.email || "—"}
+                        {c.email ?? "—"}
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground capitalize">
                         {[c.district, c.country].filter(Boolean).join(", ") || "—"}
@@ -166,7 +291,7 @@ export function CustomersClient() {
                   );
                 })}
 
-                {!isPending && filtered.length === 0 && (
+                {!isPending && customers.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-4 py-16 text-center text-muted-foreground text-sm">
                       No customers match your query.
@@ -180,7 +305,7 @@ export function CustomersClient() {
           {/* Footer */}
           <div className="flex items-center justify-between border-t border-border px-4 py-3">
             <p className="text-xs text-muted-foreground">
-              Showing {filtered.length} of {initialCustomers.length} customers
+              Showing {customers.length} customers
             </p>
           </div>
         </div>

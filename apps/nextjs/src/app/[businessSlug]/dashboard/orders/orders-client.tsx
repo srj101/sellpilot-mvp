@@ -100,7 +100,7 @@ function channelLabel(channel: string | null) {
 export function OrdersClient() {
   const trpc = useTRPC();
   const qc = useQueryClient();
-  const { data, isPending } = useQuery(trpc.orders.list.queryOptions());
+  const { data, isPending } = useQuery(trpc.orders.list.queryOptions({}));
   const initialOrders = data?.orders ?? [];
   const initialItems = data?.items ?? [];
   const updateStatusMutation = useMutation(trpc.orders.updateStatus.mutationOptions());

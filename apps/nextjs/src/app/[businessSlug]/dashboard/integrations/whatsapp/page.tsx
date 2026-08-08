@@ -6,7 +6,6 @@ import { Button } from "@acme/ui/button";
 
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
-import { DashboardShell } from "../../(home)/_components/dashboard-shell";
 import { WhatsAppConnectPanel } from "../_components/whatsapp-connect-panel";
 import { WhatsAppIcon } from "../_components/integration-icons";
 
@@ -34,7 +33,6 @@ export default async function WhatsAppIntegrationPage({
     }));
 
   return (
-    <DashboardShell>
       <div className="mx-auto max-w-lg">
         <Button variant="ghost" size="sm" className="mb-6" asChild>
           <a href={`/${businessSlug}/dashboard/integrations`}>
@@ -58,6 +56,5 @@ export default async function WhatsAppIntegrationPage({
           <WhatsAppConnectPanel pages={pages} />
         </div>
       </div>
-    </DashboardShell>
   );
 }

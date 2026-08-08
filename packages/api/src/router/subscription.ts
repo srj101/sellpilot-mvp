@@ -463,7 +463,6 @@ export const subscriptionRouter = {
         const hasExisting = await ctx.db.select({ id: paymentMethod.id }).from(paymentMethod).where(eq(paymentMethod.businessId, businessId)).limit(1);
         await ctx.db.insert(paymentMethod).values({
           businessId,
-          userId: ctx.session?.user.id ?? "",
           brand: result.method === "card" ? "card" : (result.method ?? "card"),
           last4: "0000",
           expiryMonth: 12,

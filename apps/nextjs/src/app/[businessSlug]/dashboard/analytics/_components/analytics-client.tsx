@@ -127,7 +127,7 @@ export function AnalyticsClient({
       {tier === "none" && <UpgradeBanner businessSlug={businessSlug} feature="Analytics" requiredPlan="growth" />}
 
       {/* Weekly Executive AI Insight Digest Banner */}
-      <WeeklyInsightBanner revenueStats={revenueStats} topProducts={topProducts} />
+      <WeeklyInsightBanner revenueStats={revenueStats} topProducts={topProducts} tier={tier} />
 
       {/* FR-ANA-01/02/03: Revenue, Orders, AOV, Return Rate — available at both Growth &
           Pro, per the SRS's plain "Analytics screen displays Total Revenue, Total Orders,

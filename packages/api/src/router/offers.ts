@@ -71,7 +71,6 @@ export const offersRouter = {
       const [newOffer] = await ctx.db
         .insert(offer)
         .values({
-          userId: ctx.businessOwnerId,
           businessId: ctx.businessId,
           ...input,
         })

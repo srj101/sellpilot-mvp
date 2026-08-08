@@ -113,7 +113,6 @@ export const businessRouter = {
       });
 
       await ctx.db.insert(businessProfile).values({
-        userId: ctx.session.user.id,
         businessId,
         name,
         description: input.description,
@@ -127,7 +126,6 @@ export const businessRouter = {
       trialEnd.setDate(trialEnd.getDate() + 14);
 
       await ctx.db.insert(subscription).values({
-        userId: ctx.session.user.id,
         businessId,
         plan: "starter",
         status: "trialing",

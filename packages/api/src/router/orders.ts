@@ -2,7 +2,7 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { desc, eq, and, inArray, sql, createCustomerAndOrder, quoteOrder } from "@acme/db";
+import { desc, eq, and, inArray, sql, createCustomerAndOrder, quoteOrder, lt } from "@acme/db";
 import type { db as Db } from "@acme/db/client";
 import { metaConnection, metaWebhookEvent, order, orderItem, orderStatusHistory, transaction } from "@acme/db/schema";
 import { getNotificationPreference, resolveNotificationRecipient } from "@acme/db/helpers/notification-preferences";
@@ -74,7 +74,6 @@ async function sendThreadMessage(
       object: platform === "instagram" ? "instagram" : "page",
       eventType: "outbound",
       metaConnectionId: connection.id,
-      userId: connection.userId,
       businessId,
       platformAccountId: connection.platformAccountId,
       sourceId: sent.messageId ?? null,
@@ -214,7 +213,6 @@ export const ordersRouter = {
       }
 
       const result = await createCustomerAndOrder({
-        userId: ctx.businessOwnerId,
         businessId: ctx.businessId,
         ...rest,
         items,
@@ -271,21 +269,57 @@ export const ordersRouter = {
       return result;
     }),
 
-  list: permissionProcedure("orders", "view").query(async ({ ctx }) => {
-    const businessId = ctx.businessId;
-    const orders = await ctx.db
-      .select()
-      .from(order)
-      .where(eq(order.businessId, businessId))
-      .orderBy(desc(order.createdAt));
+  list: permissionProcedure("orders", "view")
+    .input(
+      z.object({
+        limit: z.number().min(1).max(100).default(20),
+        cursor: z.string().optional(),
+        status: z.enum(["all", ...ORDER_STATUSES]).default("all"),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const businessId = ctx.businessId;
+      const { limit, cursor, status } = input;
 
-    const items =
-      orders.length > 0
-        ? await ctx.db.select().from(orderItem).where(inArray(orderItem.orderId, orders.map((o) => o.id)))
-        : [];
+      const conditions = [eq(order.businessId, businessId)];
 
-    return { orders, items };
-  }),
+      if (cursor) {
+        conditions.push(lt(order.createdAt, new Date(cursor)));
+      }
+
+      if (status !== "all") {
+        conditions.push(eq(order.status, status));
+      }
+
+      const limitPlusOne = limit + 1;
+
+      const allOrders = await ctx.db
+        .select()
+        .from(order)
+        .where(and(...conditions))
+        .orderBy(desc(order.createdAt));
+
+      let startIndex = 0;
+      if (cursor) {
+        const cursorIndex = allOrders.findIndex((o) => o.createdAt.getTime() === new Date(cursor).getTime());
+        if (cursorIndex !== -1) {
+          startIndex = cursorIndex + 1;
+        }
+      }
+
+      const page = allOrders.slice(startIndex, startIndex + limitPlusOne);
+      const hasMore = page.length > limit;
+      const orders = hasMore ? page.slice(0, limit) : page;
+
+      const items =
+        orders.length > 0
+          ? await ctx.db.select().from(orderItem).where(inArray(orderItem.orderId, orders.map((o) => o.id)))
+          : [];
+
+      const nextCursor = hasMore ? orders[orders.length - 1]?.createdAt.toISOString() : undefined;
+
+      return { orders, items, nextCursor, hasMore };
+    }),
 
   getById: permissionProcedure("orders", "view")
     .input(z.object({ id: z.string() }))

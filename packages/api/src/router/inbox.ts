@@ -166,7 +166,6 @@ export const inboxRouter = {
               : "page",
         eventType: "outbound",
         metaConnectionId: connection.id,
-        userId: ctx.businessOwnerId,
         businessId,
         platformAccountId: input.accountId,
         sourceId: sent.messageId ?? null,
@@ -190,7 +189,7 @@ export const inboxRouter = {
       // to the customer's next message right alongside them.
       await ctx.db
         .insert(conversationMeta)
-        .values({ userId: ctx.businessOwnerId, businessId, threadId: input.threadId, handlingMode: "human" })
+        .values({ businessId, threadId: input.threadId, handlingMode: "human" })
         .onConflictDoUpdate({
           target: [conversationMeta.businessId, conversationMeta.threadId],
           set: { handlingMode: "human" },
@@ -204,7 +203,7 @@ export const inboxRouter = {
     .mutation(async ({ ctx, input }) => {
       await ctx.db
         .insert(conversationMeta)
-        .values({ userId: ctx.businessOwnerId, businessId: ctx.businessId, threadId: input.threadId, status: input.status })
+        .values({ businessId: ctx.businessId, threadId: input.threadId, status: input.status })
         .onConflictDoUpdate({
           target: [conversationMeta.businessId, conversationMeta.threadId],
           set: { status: input.status },
@@ -217,7 +216,7 @@ export const inboxRouter = {
     .mutation(async ({ ctx, input }) => {
       await ctx.db
         .insert(conversationMeta)
-        .values({ userId: ctx.businessOwnerId, businessId: ctx.businessId, threadId: input.threadId, starred: input.starred })
+        .values({ businessId: ctx.businessId, threadId: input.threadId, starred: input.starred })
         .onConflictDoUpdate({
           target: [conversationMeta.businessId, conversationMeta.threadId],
           set: { starred: input.starred },
@@ -232,7 +231,7 @@ export const inboxRouter = {
     .mutation(async ({ ctx, input }) => {
       await ctx.db
         .insert(conversationMeta)
-        .values({ userId: ctx.businessOwnerId, businessId: ctx.businessId, threadId: input.threadId, handlingMode: input.handlingMode })
+        .values({ businessId: ctx.businessId, threadId: input.threadId, handlingMode: input.handlingMode })
         .onConflictDoUpdate({
           target: [conversationMeta.businessId, conversationMeta.threadId],
           set: { handlingMode: input.handlingMode },
@@ -278,7 +277,7 @@ export const inboxRouter = {
     .mutation(async ({ ctx, input }) => {
       const [created] = await ctx.db
         .insert(tag)
-        .values({ userId: ctx.businessOwnerId, businessId: ctx.businessId, label: input.label, color: input.color })
+        .values({ businessId: ctx.businessId, label: input.label, color: input.color })
         .onConflictDoNothing()
         .returning();
       if (created) return created;
@@ -339,7 +338,6 @@ export const inboxRouter = {
       const [created] = await ctx.db
         .insert(customerNote)
         .values({
-          userId: ctx.businessOwnerId,
           businessId: ctx.businessId,
           customerId: input.customerId,
           authorLabel: ctx.session.user.name ?? "You",
@@ -357,7 +355,7 @@ export const inboxRouter = {
   generateSummary: permissionProcedure("inbox", "edit")
     .input(z.object({ threadId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const summary = await generateAndSaveConversationSummary(ctx.businessOwnerId, ctx.businessId, input.threadId);
+      const summary = await generateAndSaveConversationSummary(ctx.businessId, input.threadId);
       return { summary: summary ?? "Unable to generate a summary right now." };
     }),
 } satisfies TRPCRouterRecord;

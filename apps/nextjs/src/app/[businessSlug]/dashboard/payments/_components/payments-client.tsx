@@ -223,7 +223,7 @@ export function PaymentsClient() {
             </button>
           </div>
 
-          <TransactionTable rows={rows ?? []} isLoading={isLoading} onRefund={handleRefund} refundingId={refundingId} />
+          <TransactionTable rows={rows?.items ?? []} isLoading={isLoading} onRefund={handleRefund} refundingId={refundingId} />
         </CardContent>
       </Card>
 

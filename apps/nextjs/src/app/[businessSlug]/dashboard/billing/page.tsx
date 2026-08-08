@@ -4,7 +4,6 @@ import { ShieldAlert } from "lucide-react";
 
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
-import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { BillingClient } from "./billing-client";
 
 export default async function BillingPage({ params }: { params: Promise<{ businessSlug: string }> }) {
@@ -18,7 +17,6 @@ export default async function BillingPage({ params }: { params: Promise<{ busine
   const { role } = await caller.roles.getMyPermissions();
 
   return (
-    <DashboardShell>
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Billing & Subscriptions</h1>
@@ -35,6 +33,5 @@ export default async function BillingPage({ params }: { params: Promise<{ busine
           <BillingClient businessSlug={businessSlug} />
         )}
       </div>
-    </DashboardShell>
   );
 }

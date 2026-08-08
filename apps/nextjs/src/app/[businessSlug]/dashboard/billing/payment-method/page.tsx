@@ -5,7 +5,6 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@acme/ui/button";
 
 import { getSession } from "~/auth/server";
-import { DashboardShell } from "../../(home)/_components/dashboard-shell";
 import { PaymentMethodClient } from "./payment-method-client";
 
 export default async function PaymentMethodPage({ params }: { params: Promise<{ businessSlug: string }> }) {
@@ -14,7 +13,6 @@ export default async function PaymentMethodPage({ params }: { params: Promise<{ 
   const { businessSlug } = await params;
 
   return (
-    <DashboardShell>
       <div className="space-y-6 pb-10">
         <div>
           <Link href={`/${businessSlug}/dashboard/billing`}>
@@ -32,6 +30,5 @@ export default async function PaymentMethodPage({ params }: { params: Promise<{ 
 
         <PaymentMethodClient />
       </div>
-    </DashboardShell>
   );
 }

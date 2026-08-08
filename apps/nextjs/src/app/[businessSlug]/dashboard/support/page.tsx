@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { Inbox } from "lucide-react";
 
 import { getSession } from "~/auth/server";
-import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { SupportClient } from "./support-client";
 import { Button } from "@acme/ui/button";
 
@@ -13,7 +12,6 @@ export default async function SupportPage({ params }: { params: Promise<{ busine
   const { businessSlug } = await params;
 
   return (
-    <DashboardShell>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -33,6 +31,5 @@ export default async function SupportPage({ params }: { params: Promise<{ busine
 
         <SupportClient />
       </div>
-    </DashboardShell>
   );
 }

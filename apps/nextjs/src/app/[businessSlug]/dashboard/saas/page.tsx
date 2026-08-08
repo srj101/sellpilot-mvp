@@ -3,7 +3,6 @@ import Link from "next/link";
 import { TrendingUp, ArrowUpRight, DollarSign, Users, CreditCard, Layers, Activity } from "lucide-react";
 
 import { getSession } from "~/auth/server";
-import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@acme/ui/card";
 import { Button } from "@acme/ui/button";
 
@@ -29,7 +28,6 @@ export default async function SaaSPage({
   const cac = 8500;
 
   return (
-    <DashboardShell>
       <div className="space-y-6">
         {/* Welcome SaaS Header / MRR Banner */}
         <div
@@ -229,6 +227,5 @@ export default async function SaaSPage({
           </CardContent>
         </Card>
       </div>
-    </DashboardShell>
   );
 }

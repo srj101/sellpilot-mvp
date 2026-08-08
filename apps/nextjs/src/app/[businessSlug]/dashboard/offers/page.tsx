@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
-import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { OffersClient } from "./offers-client";
 
 export default async function OffersPage() {
@@ -17,8 +16,6 @@ export default async function OffersPage() {
   const [offers, access] = await Promise.all([caller.offers.list(), caller.offers.getAccess()]);
 
   return (
-    <DashboardShell>
       <OffersClient initialOffers={offers} canManage={access.canManage} />
-    </DashboardShell>
   );
 }

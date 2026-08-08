@@ -19,7 +19,6 @@ import { ownerOnlyProcedure, permissionProcedure } from "../trpc";
 async function persistWhatsAppSignup(
   db: typeof Db,
   input: {
-    userId: string;
     businessId: string;
     code: string;
     redirectUri: string;
@@ -129,7 +128,6 @@ async function persistWhatsAppSignup(
       await db.update(metaConnection).set(values).where(eq(metaConnection.id, existing[0].id));
     } else {
       await db.insert(metaConnection).values({
-        userId: input.userId,
         businessId: input.businessId,
         platform: "whatsapp",
         platformAccountId: phoneNumberId ?? wabaId,
@@ -224,7 +222,6 @@ export const integrationsRouter = {
       try {
         await assertChannelAllowed(ctx, "whatsapp");
         return await persistWhatsAppSignup(ctx.db, {
-          userId: ctx.businessOwnerId,
           businessId: ctx.businessId,
           code: input.code,
           redirectUri: input.redirectUri,

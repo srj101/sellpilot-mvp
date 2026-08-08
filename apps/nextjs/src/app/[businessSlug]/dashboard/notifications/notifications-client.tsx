@@ -14,7 +14,6 @@ import { NOTIFICATION_TYPE_ICON, formatNotificationTime } from "~/lib/notificati
 interface Notification {
   id: string;
   businessId: string;
-  userId: string | null;
   type: string;
   title: string;
   body: string | null;

@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 
 import { getSession } from "~/auth/server";
-import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { InvoicesClient } from "./invoices-client";
 
 export default async function InvoicesPage() {
@@ -9,7 +8,6 @@ export default async function InvoicesPage() {
   if (!session) redirect("/login");
 
   return (
-    <DashboardShell>
       <div className="space-y-6">
         {/* Header */}
         <div>
@@ -21,6 +19,5 @@ export default async function InvoicesPage() {
 
         <InvoicesClient />
       </div>
-    </DashboardShell>
   );
 }

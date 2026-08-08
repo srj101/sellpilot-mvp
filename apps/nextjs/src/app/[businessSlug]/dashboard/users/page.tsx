@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 
 import { getSession } from "~/auth/server";
-import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { UsersClient } from "./users-client";
 
 export default async function UsersPage() {
@@ -12,7 +11,6 @@ export default async function UsersPage() {
   }
 
   return (
-    <DashboardShell>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -24,6 +22,5 @@ export default async function UsersPage() {
 
         <UsersClient />
       </div>
-    </DashboardShell>
   );
 }

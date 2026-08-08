@@ -32,11 +32,13 @@ import { cn } from "@acme/ui";
 
 import { ConfirmDialog } from "~/app/[businessSlug]/dashboard/_components/confirm-dialog";
 import { useTRPC } from "~/trpc/react";
+import { useBusinessSlug } from "~/hooks/use-business-slug";
 import { ProductForm } from "./product-form";
 
 interface BulkRow {
   title: string;
   category?: string;
+  gender?: string;
   price: number;
   discountPercent?: number;
   stockQty: number;
@@ -52,6 +54,12 @@ function pickField(row: Record<string, string>, ...keys: string[]) {
   return undefined;
 }
 
+const GENDER_VALUES = new Set(["men", "women", "unisex", "kids"]);
+function normalizeGender(raw: string | undefined) {
+  const v = raw?.trim().toLowerCase();
+  return v && GENDER_VALUES.has(v) ? v : undefined;
+}
+
 function StockBadge({ status, qty }: { status: "in_stock" | "low_stock" | "out_of_stock"; qty: number }) {
   if (status === "out_of_stock") {
     return <Badge variant="destructive">Out of Stock</Badge>;
@@ -65,6 +73,7 @@ function StockBadge({ status, qty }: { status: "in_stock" | "low_stock" | "out_o
 export function ProductsClient() {
   const trpc = useTRPC();
   const qc = useQueryClient();
+  const businessSlug = useBusinessSlug();
   const deleteProductMutation = useMutation(trpc.products.delete.mutationOptions());
   const testImageSearchMutation = useMutation(trpc.products.testImageSearch.mutationOptions());
   const bulkCreateMutation = useMutation(trpc.products.bulkCreate.mutationOptions());
@@ -175,6 +184,7 @@ export function ProductsClient() {
           rows.push({
             title,
             category: pickField(row, "category", "Category"),
+            gender: normalizeGender(pickField(row, "gender", "Gender")),
             price,
             discountPercent: discountRaw ? Number(discountRaw) : undefined,
             stockQty: Number(pickField(row, "stockQty", "Stock Qty", "stock") ?? 0) || 0,
@@ -214,8 +224,8 @@ export function ProductsClient() {
   }
 
   function downloadTemplate() {
-    const header = "title,category,price,discountPercent,stockQty,description,rating,imageUrl\n";
-    const sample = "Ceramic Flower Vase,Decor,450,10,20,Hand-finished ceramic vase,,https://example.com/vase.jpg\n";
+    const header = "title,category,gender,price,discountPercent,stockQty,description,rating,imageUrl\n";
+    const sample = "Ceramic Flower Vase,Decor,,450,10,20,Hand-finished ceramic vase,,https://example.com/vase.jpg\n";
     const blob = new Blob([header + sample], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -230,7 +240,7 @@ export function ProductsClient() {
     setIsImporting(true);
     setCsvError(null);
     try {
-      const result = await bulkCreateMutation.mutateAsync({ products: csvRows });
+      const result = await bulkCreateMutation.mutateAsync({ products: csvRows as any });
       if (result.skipped > 0) {
         setImportSummary({ imported: result.imported, skipped: result.skipped });
       } else {
@@ -344,7 +354,7 @@ export function ProductsClient() {
           </Button>
           {atLimit ? (
             <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
-              <Link href="/dashboard/pricing">
+              <Link href={`/${businessSlug}/dashboard/billing`}>
                 <Lock className="h-4 w-4" />
                 Upgrade
               </Link>
@@ -736,7 +746,7 @@ export function ProductsClient() {
                 </p>
                 <p className="mt-1 text-xs">
                   {importSummary.skipped} row{importSummary.skipped > 1 ? "s were" : " was"} skipped — you've reached your plan's product limit.{" "}
-                  <Link href="/dashboard/pricing" className="font-medium underline underline-offset-2">Upgrade</Link> to import the rest.
+                  <Link href={`/${businessSlug}/dashboard/billing`} className="font-medium underline underline-offset-2">Upgrade</Link> to import the rest.
                 </p>
               </div>
             )}
@@ -753,7 +763,7 @@ export function ProductsClient() {
                     <span>
                       Your {usage.planName} plan allows {usage.limit} products and you have {usage.remaining} slot{usage.remaining === 1 ? "" : "s"} left.
                       Only the first {usage.remaining} of {csvRows.length} rows will be imported (in file order) — the rest will be skipped.{" "}
-                      <Link href="/dashboard/pricing" className="font-medium underline underline-offset-2">Upgrade</Link> to import all of them.
+                      <Link href={`/${businessSlug}/dashboard/billing`} className="font-medium underline underline-offset-2">Upgrade</Link> to import all of them.
                     </span>
                   </p>
                 )}
@@ -763,6 +773,7 @@ export function ProductsClient() {
                       <tr>
                         <th className="px-3 py-2">Title</th>
                         <th className="px-3 py-2">Category</th>
+                        <th className="px-3 py-2">Gender</th>
                         <th className="px-3 py-2">Price</th>
                         <th className="px-3 py-2">Stock</th>
                       </tr>
@@ -772,6 +783,7 @@ export function ProductsClient() {
                         <tr key={i} className={cn("border-t", usage && i >= usage.remaining && "opacity-40")}>
                           <td className="px-3 py-2">{r.title}</td>
                           <td className="px-3 py-2 text-muted-foreground">{r.category ?? "—"}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{r.gender ?? "—"}</td>
                           <td className="px-3 py-2">{r.price}</td>
                           <td className="px-3 py-2 text-muted-foreground">{r.stockQty}</td>
                         </tr>

@@ -3,7 +3,6 @@ import { redirect, notFound } from "next/navigation";
 
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
-import { DashboardShell } from "../../(home)/_components/dashboard-shell";
 import { CustomerDetailClient } from "./customer-detail-client";
 
 export default async function CustomerDetailPage({
@@ -33,8 +32,6 @@ export default async function CustomerDetailPage({
   };
 
   return (
-    <DashboardShell>
       <CustomerDetailClient customer={serialized} />
-    </DashboardShell>
   );
 }

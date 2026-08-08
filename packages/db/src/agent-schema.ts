@@ -11,14 +11,15 @@ import {
   bigint,
 } from "drizzle-orm/pg-core";
 
-import { user, business } from "./auth-schema";
+import { business } from "./auth-schema";
 import { product, productVariant } from "./product-schema";
 
 /**
- * Business profile per user (merchant). Scoped by businessId ("store") so the
- * AI agent never crosses tenant boundaries when answering questions — userId alone
- * isn't enough once one person can own more than one store (see businessId
- * migration note at the top of packages/api/src/trpc.ts's orgProcedure).
+ * Business profile — one row per store (unique on businessId), holding the merchant's
+ * own settings: currency, shipping defaults, their SSLCommerz credentials, and the AI
+ * agent's persona. Scoped by businessId alone so the agent can never cross tenant
+ * boundaries: one person can own several stores, so the owner's user id was never
+ * enough to tell them apart, and it is no longer stored here at all.
  */
 export const businessProfile = pgTable(
   "business_profile",
@@ -26,9 +27,6 @@ export const businessProfile = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     businessId: text("business_id")
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
@@ -94,9 +92,6 @@ export const offer = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     businessId: text("business_id")
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
@@ -150,9 +145,6 @@ export const customer = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     businessId: text("business_id")
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
@@ -187,9 +179,6 @@ export const order = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     businessId: text("business_id")
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
@@ -352,9 +341,9 @@ export const cart = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => business.id, { onDelete: "cascade" }),
     customerId: text("customer_id").references(() => customer.id, {
       onDelete: "set null",
     }),
@@ -378,9 +367,13 @@ export const cart = pgTable(
       .notNull(),
   },
   (table) => [
-    index("cart_user_id_idx").on(table.userId),
+    index("cart_business_id_idx").on(table.businessId),
     index("cart_status_idx").on(table.status),
-    unique("cart_user_thread_unique").on(table.userId, table.threadId),
+    // Mirrors agent_session_org_thread_unique — a thread belongs to exactly one store, and
+    // this is the upsert target for upsertActiveCart. Keyed by business, not the owner's
+    // user id: one person can own several stores, so (userId, threadId) could collide
+    // across two of their own stores and silently merge their carts.
+    unique("cart_business_thread_unique").on(table.businessId, table.threadId),
   ],
 );
 
@@ -393,9 +386,9 @@ export const review = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
+    businessId: text("business_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => business.id, { onDelete: "cascade" }),
     orderId: text("order_id")
       .notNull()
       .references(() => order.id, { onDelete: "cascade" }),
@@ -410,7 +403,7 @@ export const review = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    index("review_user_id_idx").on(table.userId),
+    index("review_business_id_idx").on(table.businessId),
     index("review_order_id_idx").on(table.orderId),
     index("review_product_id_idx").on(table.productId),
   ],
@@ -421,9 +414,10 @@ export const review = pgTable(
  * feed (new order, payment received, COD confirmed, abandoned follow-up sent, low
  * stock, etc.), not scoped to a single recipient. For an SMB-sized team, every staff
  * member seeing every notification is simpler and more useful than building per-user
- * targeting/read-state for a first version. userId is kept (now optional) for the one
- * case that's inherently personal — who read it isn't tracked per-user yet, but the
- * column stays available for that later without another migration.
+ * targeting/read-state for a first version. There is deliberately no userId: createNotification
+ * only ever takes a businessId, so the column sat NULL on every row it ever had. Per-recipient
+ * targeting needs a read-state design (who dismissed what), not just a nullable column, so
+ * it can be added properly when it's actually built.
  */
 export const notification = pgTable(
   "notification",
@@ -434,7 +428,6 @@ export const notification = pgTable(
     businessId: text("business_id")
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
-    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
     /** e.g. "order_created", "payment_received", "cod_confirmed", "abandoned_followup_sent", "low_stock" */
     type: text("type").notNull(),
     title: text("title").notNull(),
@@ -460,9 +453,6 @@ export const subscription = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     businessId: text("business_id")
       .references(() => business.id, { onDelete: "cascade" }),
     /** "monthly" | "half_yearly" | "yearly" | "lifetime" */
@@ -506,7 +496,6 @@ export const subscription = pgTable(
       .notNull(),
   },
   (table) => [
-    index("subscription_user_id_idx").on(table.userId),
     index("subscription_status_idx").on(table.status),
     // checkLockStatus, enterBySlug, and the renewal job all assume exactly one row per
     // business — without this, a duplicate insert would silently give a business two
@@ -517,7 +506,7 @@ export const subscription = pgTable(
 );
 
 /**
- * FAQ knowledge base. Scoped by userId.
+ * FAQ knowledge base. Scoped by businessId.
  */
 export const faq = pgTable(
   "faq",
@@ -525,9 +514,6 @@ export const faq = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     businessId: text("business_id")
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
@@ -553,9 +539,6 @@ export const policy = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     businessId: text("business_id")
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
@@ -585,9 +568,6 @@ export const shippingRate = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     businessId: text("business_id")
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
@@ -624,9 +604,6 @@ export const agentSession = pgTable(
     id: text("id")
       .primaryKey()
       .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     businessId: text("business_id")
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
@@ -682,54 +659,27 @@ export interface AgentSessionState {
   notes?: string;
 }
 
-export const customRole = pgTable(
-  "custom_role",
-  {
-    id: text("id")
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    key: text("key").notNull(),
-    description: text("description"),
-    permissions: jsonb("permissions").$type<string[]>().default([]).notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .$onUpdate(() => new Date())
-      .notNull(),
-  },
-  (table) => [
-    index("custom_role_user_id_idx").on(table.userId),
-    unique("custom_role_user_key_unique").on(table.userId, table.key),
-  ],
-);
-
 // Relations ------------------------------------------------------------------
 
 export const businessProfileRelations = relations(
   businessProfile,
   ({ one }) => ({
-    user: one(user, {
-      fields: [businessProfile.userId],
-      references: [user.id],
+    business: one(business, {
+      fields: [businessProfile.businessId],
+      references: [business.id],
     }),
   }),
 );
 
 export const offerRelations = relations(offer, ({ one }) => ({
-  user: one(user, { fields: [offer.userId], references: [user.id] }),
 }));
 
 export const customerRelations = relations(customer, ({ one, many }) => ({
-  user: one(user, { fields: [customer.userId], references: [user.id] }),
   orders: many(order),
 }));
 
 export const orderRelations = relations(order, ({ one, many }) => ({
-  user: one(user, { fields: [order.userId], references: [user.id] }),
+  business: one(business, { fields: [order.businessId], references: [business.id] }),
   customer: one(customer, {
     fields: [order.customerId],
     references: [customer.id],
@@ -755,29 +705,26 @@ export const orderItemRelations = relations(orderItem, ({ one }) => ({
 }));
 
 export const faqRelations = relations(faq, ({ one }) => ({
-  user: one(user, { fields: [faq.userId], references: [user.id] }),
 }));
 
 export const policyRelations = relations(policy, ({ one }) => ({
-  user: one(user, { fields: [policy.userId], references: [user.id] }),
 }));
 
 export const shippingRateRelations = relations(shippingRate, ({ one }) => ({
-  user: one(user, { fields: [shippingRate.userId], references: [user.id] }),
 }));
 
 export const agentSessionRelations = relations(agentSession, ({ one }) => ({
-  user: one(user, { fields: [agentSession.userId], references: [user.id] }),
+  business: one(business, { fields: [agentSession.businessId], references: [business.id] }),
 }));
 
 export const cartRelations = relations(cart, ({ one }) => ({
-  user: one(user, { fields: [cart.userId], references: [user.id] }),
+  business: one(business, { fields: [cart.businessId], references: [business.id] }),
   customer: one(customer, { fields: [cart.customerId], references: [customer.id] }),
   convertedOrder: one(order, { fields: [cart.convertedOrderId], references: [order.id] }),
 }));
 
 export const reviewRelations = relations(review, ({ one }) => ({
-  user: one(user, { fields: [review.userId], references: [user.id] }),
+  business: one(business, { fields: [review.businessId], references: [business.id] }),
   order: one(order, { fields: [review.orderId], references: [order.id] }),
   customer: one(customer, { fields: [review.customerId], references: [customer.id] }),
   product: one(product, { fields: [review.productId], references: [product.id] }),
@@ -785,15 +732,10 @@ export const reviewRelations = relations(review, ({ one }) => ({
 
 export const notificationRelations = relations(notification, ({ one }) => ({
   business: one(business, { fields: [notification.businessId], references: [business.id] }),
-  user: one(user, { fields: [notification.userId], references: [user.id] }),
 }));
 
 export const subscriptionRelations = relations(subscription, ({ one }) => ({
-  user: one(user, { fields: [subscription.userId], references: [user.id] }),
-}));
-
-export const customRoleRelations = relations(customRole, ({ one }) => ({
-  user: one(user, { fields: [customRole.userId], references: [user.id] }),
+  business: one(business, { fields: [subscription.businessId], references: [business.id] }),
 }));
 
 /**

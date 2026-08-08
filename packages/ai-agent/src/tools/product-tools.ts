@@ -13,6 +13,10 @@ export interface AIHelpers {
     keyword: string,
     limit?: number
   ): Promise<unknown[]>;
+  discoverProducts(
+    businessId: string,
+    filters: { keyword?: string; gender?: string; minPrice?: number; maxPrice?: number; limit?: number }
+  ): Promise<unknown[]>;
   getProductById(businessId: string, productId: string): Promise<unknown>;
   checkProductStock(productId: string): Promise<{ stock: number; variants: unknown[] }>;
   getTopSellingProducts(businessId: string, limit?: number): Promise<unknown[]>;
@@ -43,7 +47,8 @@ function getHelpers(): AIHelpers {
 
 export const searchProductsTool = new DynamicStructuredTool({
   name: "searchProducts",
-  description: "Search products from inventory by keyword",
+  description:
+    "Search products from inventory by a plain keyword (title/description match only). Prefer discoverProducts instead if the customer mentions a budget, gender, or purpose/occasion — it filters and sorts by those too.",
   schema: z.object({
     keyword: z.string().describe("Search keyword"),
   }),
@@ -52,6 +57,38 @@ export const searchProductsTool = new DynamicStructuredTool({
     const { businessId } = getToolContext();
     console.log("[Tool] searchProducts", { keyword, businessId });
     const results = await getHelpers().searchProductsByKeyword(businessId, keyword, 10);
+    return JSON.stringify(results);
+  },
+});
+
+export const discoverProductsTool = new DynamicStructuredTool({
+  name: "discoverProducts",
+  description:
+    "Find matching products by budget, gender, and/or purpose/style keyword — use this INSTEAD of searchProducts whenever the customer mentions a price limit (\"under ৳1500\", \"budget 2000\"), a gender (\"for men\", \"women's\"), or a purpose/occasion/style (\"office shoe\", \"party dress\", \"formal wear\", \"casual\"). Results are sorted cheapest first. Only pass the filters the customer actually mentioned — never guess a gender or price they didn't state.",
+  schema: z.object({
+    keyword: z.string().optional().describe("Purpose, occasion, style, or product type — e.g. 'office shoe', 'formal', 'party dress'"),
+    gender: z.enum(["men", "women", "unisex", "kids"]).optional().describe("Only pass if the customer stated or clearly implied a gender"),
+    minPrice: z.number().optional().describe("Minimum budget in the store's currency"),
+    maxPrice: z.number().optional().describe("Maximum budget in the store's currency, e.g. 'under ৳1500' -> 1500"),
+    limit: z.number().optional().describe("Max results"),
+  }),
+  func: async (input: unknown) => {
+    const { keyword, gender, minPrice, maxPrice, limit } = input as {
+      keyword?: string;
+      gender?: string;
+      minPrice?: number;
+      maxPrice?: number;
+      limit?: number;
+    };
+    const { businessId } = getToolContext();
+    console.log("[Tool] discoverProducts", { businessId, keyword, gender, minPrice, maxPrice, limit });
+    const results = await getHelpers().discoverProducts(businessId, {
+      keyword,
+      gender,
+      minPrice,
+      maxPrice,
+      limit: limit ?? 10,
+    });
     return JSON.stringify(results);
   },
 });
@@ -162,6 +199,7 @@ export const getLowStockProductsTool = new DynamicStructuredTool({
 
 export const productTools = [
   searchProductsTool,
+  discoverProductsTool,
   getProductTool,
   checkStockTool,
   getTopSellingProductsTool,

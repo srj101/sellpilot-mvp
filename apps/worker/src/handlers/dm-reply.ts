@@ -177,7 +177,6 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
   console.log(`[DMReply] Processing job ${job.id}`, {
     platform: data.platform,
     threadId: data.threadId,
-    userId: data.userId,
     businessId: data.businessId,
   });
 
@@ -260,7 +259,6 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
   const connection: PlatformConnection = {
     id: data.connectionId,
     platform: data.platform,
-    userId: data.userId,
     accountId: data.accountId,
     accessToken: data.accessToken,
     isActive: true,
@@ -335,7 +333,6 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
   const agentInput: AgentInput = {
     message: messageText,
     context: {
-      userId: data.userId,
       businessId: data.businessId,
       threadId: data.threadId,
       platform: data.platform,
@@ -382,7 +379,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
       if (response.confidence < threshold) {
         console.log(`[DMReply] Low confidence ${response.confidence}/${threshold} — escalating to human`);
         try {
-          await escalateToHuman(data.userId, data.businessId, data.threadId, "low-confidence auto-escalation");
+          await escalateToHuman(data.businessId, data.threadId, "low-confidence auto-escalation");
         } catch (err) {
           console.error("[DMReply] Failed to escalate on low confidence:", err);
         }
@@ -428,7 +425,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
       // Refresh the cached conversation summary in the background — never awaited, so
       // it can't add latency to the customer's reply. Runs after logOutbound above so
       // this reply itself is included in what gets summarized for next time.
-      void generateAndSaveConversationSummary(data.userId, data.businessId, data.threadId).catch((err) => {
+      void generateAndSaveConversationSummary(data.businessId, data.threadId).catch((err) => {
         console.error(`[DMReply] Failed to refresh conversation summary for ${data.threadId}:`, err);
       });
     } else {

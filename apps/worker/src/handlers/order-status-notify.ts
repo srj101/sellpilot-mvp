@@ -80,7 +80,6 @@ export async function handleOrderStatusNotify(job: Job<OrderStatusNotifyJob>): P
     const connection: PlatformConnection = {
       id: conn.id,
       platform,
-      userId: conn.userId,
       accountId: conn.platformAccountId,
       accessToken: conn.accessToken,
       isActive: true,

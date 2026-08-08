@@ -87,6 +87,7 @@ async function initializeAIHelpers() {
     initializeHelpers({
       aiHelpers: {
         searchProductsByKeyword: aiHelpers.searchProductsByKeyword,
+        discoverProducts: aiHelpers.discoverProducts,
         getProductById: aiHelpers.getProductById,
         checkProductStock: aiHelpers.checkProductStock,
         getTopSellingProducts: aiHelpers.getTopSellingProducts,
@@ -149,8 +150,8 @@ async function initializeAIHelpers() {
         getOfferByCode: aiHelpers.getOfferByCode,
         getComboOffersForProduct: aiHelpers.getComboOffersForProduct,
         getFAQMatches: aiHelpers.getFAQMatches,
-        escalateToHuman: async (userId, businessId, threadId, reason) => {
-          await aiHelpers.escalateToHuman(userId, businessId, threadId, reason);
+        escalateToHuman: async (businessId, threadId, reason) => {
+          await aiHelpers.escalateToHuman(businessId, threadId, reason);
           // FR-SET-04: send human_handoff email if emailEnabled
           try {
             const { emailEnabled } = await getNotificationPreference(businessId, "human_handoff");
@@ -184,7 +185,7 @@ async function initializeAIHelpers() {
       // not configured" regardless of what the model did. A separate MessagingService
       // instance is fine here (own rate-limit tracking, independent of dm-reply.ts's) —
       // image sends are rare enough that double-counting isn't a real concern.
-      sendImageFn: async (connectionContext, businessId, productId, userId) => {
+      sendImageFn: async (connectionContext, businessId, productId) => {
         const productResult = await aiHelpers.getProductById(businessId, productId);
         if (!productResult) return { success: false, error: "Product not found" };
 
@@ -195,7 +196,6 @@ async function initializeAIHelpers() {
         const connection: PlatformConnection = {
           id: connectionContext.connectionId,
           platform: connectionContext.platform,
-          userId,
           accountId: connectionContext.accountId,
           accessToken: connectionContext.accessToken,
           isActive: true,
@@ -215,7 +215,6 @@ async function initializeAIHelpers() {
     setOutboundLogger({
       logOutbound: (job, messageId, text) =>
         aiHelpers.logOutboundMessage({
-          userId: job.userId,
           businessId: job.businessId,
           threadId: job.threadId,
           platform: job.platform,
@@ -382,7 +381,7 @@ async function main() {
     console.log("[Worker] Ready to process jobs");
 
     // Keep the process running
-    await new Promise(() => {});
+    await new Promise(() => { });
   } catch (err) {
     console.error("[Worker] Fatal error:", err);
     process.exit(1);

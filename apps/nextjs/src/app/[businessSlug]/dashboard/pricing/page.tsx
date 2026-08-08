@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 
 import { getSession } from "~/auth/server";
-import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { PricingDashboardClient } from "./pricing-dashboard-client";
 
 export default async function PricingPage() {
@@ -9,7 +8,6 @@ export default async function PricingPage() {
   if (!session) redirect("/login");
 
   return (
-    <DashboardShell>
       <div className="space-y-8 pb-10">
         <div className="mx-auto max-w-xl space-y-2 pt-2 text-center">
           <h1 className="text-3xl font-bold tracking-tight">Flexible plans tailored to your growth</h1>
@@ -20,6 +18,5 @@ export default async function PricingPage() {
 
         <PricingDashboardClient />
       </div>
-    </DashboardShell>
   );
 }

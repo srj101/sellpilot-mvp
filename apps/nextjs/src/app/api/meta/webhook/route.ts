@@ -25,12 +25,14 @@ import { classifyMessagePriority, QUEUE_PRIORITY } from "~/lib/message-priority"
 
 import {
   MessagingService,
-  getPlatformProvider,
-  type PlatformType,
-  type WebhookEvent,
-  type IncomingMessage,
+  getPlatformProvider
+
+
+
 } from "@acme/messaging";
-import { createQueue, type MetaDMReplyJob, type MetaCommentReplyJob } from "@acme/queue";
+import type { PlatformType, WebhookEvent, IncomingMessage } from "@acme/messaging";
+import { createQueue } from "@acme/queue";
+import type { MetaDMReplyJob, MetaCommentReplyJob } from "@acme/queue";
 
 export const runtime = "nodejs";
 
@@ -138,7 +140,7 @@ export async function POST(req: NextRequest) {
   if (events.length === 0) {
     console.warn(
       `[Webhook] Payload parsed but yielded 0 events (platform=${platform}) - ` +
-        "this is usually a delivery/read receipt or an unsupported event shape"
+      "this is usually a delivery/read receipt or an unsupported event shape"
     );
     return new NextResponse("EVENT_RECEIVED", { status: 200 });
   }
@@ -147,11 +149,11 @@ export async function POST(req: NextRequest) {
 
   // Process events
   const rows: (typeof metaWebhookEvent.$inferInsert)[] = [];
-  const jobsToEnqueue: Array<{
+  const jobsToEnqueue: {
     type: "dm" | "comment";
     event: WebhookEvent;
     connection: typeof metaConnection.$inferSelect;
-  }> = [];
+  }[] = [];
 
   for (const event of events) {
     // Resolve connection
@@ -160,7 +162,7 @@ export async function POST(req: NextRequest) {
     if (!connection) {
       console.warn(
         `[Webhook] No connection found for platform=${event.platform} accountId=${event.accountId} - ` +
-          "event will be stored as orphaned and no reply will be sent"
+        "event will be stored as orphaned and no reply will be sent"
       );
     }
 
@@ -171,7 +173,6 @@ export async function POST(req: NextRequest) {
       object: getObjectType(event.platform),
       eventType: event.eventType,
       metaConnectionId: connection?.id ?? null,
-      userId: connection?.userId ?? null,
       businessId: connection?.businessId ?? null,
       platformAccountId: event.accountId,
       sourceId: event.message?.id ?? null,
@@ -182,7 +183,7 @@ export async function POST(req: NextRequest) {
     });
 
     // Queue jobs for processing
-    if (connection?.userId && event.message) {
+    if (connection?.businessId && event.message) {
       if (isInboundMessage(event)) {
         jobsToEnqueue.push({ type: "dm", event, connection });
       } else if (isInboundComment(event)) {
@@ -221,7 +222,6 @@ export async function POST(req: NextRequest) {
             eventId: event.eventId,
             platform: event.platform as "facebook_page" | "instagram" | "whatsapp",
             connectionId: connection.id,
-            userId: connection.userId,
             businessId: connection.businessId,
             recipientId: event.message.senderId,
             threadId: event.message.threadId,
@@ -252,7 +252,6 @@ export async function POST(req: NextRequest) {
             eventId: event.eventId,
             platform: event.platform as "facebook_page" | "instagram",
             connectionId: connection.id,
-            userId: connection.userId,
             businessId: connection.businessId,
             commentId: event.message.id,
             commentText: event.message.text ?? "",

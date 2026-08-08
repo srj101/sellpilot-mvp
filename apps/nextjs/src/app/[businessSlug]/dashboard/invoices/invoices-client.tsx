@@ -26,7 +26,7 @@ export function InvoicesClient() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "pending" | "overdue">("all");
 
-  const { data, isPending } = useQuery(trpc.orders.list.queryOptions());
+  const { data, isPending } = useQuery(trpc.orders.list.queryOptions({}));
   const orders = data?.orders ?? [];
 
   const { data: usage } = useQuery(trpc.subscription.getUsage.queryOptions());

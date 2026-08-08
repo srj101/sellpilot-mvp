@@ -2,7 +2,7 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
-import { eq, createNotification } from "@acme/db";
+import { desc, eq, and, gte, createNotification } from "@acme/db";
 import type { db as Db } from "@acme/db/client";
 import { businessProfile, order, orderItem, pageView, transaction } from "@acme/db/schema";
 import { getNotificationPreference } from "@acme/db/helpers/notification-preferences";
@@ -42,13 +42,23 @@ export const checkoutRouter = {
         throw new TRPCError({ code: "NOT_FOUND", message: "Order not found." });
       }
 
-      const [items, profile, [view], whiteLabelEnabled] = await Promise.all([
-        ctx.db.select().from(orderItem).where(eq(orderItem.orderId, orderRow.id)),
-        ctx.db.query.businessProfile.findFirst({ where: eq(businessProfile.businessId, orderRow.businessId) }),
-        ctx.db
+      // Deduplicate pageView: check for existing view for this order+session within 5 minutes
+      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+      const existingView = await ctx.db.query.pageView.findFirst({
+        where: and(
+          eq(pageView.orderId, orderRow.id),
+          gte(pageView.createdAt, fiveMinAgo),
+        ),
+        orderBy: desc(pageView.createdAt),
+      });
+
+      let view;
+      if (existingView) {
+        view = existingView;
+      } else {
+        [view] = await ctx.db
           .insert(pageView)
           .values({
-            userId: orderRow.userId,
             businessId: orderRow.businessId,
             orderId: orderRow.id,
             sessionId: crypto.randomUUID(),
@@ -56,7 +66,12 @@ export const checkoutRouter = {
             referrerChannel: orderRow.channel,
             district: orderRow.shippingDistrict,
           })
-          .returning(),
+          .returning();
+      }
+
+      const [items, profile, whiteLabelEnabled] = await Promise.all([
+        ctx.db.select().from(orderItem).where(eq(orderItem.orderId, orderRow.id)),
+        ctx.db.query.businessProfile.findFirst({ where: eq(businessProfile.businessId, orderRow.businessId) }),
         getPlanFeatureEnabled({ db: ctx.db, businessId: orderRow.businessId }, "whiteLabel"),
       ]);
 

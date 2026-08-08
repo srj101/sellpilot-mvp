@@ -143,7 +143,6 @@ async function replaceWhatsAppConnection(input: {
   }
 
   await db.insert(metaConnection).values({
-    userId: input.userId,
     businessId: input.businessId,
     platform: "whatsapp",
     platformAccountId: input.phoneNumberId ?? input.wabaId,

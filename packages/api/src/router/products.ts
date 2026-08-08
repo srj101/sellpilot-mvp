@@ -33,6 +33,7 @@ const ProductInput = z.object({
   title: z.string(),
   description: z.string().optional(),
   category: z.string().optional(),
+  gender: z.enum(["men", "women", "unisex", "kids"]).optional(),
   status: z.string(),
   images: z.array(z.string()),
   options: z.array(z.object({ name: z.string(), values: z.array(z.string()) })),
@@ -93,7 +94,6 @@ export const productsRouter = {
     }),
 
   create: permissionProcedure("products", "create").input(ProductInput).mutation(async ({ ctx, input }) => {
-    const userId = ctx.businessOwnerId;
     const businessId = ctx.businessId;
 
     await assertPlanLimit(ctx, "products");
@@ -116,11 +116,11 @@ export const productsRouter = {
     const [newProduct] = await ctx.db
       .insert(product)
       .values({
-        userId,
         businessId,
         title: input.title,
         description: input.description,
         category: input.category,
+        gender: input.gender ?? null,
         status: input.status,
         images: processedImages,
         options: input.options,
@@ -206,6 +206,7 @@ export const productsRouter = {
         title: input.title,
         description: input.description,
         category: input.category,
+        gender: input.gender ?? null,
         status: input.status,
         images: processedImages,
         options: input.options,
@@ -354,6 +355,7 @@ export const productsRouter = {
       products: z.array(z.object({
         title: z.string().min(1),
         category: z.string().optional(),
+        gender: z.enum(["men", "women", "unisex", "kids"]).optional(),
         price: z.number().positive(),
         discountPercent: z.number().min(0).max(100).optional(),
         stockQty: z.number().int().min(0),
@@ -364,7 +366,6 @@ export const productsRouter = {
     }))
     .mutation(async ({ ctx, input }) => {
       const businessId = ctx.businessId;
-      const userId = ctx.businessOwnerId;
 
       // Cap the batch at the plan's remaining capacity instead of rejecting the whole
       // import — keeps the first N rows in file order (matching the CSV importer's
@@ -395,11 +396,11 @@ export const productsRouter = {
         const [newProduct] = await ctx.db
           .insert(product)
           .values({
-            userId,
             businessId,
             title: p.title,
             description: p.description,
             category: p.category,
+            gender: p.gender ?? null,
             status: "active",
             images: processedImageUrl ? [processedImageUrl] : [],
             options: [],

@@ -145,7 +145,6 @@ export class SalesAgentGraph {
     const messages = await this.buildMessages(input);
 
     this.log("Running agent", {
-      userId: input.context.userId,
       threadId: input.context.threadId,
       messageCount: messages.length,
     });
@@ -214,7 +213,7 @@ export class SalesAgentGraph {
       for (const msg of newMessages) {
         if (msg instanceof AIMessage) {
           llmCalls++;
-          
+
           if (msg.usage_metadata) {
             totalPromptTokens += msg.usage_metadata.input_tokens ?? 0;
             totalCompletionTokens += msg.usage_metadata.output_tokens ?? 0;
@@ -222,7 +221,7 @@ export class SalesAgentGraph {
           } else if (msg.response_metadata) {
             const meta = msg.response_metadata as any;
             const tokenUsage = meta.tokenUsage || meta.llmOutput?.tokenUsage || meta.estimatedTokenUsage;
-            
+
             if (tokenUsage) {
               totalPromptTokens += tokenUsage.promptTokens ?? tokenUsage.prompt_tokens ?? 0;
               totalCompletionTokens += tokenUsage.completionTokens ?? tokenUsage.completion_tokens ?? 0;
@@ -302,7 +301,7 @@ export class SalesAgentGraph {
     const messages = await this.buildMessages(input);
 
     this.log("Running agent (streaming)", {
-      userId: input.context.userId,
+      businessId: input.context.businessId,
       threadId: input.context.threadId,
     });
 

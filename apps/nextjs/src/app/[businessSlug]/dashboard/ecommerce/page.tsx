@@ -5,7 +5,6 @@ import { ShoppingBag, TrendingUp, AlertTriangle, ArrowUpRight, DollarSign, Perce
 
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
-import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@acme/ui/card";
 import { Button } from "@acme/ui/button";
 import { UpgradeBanner } from "../_components/upgrade-banner";
@@ -62,7 +61,6 @@ export default async function EcommercePage({ params }: { params: Promise<{ busi
   const { totalSales, totalSalesTrend, totalOrders, totalOrdersTrend, aov, aovTrend, conversionRate, conversionRateTrend, salesSeries, inventoryStatus, promoCodePerformance } = overview;
 
   return (
-    <DashboardShell>
       <div className="space-y-6">
         {/* UX/QA pass gating pattern (docs/UX_QA_PASS.md): real UI always renders — for
             Starter this is genuinely real, all-zero data — with this banner on top instead
@@ -261,6 +259,5 @@ export default async function EcommercePage({ params }: { params: Promise<{ busi
         </Card>
         )}
       </div>
-    </DashboardShell>
   );
 }

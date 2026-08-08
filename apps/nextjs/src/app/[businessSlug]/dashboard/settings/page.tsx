@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
-import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { SettingsClient } from "./settings-client";
 
 export default async function SettingsPage() {
@@ -23,7 +22,6 @@ export default async function SettingsPage() {
   ]);
 
   return (
-    <DashboardShell>
       <SettingsClient
         storeProfile={storeProfile}
         profile={profile ?? null}
@@ -31,6 +29,5 @@ export default async function SettingsPage() {
         faqs={faqs}
         policies={policies}
       />
-    </DashboardShell>
   );
 }

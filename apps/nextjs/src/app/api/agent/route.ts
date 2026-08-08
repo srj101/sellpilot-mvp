@@ -73,27 +73,27 @@ const findOrCreateCustomer = async (userId: string, businessId: string, payload:
   if (!customerRow) {
     const existingEmail = payload.customer?.email
       ? await db
-          .select()
-          .from(customer)
-          .where(
-            and(
-              eq(customer.businessId, businessId),
-              eq(customer.email, payload.customer.email),
-            ),
-          )
-          .then((rows) => rows[0] ?? null)
+        .select()
+        .from(customer)
+        .where(
+          and(
+            eq(customer.businessId, businessId),
+            eq(customer.email, payload.customer.email),
+          ),
+        )
+        .then((rows) => rows[0] ?? null)
       : null;
     const existingPhone = payload.customer?.phone
       ? await db
-          .select()
-          .from(customer)
-          .where(
-            and(
-              eq(customer.businessId, businessId),
-              eq(customer.phone, payload.customer.phone),
-            ),
-          )
-          .then((rows) => rows[0] ?? null)
+        .select()
+        .from(customer)
+        .where(
+          and(
+            eq(customer.businessId, businessId),
+            eq(customer.phone, payload.customer.phone),
+          ),
+        )
+        .then((rows) => rows[0] ?? null)
       : null;
 
     customerRow = existingEmail ?? existingPhone ?? null;
@@ -119,7 +119,6 @@ const findOrCreateCustomer = async (userId: string, businessId: string, payload:
   const [inserted] = await db
     .insert(customer)
     .values({
-      userId,
       businessId,
       name: payload.customer.name,
       phone: payload.customer.phone ?? null,
@@ -224,7 +223,6 @@ const toolHandlers: Record<
     const [created] = await db
       .insert(agentSession)
       .values({
-        userId,
         businessId,
         channel: payload.channel,
         threadId: payload.threadId,
@@ -274,8 +272,8 @@ const toolHandlers: Record<
     const variantIds = items.map((item: any) => item.variantId).filter(Boolean);
     const variants = variantIds.length
       ? await db.query.productVariant.findMany({
-          where: inArray(productVariant.id, variantIds),
-        })
+        where: inArray(productVariant.id, variantIds),
+      })
       : [];
 
     const orderItems = buildOrderItems(items, variants);
@@ -289,12 +287,12 @@ const toolHandlers: Record<
     const computeTotals = async () => {
       const shippingRateRow = payload.shippingDistrict
         ? await db.query.shippingRate.findFirst({
-            where: and(
-              eq(shippingRate.businessId, businessId),
-              eq(shippingRate.district, payload.shippingDistrict),
-              eq(shippingRate.active, true),
-            ),
-          })
+          where: and(
+            eq(shippingRate.businessId, businessId),
+            eq(shippingRate.district, payload.shippingDistrict),
+            eq(shippingRate.active, true),
+          ),
+        })
         : null;
 
       const profile = await db.query.businessProfile.findFirst({
@@ -305,12 +303,12 @@ const toolHandlers: Record<
         shippingRateRow?.cost ?? profile?.defaultShippingCost ?? 0;
       const couponRow = payload.couponCode
         ? await db.query.offer.findFirst({
-            where: and(
-              eq(offer.businessId, businessId),
-              eq(offer.code, payload.couponCode),
-              eq(offer.active, true),
-            ),
-          })
+          where: and(
+            eq(offer.businessId, businessId),
+            eq(offer.code, payload.couponCode),
+            eq(offer.active, true),
+          ),
+        })
         : null;
       const discountAmount = calculateCouponDiscount(couponRow, subtotal);
       const total = Math.max(0, subtotal + shippingCost - discountAmount);
@@ -331,7 +329,6 @@ const toolHandlers: Record<
       const [createdOrder] = await db
         .insert(order)
         .values({
-          userId,
           businessId,
           customerId: customerRow.id,
           orderNumber: `SP-${Date.now()}`,
@@ -393,11 +390,11 @@ const toolHandlers: Record<
     );
     const products = productIds.length
       ? await db
-          .select()
-          .from(product)
-          .where(
-            and(eq(product.businessId, businessId), inArray(product.id, productIds)),
-          )
+        .select()
+        .from(product)
+        .where(
+          and(eq(product.businessId, businessId), inArray(product.id, productIds)),
+        )
       : [];
 
     return matches.map((match) => ({

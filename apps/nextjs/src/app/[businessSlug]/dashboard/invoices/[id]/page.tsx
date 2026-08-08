@@ -3,7 +3,6 @@ import { redirect, notFound } from "next/navigation";
 
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
-import { DashboardShell } from "../../(home)/_components/dashboard-shell";
 import { InvoiceDetailClient } from "./invoice-detail-client";
 
 export default async function InvoiceDetailPage({
@@ -32,8 +31,6 @@ export default async function InvoiceDetailPage({
   };
 
   return (
-    <DashboardShell>
       <InvoiceDetailClient invoice={serialized} />
-    </DashboardShell>
   );
 }

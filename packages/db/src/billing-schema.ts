@@ -1,6 +1,6 @@
 import { boolean, index, integer, jsonb, pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
 
-import { business, user } from "./auth-schema";
+import { business } from "./auth-schema";
 import { order, subscription } from "./agent-schema";
 
 /**
@@ -37,9 +37,6 @@ export const paymentMethod = pgTable(
     businessId: text("business_id")
       .notNull()
       .references(() => business.id, { onDelete: "cascade" }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
     /** "visa" | "mastercard" | "amex" | "other" — derived from BIN by the gateway, never guessed client-side */
     brand: text("brand").notNull(),
     last4: text("last4").notNull(),

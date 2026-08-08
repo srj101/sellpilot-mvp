@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 
 import { getSession } from "~/auth/server";
-import { DashboardShell } from "./_components/dashboard-shell";
 import { DashboardClient } from "./_components/dashboard-client";
 
 export default async function DashboardPage() {
@@ -18,9 +17,5 @@ export default async function DashboardPage() {
     redirect("/superadmin");
   }
 
-  return (
-    <DashboardShell>
-      <DashboardClient userName={session.user.name} />
-    </DashboardShell>
-  );
+  return <DashboardClient userName={session.user.name} />;
 }

@@ -9,7 +9,6 @@ import { Button } from "@acme/ui/button";
 
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
-import { DashboardShell } from "../../../(home)/_components/dashboard-shell";
 import { PrintButton } from "./print-button";
 
 function formatCurrency(val: number) {
@@ -36,7 +35,6 @@ export default async function SaasInvoiceDetailPage({
   const plan = PLAN_CATALOG[invoice.plan as PlanKey];
 
   return (
-    <DashboardShell>
       <div className="mx-auto max-w-4xl space-y-6 print:m-0 print:max-w-none print:p-0">
         <div className="flex items-center justify-between print:hidden">
           <Link href={`/${businessSlug}/dashboard/billing`}>
@@ -190,6 +188,5 @@ export default async function SaasInvoiceDetailPage({
           </div>
         </div>
       </div>
-    </DashboardShell>
   );
 }

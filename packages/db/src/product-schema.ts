@@ -1,21 +1,20 @@
 import { relations } from "drizzle-orm";
 import { pgTable, text, timestamp, integer, jsonb, vector, index } from "drizzle-orm/pg-core";
 
-import { user, business } from "./auth-schema";
+import { business } from "./auth-schema";
 
 export const product = pgTable("product", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
   businessId: text("business_id")
     .notNull()
     .references(() => business.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description"),
   category: text("category"),
+  /** "men" | "women" | "unisex" | "kids" | null (not gendered) — drives AI discovery filtering */
+  gender: text("gender"),
   images: jsonb("images").$type<string[]>().default([]).notNull(),
   options: jsonb("options")
     .$type<{ name: string; values: string[] }[]>()
@@ -94,9 +93,9 @@ export const productImageEmbedding = pgTable(
 );
 
 export const productRelations = relations(product, ({ one, many }) => ({
-  user: one(user, {
-    fields: [product.userId],
-    references: [user.id],
+  business: one(business, {
+    fields: [product.businessId],
+    references: [business.id],
   }),
   variants: many(productVariant),
 }));

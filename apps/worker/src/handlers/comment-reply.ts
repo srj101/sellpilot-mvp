@@ -93,7 +93,6 @@ export async function handleCommentReply(
   console.log(`[CommentReply] Processing job ${job.id}`, {
     platform: data.platform,
     commentId: data.commentId,
-    userId: data.userId,
   });
 
   // Check rate limit
@@ -109,7 +108,6 @@ export async function handleCommentReply(
   const connection: PlatformConnection = {
     id: data.connectionId,
     platform: data.platform,
-    userId: data.userId,
     accountId: data.commentId, // Not used for comment replies
     accessToken: data.accessToken,
     isActive: true,

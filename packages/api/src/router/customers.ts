@@ -80,4 +80,77 @@ export const customersRouter = {
         recentOrders,
       };
     }),
+
+  create: permissionProcedure("customers", "create")
+    .input(
+      z.object({
+        name: z.string().min(1),
+        phone: z.string().optional(),
+        email: z.string().optional(),
+        address: z.string().optional(),
+        district: z.string().optional(),
+        country: z.string().optional(),
+        notes: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const businessId = ctx.businessId;
+
+      const [newCustomer] = await ctx.db
+        .insert(customer)
+        .values({
+          businessId,
+          name: input.name,
+          phone: input.phone || null,
+          email: input.email || null,
+          address: input.address || null,
+          district: input.district || null,
+          country: input.country || null,
+          notes: input.notes || null,
+        })
+        .returning();
+
+      return newCustomer;
+    }),
+
+  update: permissionProcedure("customers", "edit")
+    .input(
+      z.object({
+        id: z.string(),
+        name: z.string().min(1).optional(),
+        phone: z.string().optional(),
+        email: z.string().optional(),
+        address: z.string().optional(),
+        district: z.string().optional(),
+        country: z.string().optional(),
+        notes: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const businessId = ctx.businessId;
+      const { id, ...data } = input;
+
+      const [updated] = await ctx.db
+        .update(customer)
+        .set({
+          ...data,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(customer.id, id), eq(customer.businessId, businessId)))
+        .returning();
+
+      return updated ?? null;
+    }),
+
+  delete: permissionProcedure("customers", "delete")
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const businessId = ctx.businessId;
+
+      await ctx.db
+        .delete(customer)
+        .where(and(eq(customer.id, input.id), eq(customer.businessId, businessId)));
+
+      return { ok: true as const };
+    }),
 } satisfies TRPCRouterRecord;

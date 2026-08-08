@@ -19,10 +19,14 @@ interface RevenueStats {
 export function WeeklyInsightBanner({
   revenueStats,
   topProducts,
+  tier,
 }: {
   revenueStats: RevenueStats;
   topProducts?: { name: string; qty: number; revenue: number }[];
+  tier: "none" | "basic" | "full";
 }) {
+  // Only show for Pro tier
+  if (tier !== "full") return null;
   const totalRev = revenueStats.revenue ?? 0;
   const growthRate = revenueStats.revenueTrend ?? 0;
   const totalOrders = revenueStats.orderCount ?? 0;

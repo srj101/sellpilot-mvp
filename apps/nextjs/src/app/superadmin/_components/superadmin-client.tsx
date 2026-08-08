@@ -33,6 +33,7 @@ type UserRow = {
 
 export function SuperadminClient({ initialUsers }: { initialUsers: UserRow[] }) {
   const trpc = useTRPC();
+  const [users, setUsers] = useState<UserRow[]>(initialUsers);
   const [search, setSearch] = useState("");
   const [selectedUser, setSelectedUser] = useState<UserRow | null>(null);
   const [tab, setTab] = useState<"users" | "payments">("users");
@@ -41,6 +42,14 @@ export function SuperadminClient({ initialUsers }: { initialUsers: UserRow[] }) 
     trpc.superadmin.setBanStatus.mutationOptions({
       onSuccess: (_data: unknown, vars: { userId: string; banned: boolean; banReason?: string }) => {
         toast.success(vars.banned ? "User banned" : "User unbanned");
+        setUsers((prev) =>
+          prev.map((u) =>
+            u.id === vars.userId ? { ...u, banned: vars.banned, banReason: vars.banReason ?? u.banReason } : u
+          )
+        );
+        if (selectedUser?.id === vars.userId) {
+          setSelectedUser((prev) => (prev ? { ...prev, banned: vars.banned, banReason: vars.banReason ?? prev.banReason } : null));
+        }
       },
       onError: (e: { message: string }) => toast.error(e.message),
     }),
@@ -53,7 +62,7 @@ export function SuperadminClient({ initialUsers }: { initialUsers: UserRow[] }) 
     enabled: !!selectedUser,
   });
 
-  const filtered = initialUsers.filter(
+  const filtered = users.filter(
     (u) =>
       u.name.toLowerCase().includes(search.toLowerCase()) ||
       u.email.toLowerCase().includes(search.toLowerCase()),

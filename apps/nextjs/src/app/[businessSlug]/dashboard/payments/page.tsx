@@ -4,7 +4,6 @@ import { ShieldAlert } from "lucide-react";
 
 import { getSession } from "~/auth/server";
 import { createCaller } from "~/trpc/caller";
-import { DashboardShell } from "../(home)/_components/dashboard-shell";
 import { PaymentsClient } from "./_components/payments-client";
 
 export default async function PaymentsPage() {
@@ -18,7 +17,6 @@ export default async function PaymentsPage() {
   const canView = role === "owner" || permissions.includes("*") || permissions.includes("orders:view");
 
   return (
-    <DashboardShell>
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Payments</h1>
@@ -34,6 +32,5 @@ export default async function PaymentsPage() {
           </div>
         )}
       </div>
-    </DashboardShell>
   );
 }
