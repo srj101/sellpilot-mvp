@@ -76,8 +76,7 @@ export function PlanGrid({
     setExtraCosts((prev) => ({ ...prev, [plan]: cost }));
   }, []);
 
-  const getDisplayPrice = (plan: PlanKey, basePrice: number | null): number | null => {
-    if (basePrice === null) return null;
+  const getDisplayPrice = (plan: PlanKey, basePrice: number): number => {
     return basePrice + extraCosts[plan];
   };
 
@@ -90,12 +89,11 @@ export function PlanGrid({
           const plan = PLAN_CATALOG[key];
           const basePrice = plan.prices[cycle];
           const displayPrice = getDisplayPrice(key, basePrice);
-          const isLifetimeUnpriced = cycle === "lifetime" && basePrice === null;
           const isCurrent = mode === "dashboard" && dashboardState?.currentPlan === key;
           const isPending = mode === "dashboard" && dashboardState?.pendingPlan === key;
           const isBusy = busyPlan === key;
           const Icon = PLAN_ICON[key];
-          const hasSlider = !compact && !isLifetimeUnpriced && cycle === "monthly";
+          const hasSlider = !compact && cycle === "monthly";
 
           return (
             <Card
@@ -147,12 +145,10 @@ export function PlanGrid({
               <CardContent className={cn("flex flex-1 flex-col", compact ? "gap-3 px-4" : "gap-5 px-6")}>
                 <div className="flex items-baseline gap-1.5 border-b pb-3">
                   <span className={cn("font-bold tracking-tight", compact ? "text-2xl" : "text-3xl")}>
-                    {isLifetimeUnpriced ? "Contact Sales" : formatPlanPrice(displayPrice)}
-                    {key === "pro" && !isLifetimeUnpriced && <span className="font-bold">+</span>}
+                    {formatPlanPrice(displayPrice)}
+                    {key === "pro" && <span className="font-bold">+</span>}
                   </span>
-                  {!isLifetimeUnpriced && (
-                    <span className="text-sm font-medium text-muted-foreground">{CYCLE_META[cycle].shortLabel}</span>
-                  )}
+                  <span className="text-sm font-medium text-muted-foreground">{CYCLE_META[cycle].shortLabel}</span>
                 </div>
                 {key === "pro" && !compact && (
                   <p className="-mt-4 text-xs text-muted-foreground">
@@ -172,7 +168,7 @@ export function PlanGrid({
                   ))}
                 </ul>
 
-                {/* Conversation Slider — only on dashboard, monthly cycle, non-lifetime */}
+                {/* Conversation Slider — only on dashboard, monthly cycle */}
                 {hasSlider && (
                   <div className="mt-2 border-t pt-4">
                     <ConversationSlider
@@ -188,8 +184,8 @@ export function PlanGrid({
                 {mode === "public" ? (
                   <>
                     <Button asChild className="w-full" size={compact ? "sm" : "default"} variant={plan.popular ? "default" : "outline"}>
-                      <Link href={isLifetimeUnpriced ? "/demo" : `/signup?plan=${key}&cycle=${cycle}${extraConversations[key] > 0 ? `&extra=${extraConversations[key]}` : ""}`}>
-                        {isLifetimeUnpriced ? "Contact Sales" : "Start Free Trial"}
+                      <Link href={`/signup?plan=${key}&cycle=${cycle}${extraConversations[key] > 0 ? `&extra=${extraConversations[key]}` : ""}`}>
+                        Start Free Trial
                       </Link>
                     </Button>
                     {compact ? (
@@ -205,10 +201,6 @@ export function PlanGrid({
                 ) : isCurrent ? (
                   <Button className="w-full" variant="outline" disabled>
                     {dashboardState.isTrialing ? "Your trial plan" : "Your current plan"}
-                  </Button>
-                ) : isLifetimeUnpriced ? (
-                  <Button asChild className="w-full" variant="outline">
-                    <Link href="/demo">Contact Sales</Link>
                   </Button>
                 ) : (
                   <Button

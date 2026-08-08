@@ -427,9 +427,17 @@ export function SignInForm({
 export function SignUpForm({
   defaultEmail,
   invitationId,
+  selectedPlan,
+  selectedCycle,
 }: {
   defaultEmail?: string;
   invitationId?: string;
+  /** From the Pricing page's ?plan=&cycle= link — carried across the signup -> email
+   * verification -> onboarding page chain via localStorage (see FR-SAS-03), since
+   * nothing else threads state across those redirects, and read back once by
+   * business-chat-intake.tsx right before business.create. */
+  selectedPlan?: string;
+  selectedCycle?: string;
 } = {}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -459,6 +467,10 @@ export function SignUpForm({
             callbackURL: "/dashboard",
             rememberMe: true,
           });
+
+          if (selectedPlan && selectedCycle) {
+            localStorage.setItem("sellpilot_selected_plan", JSON.stringify({ plan: selectedPlan, cycle: selectedCycle }));
+          }
 
           router.push(invitationId ? `/accept-invitation?id=${invitationId}` : "/dashboard");
           router.refresh();

@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, CreditCard, Lock } from "lucide-react";
 
+import { CYCLE_META } from "@acme/api/plans";
 import { Button } from "@acme/ui/button";
 import { Input } from "@acme/ui/input";
 import { Label } from "@acme/ui/label";
@@ -11,6 +12,14 @@ import { toast } from "@acme/ui/toast";
 import { cn } from "@acme/ui";
 
 import { useTRPC } from "~/trpc/react";
+
+function formatCurrency(val: number) {
+  return `৳${Math.round(val).toLocaleString()}`;
+}
+
+function formatDate(date: Date | string) {
+  return new Date(date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+}
 
 function detectBrand(digits: string): "Visa" | "Mastercard" | "Amex" | "Card" {
   if (digits.startsWith("4")) return "Visa";
@@ -45,6 +54,10 @@ export function PaymentMethodClient() {
   const [expiry, setExpiry] = useState("");
   const [cvc, setCvc] = useState("");
   const [name, setName] = useState("");
+  const [billingAddress, setBillingAddress] = useState("");
+  const [saveCard, setSaveCard] = useState(true);
+
+  const { data: current } = useQuery(trpc.subscription.getCurrent.queryOptions());
 
   const digits = cardNumber.replace(/\D/g, "");
   const brand = useMemo(() => detectBrand(digits), [digits]);
@@ -131,6 +144,54 @@ export function PaymentMethodClient() {
           <Label htmlFor="name">Cardholder Name</Label>
           <Input id="name" placeholder="As shown on card" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="billingAddress">Billing Address</Label>
+          <Input
+            id="billingAddress"
+            placeholder="123 Main St, Dhaka"
+            value={billingAddress}
+            onChange={(e) => setBillingAddress(e.target.value)}
+          />
+        </div>
+
+        {/* Same local-preview status as the card fields above — every payment method is
+            already always saved server-side once verified via SSLCommerz, this checkbox
+            doesn't gate that (there's no "don't save" path in this integration yet). */}
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={saveCard}
+            onChange={(e) => setSaveCard(e.target.checked)}
+            className="size-4 rounded border-input"
+          />
+          Save this card for future billing
+        </label>
+
+        {current?.plan && (
+          <div className="space-y-1.5 rounded-xl border bg-muted/30 p-4 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Plan</span>
+              <span className="font-medium text-foreground">
+                {current.planName} · {current.billingCycle ? CYCLE_META[current.billingCycle].label : ""}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Price</span>
+              <span className="font-medium text-foreground">{formatCurrency(current.amount)}</span>
+            </div>
+            {current.isTrialing ? (
+              <p className="pt-1 text-xs text-muted-foreground">
+                You won&apos;t be charged today — this just saves your card. Billing starts when your trial ends
+                {current.currentPeriodEnd ? ` on ${formatDate(current.currentPeriodEnd)}` : ""}.
+              </p>
+            ) : (
+              <p className="pt-1 text-xs text-muted-foreground">
+                A small verification charge applies now; your regular billing continues on schedule.
+              </p>
+            )}
+          </div>
+        )}
 
         <Button className="w-full gap-2" size="lg" disabled={!canSubmit || addPaymentMethod.isPending} onClick={() => addPaymentMethod.mutate()}>
           <Lock className="size-4" />

@@ -148,6 +148,10 @@ export interface ValidatePaymentResult {
   amount?: number;
   /** "bkash" | "nagad" | "card" | "internetbank" | "other" — the real rail, see billing plan D8 */
   method?: string;
+  /** Best-effort, from the validator's masked card_no (e.g. "424242XXXXXX4242") when
+   * present — not guaranteed on every response/method, callers should fall back
+   * gracefully (e.g. to "0000") rather than treat this as always available. */
+  last4?: string;
 }
 
 /**
@@ -186,12 +190,19 @@ export async function validatePayment(valId: string, credentials: SslcommerzCred
     amount?: string;
     card_type?: string;
     card_issuer?: string;
+    card_no?: string;
   };
   const valid = data.status === "VALID" || data.status === "VALIDATED";
+  // Best-effort — SSLCommerz's validator returns a masked card_no (e.g.
+  // "424242XXXXXX4242") for card transactions; not documented as guaranteed on every
+  // response/method, so this stays optional rather than something callers can rely on.
+  const cardDigits = data.card_no?.replace(/\D/g, "");
+  const last4 = cardDigits && cardDigits.length >= 4 ? cardDigits.slice(-4) : undefined;
   return {
     valid,
     transactionId: data.tran_id,
     amount: data.amount ? Number(data.amount) : undefined,
     method: normalizeMethod(data.card_type ?? data.card_issuer),
+    last4,
   };
 }

@@ -166,13 +166,10 @@ export const subscriptionRouter = {
     .input(z.object({ plan: PlanKeySchema, billingCycle: BillingCycleSchema }))
     .mutation(async ({ ctx, input }) => {
       const amount = priceForCycle(input.plan, input.billingCycle);
-      if (amount === null) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Lifetime pricing isn't available yet — please contact sales." });
-      }
 
       const periodStart = new Date();
       const months = CYCLE_META[input.billingCycle].months;
-      const periodEnd = addMonths(periodStart, months || 12); // lifetime has 0 months; treat as a 1yr ledger period
+      const periodEnd = addMonths(periodStart, months);
 
       const [invoice] = await ctx.db
         .insert(saasInvoice)
@@ -224,9 +221,6 @@ export const subscriptionRouter = {
       if (!sub) throw new TRPCError({ code: "NOT_FOUND", message: "No subscription found." });
 
       const newAmount = priceForCycle(input.plan, input.billingCycle);
-      if (newAmount === null) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Lifetime pricing isn't available yet — please contact sales." });
-      }
 
       const isDowngrade = planRank(input.plan) < planRank(sub.plan as PlanKey);
 
@@ -492,7 +486,9 @@ export const subscriptionRouter = {
         await ctx.db.insert(paymentMethod).values({
           businessId,
           brand: result.method === "card" ? "card" : (result.method ?? "card"),
-          last4: "0000",
+          // Best-effort — see ValidatePaymentResult.last4; SSLCommerz doesn't guarantee
+          // card_no on every response, so this can still legitimately fall back.
+          last4: result.last4 ?? "0000",
           expiryMonth: 12,
           expiryYear: new Date().getFullYear() + 3,
           provider: "sslcommerz",

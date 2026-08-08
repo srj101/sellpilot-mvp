@@ -8,11 +8,30 @@ import { z } from "zod/v4";
 
 import { cn } from "@acme/ui";
 import { Avatar, AvatarFallback } from "@acme/ui/avatar";
+import { PLAN_KEYS, BILLING_CYCLES } from "@acme/api/plans";
+import type { PlanKey, BillingCycle } from "@acme/api/plans";
 import { useTRPC } from "~/trpc/react";
 import { INDUSTRY_TAXONOMY } from "./industry-taxonomy";
 import { CURRENCY_OPTIONS } from "./currency-options";
 import type { CurrencyCode } from "./currency-options";
 import { OnboardingShell } from "./onboarding-shell";
+
+/** Reads the plan/cycle persisted by SignUpForm (FR-SAS-03) — validated against the real
+ * enum values so a malformed/tampered localStorage entry can never reach business.create,
+ * it just silently falls back to the server's starter/monthly default instead. */
+function readSelectedPlan(): { plan: PlanKey; billingCycle: BillingCycle } | undefined {
+  try {
+    const raw = localStorage.getItem("sellpilot_selected_plan");
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as { plan?: string; cycle?: string };
+    if (!PLAN_KEYS.includes(parsed.plan as PlanKey) || !BILLING_CYCLES.includes(parsed.cycle as BillingCycle)) {
+      return undefined;
+    }
+    return { plan: parsed.plan as PlanKey, billingCycle: parsed.cycle as BillingCycle };
+  } catch {
+    return undefined;
+  }
+}
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/);
@@ -283,10 +302,12 @@ export function BusinessChatIntake({
       setTimeout(() => {
         setShowTyping(false);
         pushAi("Setting up your business now...");
+        const selectedPlan = readSelectedPlan();
         createBusiness.mutate(
-          { name: storeName, industry, address, defaultShippingCost: shippingCost, currency },
+          { name: storeName, industry, address, defaultShippingCost: shippingCost, currency, ...selectedPlan },
           {
             onSuccess: (data) => {
+              localStorage.removeItem("sellpilot_selected_plan");
               pushAi(`You're all set! Taking you to the next step...`, "success");
               setTimeout(() => {
                 if (onComplete) onComplete(data.slug, data.trialEndsAt);

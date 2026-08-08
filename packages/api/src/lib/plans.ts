@@ -5,15 +5,13 @@
  * SELLPILOT_PHASE1_BILLING_PAYMENTS_PLAN.md D1.
  */
 
-export const BILLING_CYCLES = ["monthly", "half_yearly", "yearly", "lifetime"] as const;
+export const BILLING_CYCLES = ["monthly", "half_yearly", "yearly"] as const;
 export type BillingCycle = (typeof BILLING_CYCLES)[number];
 
 export const CYCLE_META: Record<BillingCycle, { label: string; shortLabel: string; months: number; discountPct: number }> = {
   monthly: { label: "Monthly", shortLabel: "/mo", months: 1, discountPct: 0 },
   half_yearly: { label: "Half-Yearly", shortLabel: "/6mo", months: 6, discountPct: 10 },
   yearly: { label: "Yearly", shortLabel: "/yr", months: 12, discountPct: 20 },
-  // One-time, never renews — see PLAN_CATALOG note below on why prices are null.
-  lifetime: { label: "Lifetime", shortLabel: "once", months: 0, discountPct: 0 },
 };
 
 export const PLAN_KEYS = ["starter", "growth", "pro"] as const;
@@ -68,21 +66,18 @@ export interface PlanCatalogEntry {
   key: PlanKey;
   name: string;
   tagline: string;
-  /** Whole taka (see D2). Keyed by cycle; lifetime is null until priced — see Q1 in the plan doc. */
-  prices: Record<BillingCycle, number | null>;
+  /** Whole taka (see D2), keyed by cycle. */
+  prices: Record<BillingCycle, number>;
   limits: PlanLimits;
   features: string[];
   popular?: boolean;
 }
 
-function cyclePrices(monthly: number): Record<BillingCycle, number | null> {
+function cyclePrices(monthly: number): Record<BillingCycle, number> {
   return {
     monthly,
     half_yearly: Math.round(monthly * CYCLE_META.half_yearly.months * (1 - CYCLE_META.half_yearly.discountPct / 100)),
     yearly: Math.round(monthly * CYCLE_META.yearly.months * (1 - CYCLE_META.yearly.discountPct / 100)),
-    // BLOCKING (Q1): spec §6 lists Lifetime as a cycle but gives no number for any tier.
-    // Render "Contact Sales" wherever this is null instead of guessing at a price.
-    lifetime: null,
   };
 }
 
@@ -279,11 +274,10 @@ export function getPlan(key: string): PlanCatalogEntry | undefined {
 }
 
 /** "৳24,999+" for Pro — the "+" is presentational only, the charged amount is the catalog number. */
-export function formatPlanPrice(amount: number | null): string {
-  if (amount === null) return "Contact Sales";
+export function formatPlanPrice(amount: number): string {
   return `৳${amount.toLocaleString("en-US")}`;
 }
 
-export function priceForCycle(plan: PlanKey, cycle: BillingCycle): number | null {
+export function priceForCycle(plan: PlanKey, cycle: BillingCycle): number {
   return PLAN_CATALOG[plan].prices[cycle];
 }

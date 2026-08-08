@@ -33,6 +33,8 @@ export default async function BillingSuccessPage({
   const caller = await createCaller(await headers());
   const invoice = invoiceId ? await caller.subscription.getInvoice({ id: invoiceId }).catch(() => null) : null;
   const plan = invoice ? PLAN_CATALOG[invoice.plan as PlanKey] : null;
+  const current = await caller.subscription.getCurrent().catch(() => null);
+  const paymentMethod = current?.defaultPaymentMethod ?? null;
 
   return (
     <main className="auth-mesh relative flex min-h-screen items-center justify-center overflow-hidden p-3 sm:p-6 lg:p-8">
@@ -65,6 +67,14 @@ export default async function BillingSuccessPage({
               <span className="text-muted-foreground">Invoice</span>
               <span className="font-mono text-xs font-semibold text-foreground">{invoice.invoiceNumber}</span>
             </div>
+            {paymentMethod && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Payment Method</span>
+                <span className="font-semibold text-foreground">
+                  {paymentMethod.brand} •••• {paymentMethod.last4}
+                </span>
+              </div>
+            )}
           </div>
         )}
 

@@ -6,7 +6,7 @@ import { and, eq, ilike, isNotNull } from "@acme/db";
 import { businessMember, business, businessProfile, subscription } from "@acme/db/schema";
 import { sendEmail } from "@acme/auth/email";
 
-import { priceForCycle } from "../lib/plans";
+import { priceForCycle, PLAN_KEYS, BILLING_CYCLES } from "../lib/plans";
 
 import { enqueueActivityLog } from "../lib/activity-queue";
 import { ownerOnlyProcedure, protectedProcedure, businessScopedProcedure, publicProcedure } from "../trpc";
@@ -80,6 +80,11 @@ export const businessRouter = {
       address: z.string().optional(),
       defaultShippingCost: z.number().optional(),
       currency: z.enum(["BDT", "USD", "EUR", "GBP", "INR"]).optional(),
+      // FR-SAS-03 — the tier/cycle chosen on the Pricing page (see readSelectedPlan in
+      // business-chat-intake.tsx), so the trial actually starts on what was selected
+      // instead of always defaulting to Starter/Monthly.
+      plan: z.enum(PLAN_KEYS).optional(),
+      billingCycle: z.enum(BILLING_CYCLES).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const name = input.name.trim();
@@ -126,14 +131,17 @@ export const businessRouter = {
       const trialEnd = new Date();
       trialEnd.setDate(trialEnd.getDate() + 14);
 
+      const plan = input.plan ?? "starter";
+      const billingCycle = input.billingCycle ?? "monthly";
+
       await ctx.db.insert(subscription).values({
         businessId,
-        plan: "starter",
+        plan,
         status: "trialing",
-        billingCycle: "monthly",
+        billingCycle,
         // The price the trial will actually renew at once it ends — was previously never
         // set at all here, silently defaulting to 0 regardless of plan.
-        amount: priceForCycle("starter", "monthly") ?? 0,
+        amount: priceForCycle(plan, billingCycle),
         currentPeriodStart: new Date(),
         currentPeriodEnd: trialEnd,
         aiConversationsUsed: 0,
