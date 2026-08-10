@@ -28,6 +28,11 @@ export default async function SettingsPage() {
         shippingRates={shippingRates}
         faqs={faqs}
         policies={policies}
+        user={{
+          name: session.user.name ?? "",
+          email: session.user.email ?? "",
+          image: session.user.image ?? null,
+        }}
       />
   );
 }

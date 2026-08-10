@@ -1,123 +1,28 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import {
-  Building2,
-  Truck,
-  HelpCircle,
-  FileText,
-  Save,
-  Mail,
-  Phone,
-  DollarSign,
-  MapPin,
-  Store,
-  UploadCloud,
-  Loader2,
-  Bot,
-  Clock,
-  Bell,
-} from "lucide-react";
 
-import { Button } from "@acme/ui/button";
-import { Input } from "@acme/ui/input";
-import { Label } from "@acme/ui/label";
-import { Badge } from "@acme/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@acme/ui/card";
-import { Switch } from "@acme/ui/switch";
 import { toast } from "@acme/ui/toast";
 
+import { ConfirmDialog } from "~/app/[businessSlug]/dashboard/_components/confirm-dialog";
 import { useTRPC } from "~/trpc/react";
 
-type StoreProfile = {
-  id: string;
-  name: string;
-  slug: string;
-  logo: string | null;
-  metadata: string | null;
-  description: string | null;
-};
-
-type BusinessProfile = {
-  id: string;
-  name: string;
-  description: string | null;
-  logoUrl: string | null;
-  currency: string;
-  defaultShippingCost: number;
-  supportEmail: string | null;
-  supportPhone: string | null;
-  agentName: string | null;
-  conversationTone: string;
-  preferredLanguage: string;
-  abandonedFollowupMinutes: number;
-  autoEscalateOnLowConfidence: boolean;
-  confidenceThreshold: number;
-} | null;
-
-interface ShippingRate {
-  id: string;
-  district: string;
-  cost: number;
-  estimatedDays: number | null;
-  active: boolean;
-}
-
-interface FAQ {
-  id: string;
-  question: string;
-  answer: string;
-  tags: string[];
-}
-
-interface Policy {
-  id: string;
-  type: string;
-  title: string;
-  body: string;
-  active: boolean;
-}
-
-interface SettingsClientProps {
-  storeProfile: StoreProfile;
-  profile: BusinessProfile;
-  shippingRates: ShippingRate[];
-  faqs: FAQ[];
-  policies: Policy[];
-}
-
-const inputCls = "rounded-lg";
-
-function SectionCard({
-  icon: Icon,
-  title,
-  description,
-  children,
-}: {
-  icon: typeof Store;
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card className="card-hover">
-      <CardHeader className="border-b">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-            <Icon className="h-5 w-5 text-primary" />
-          </div>
-          <div className="flex-1">
-            <CardTitle className="text-base font-semibold">{title}</CardTitle>
-            <CardDescription className="mt-0.5 text-sm">{description}</CardDescription>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="pt-6">{children}</CardContent>
-    </Card>
-  );
-}
+import { AiAgentSection } from "./_components/ai-agent-section";
+import { BusinessProfileSection } from "./_components/business-profile-section";
+import {
+  CreateFaqDialog,
+  CreatePolicyDialog,
+  CreateShippingRateDialog,
+} from "./_components/create-dialogs";
+import { FaqsSection } from "./_components/faqs-section";
+import { NotificationsSection } from "./_components/notifications-section";
+import { PersonalProfileSection } from "./_components/personal-profile-section";
+import { PoliciesSection } from "./_components/policies-section";
+import { SettingsNav } from "./_components/settings-nav";
+import { ShippingSection } from "./_components/shipping-section";
+import type { FAQ, NotifPrefs, Policy, SectionId, SettingsClientProps, ShippingRate } from "./_components/types";
 
 export function SettingsClient({
   storeProfile,
@@ -125,15 +30,34 @@ export function SettingsClient({
   shippingRates,
   faqs,
   policies,
+  user,
 }: SettingsClientProps) {
   const router = useRouter();
   const trpc = useTRPC();
   const [saving, setSaving] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [activeSection, setActiveSection] = useState<SectionId>("business");
+
+  // Owner-only gating for create/delete actions (same source as the sidebar).
+  const { data: myPermissions } = useQuery(trpc.roles.getMyPermissions.queryOptions());
+  const isOwner = myPermissions?.role === "owner";
 
   const upsertProfile = useMutation(trpc.agent.upsertBusinessProfile.mutationOptions());
   const updateStore = useMutation(trpc.business.update.mutationOptions());
   const getUploadUrl = useMutation(trpc.business.getUploadUrl.mutationOptions());
+
+  const deleteShippingRate = useMutation(trpc.settings.deleteShippingRate.mutationOptions());
+  const deleteFaq = useMutation(trpc.settings.deleteFaq.mutationOptions());
+  const deletePolicy = useMutation(trpc.settings.deletePolicy.mutationOptions());
+
+  // Create/delete dialog state
+  const [createDialog, setCreateDialog] = useState<"shipping" | "faq" | "policy" | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<
+    | { kind: "shipping"; row: ShippingRate }
+    | { kind: "faq"; row: FAQ }
+    | { kind: "policy"; row: Policy }
+    | null
+  >(null);
 
   // Business Profile state (name/description sync to both business & business_profile)
   const [storeName, setStoreName] = useState(storeProfile.name);
@@ -142,7 +66,7 @@ export function SettingsClient({
   const [bpCurrency, setBpCurrency] = useState(profile?.currency ?? "BDT");
   const [bpShippingCost, setBpShippingCost] = useState(String(profile?.defaultShippingCost ?? 0));
   const [bpEmail, setBpEmail] = useState(profile?.supportEmail ?? "");
-  const [bpNotificationEmail, setBpNotificationEmail] = useState((profile as any)?.notificationEmail ?? "");
+  const [bpNotificationEmail, setBpNotificationEmail] = useState(profile?.notificationEmail ?? "");
   const [bpPhone, setBpPhone] = useState(profile?.supportPhone ?? "");
 
   // AI Agent settings state
@@ -156,12 +80,12 @@ export function SettingsClient({
   // Notification Preferences State (FR-SET-04)
   const { data: serverNotifPrefs } = useQuery(trpc.agent.getNotificationPreferences.queryOptions());
   const updateNotifPrefs = useMutation(trpc.agent.updateNotificationPreferences.mutationOptions());
-  const [localNotifPrefs, setLocalNotifPrefs] = useState<Record<string, { emailEnabled: boolean; inAppEnabled: boolean }> | null>(null);
+  const [localNotifPrefs, setLocalNotifPrefs] = useState<NotifPrefs | null>(null);
 
   const notifPrefs = useMemo(() => {
     if (localNotifPrefs) return localNotifPrefs;
     if (!serverNotifPrefs) return {};
-    const map: Record<string, { emailEnabled: boolean; inAppEnabled: boolean }> = {};
+    const map: NotifPrefs = {};
     for (const item of serverNotifPrefs) {
       map[item.eventType] = { emailEnabled: item.emailEnabled, inAppEnabled: item.inAppEnabled };
     }
@@ -192,8 +116,8 @@ export function SettingsClient({
       }));
       await updateNotifPrefs.mutateAsync(payload);
       toast.success("Notification preferences saved!");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to save notification preferences");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save notification preferences");
     } finally {
       setSaving(null);
     }
@@ -207,7 +131,7 @@ export function SettingsClient({
     bpCurrency !== (profile?.currency ?? "BDT") ||
     bpShippingCost !== String(profile?.defaultShippingCost ?? 0) ||
     bpEmail !== (profile?.supportEmail ?? "") ||
-    bpNotificationEmail !== ((profile as any)?.notificationEmail ?? "") ||
+    bpNotificationEmail !== (profile?.notificationEmail ?? "") ||
     bpPhone !== (profile?.supportPhone ?? "");
 
   const handleSaveBusiness = async () => {
@@ -234,8 +158,8 @@ export function SettingsClient({
       });
       toast.success("Business profile updated successfully!");
       router.refresh();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to update business profile");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update business profile");
     } finally {
       setSaving(null);
     }
@@ -266,9 +190,9 @@ export function SettingsClient({
 
       setStoreLogo(res.publicUrl);
       toast.success("Logo uploaded successfully!");
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      toast.error(err.message || "Error uploading image to S3");
+      toast.error(err instanceof Error ? err.message : "Error uploading image to S3");
     } finally {
       setUploading(false);
     }
@@ -305,6 +229,26 @@ export function SettingsClient({
     setSaving(null);
   };
 
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      if (deleteTarget.kind === "shipping") {
+        await deleteShippingRate.mutateAsync({ id: deleteTarget.row.id });
+        toast.success(`Deleted shipping rate for ${deleteTarget.row.district}`);
+      } else if (deleteTarget.kind === "faq") {
+        await deleteFaq.mutateAsync({ id: deleteTarget.row.id });
+        toast.success("FAQ deleted");
+      } else {
+        await deletePolicy.mutateAsync({ id: deleteTarget.row.id });
+        toast.success(`Deleted "${deleteTarget.row.title}"`);
+      }
+      router.refresh();
+      setDeleteTarget(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete");
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -312,468 +256,151 @@ export function SettingsClient({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage your business profile and AI agent context.
+            Manage your business profile, AI agent context, and store policies.
           </p>
         </div>
       </div>
 
-      {/* ─── Business Profile ──────────────────────────────────── */}
-      <SectionCard
-        icon={Building2}
-        title="Business Profile"
-        description="Your business name, logo, contact info, and defaults used by the AI agent."
-      >
-        <div className="flex flex-col gap-6 md:flex-row">
-          {/* Logo Upload */}
-          <div className="flex flex-col items-center gap-3">
-            <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Business Logo</Label>
-            <div className="relative group h-28 w-28 shrink-0 overflow-hidden rounded-2xl border bg-muted flex items-center justify-center shadow-inner">
-              {storeLogo ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={storeLogo} alt="Business logo" className="h-full w-full object-cover" />
-              ) : (
-                <div className="text-center">
-                  <Store className="h-8 w-8 text-muted-foreground/60 mx-auto" />
-                  <span className="text-[10px] text-muted-foreground/50 font-bold block mt-1">No Image</span>
-                </div>
-              )}
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        <SettingsNav activeSection={activeSection} onSelect={setActiveSection} />
 
-              {/* Upload Overlay */}
-              <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-all duration-200">
-                {uploading ? (
-                  <Loader2 className="h-6 w-6 animate-spin" />
-                ) : (
-                  <>
-                    <UploadCloud className="h-5 w-5 mb-0.5" />
-                    <span className="text-[9px] font-bold uppercase tracking-wider">Upload</span>
-                  </>
-                )}
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleLogoUpload}
-                  disabled={uploading}
-                  className="hidden"
-                />
-              </label>
-            </div>
-            {uploading && (
-              <span className="text-[10px] text-primary animate-pulse font-semibold">Uploading...</span>
-            )}
-          </div>
-
-          {/* Fields */}
-          <div className="flex-1 space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="store-name">Business Name</Label>
-                <Input
-                  id="store-name"
-                  value={storeName}
-                  onChange={(e) => setStoreName(e.target.value)}
-                  placeholder="My Business"
-                  className={inputCls}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="store-slug">Business Handle (Slug)</Label>
-                <Input
-                  id="store-slug"
-                  value={storeProfile.slug}
-                  disabled
-                  className="cursor-not-allowed rounded-lg bg-muted text-muted-foreground"
-                />
-              </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="store-description">Description</Label>
-                <textarea
-                  id="store-description"
-                  value={storeDescription}
-                  onChange={(e) => setStoreDescription(e.target.value)}
-                  placeholder="Describe your business..."
-                  className="flex min-h-[80px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="bp-email" className="flex items-center gap-1.5">
-                  <Mail className="h-3.5 w-3.5" /> Support Email
-                </Label>
-                <Input
-                  id="bp-email"
-                  type="email"
-                  value={bpEmail}
-                  onChange={(e) => setBpEmail(e.target.value)}
-                  placeholder="support@example.com"
-                  className={inputCls}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="bp-notif-email" className="flex items-center gap-1.5">
-                  <Mail className="h-3.5 w-3.5 text-(--primary)" /> Notification Recipient Email
-                </Label>
-                <Input
-                  id="bp-notif-email"
-                  type="email"
-                  value={bpNotificationEmail}
-                  onChange={(e) => setBpNotificationEmail(e.target.value)}
-                  placeholder="Defaults to store owner account email"
-                  className={inputCls}
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  System alerts and weekly digests will be sent to this email address. Leave blank to default to the store owner's account email.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="bp-phone" className="flex items-center gap-1.5">
-                  <Phone className="h-3.5 w-3.5" /> Support Phone
-                </Label>
-                <Input
-                  id="bp-phone"
-                  value={bpPhone}
-                  onChange={(e) => setBpPhone(e.target.value)}
-                  placeholder="+880..."
-                  className={inputCls}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="bp-currency">Currency</Label>
-                <Input
-                  id="bp-currency"
-                  value={bpCurrency}
-                  onChange={(e) => setBpCurrency(e.target.value)}
-                  placeholder="BDT"
-                  className={inputCls}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="bp-shipping" className="flex items-center gap-1.5">
-                  <DollarSign className="h-3.5 w-3.5" /> Default Shipping Cost
-                </Label>
-                <Input
-                  id="bp-shipping"
-                  type="number"
-                  value={bpShippingCost}
-                  onChange={(e) => setBpShippingCost(e.target.value)}
-                  placeholder="60"
-                  className={inputCls}
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end border-t pt-4">
-              <Button
-                onClick={handleSaveBusiness}
-                disabled={!isBusinessDirty || saving === "business"}
-                className="gap-2 rounded-lg"
-              >
-                <Save className="h-4 w-4" />
-                {saving === "business" ? "Saving..." : "Save Business Profile"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </SectionCard>
-
-      {/* ─── Notifications & System Alerts (FR-SET-04) ──────────── */}
-      <SectionCard
-        icon={Bell}
-        title="Notifications & System Alerts"
-        description="Configure event notification preferences for email alerts and in-app notifications."
-      >
-        <div className="space-y-4">
-          {[
-            {
-              id: "new_order",
-              title: "🛒 New Order Placed",
-              desc: "Notify when a customer places an order via social chat or web checkout.",
-            },
-            {
-              id: "low_stock",
-              title: "⚠️ Low Stock Warning",
-              desc: "Alert when product inventory drops to or below its low-stock threshold.",
-            },
-            {
-              id: "human_handoff",
-              title: "🙋 Human Handoff Request",
-              desc: "Alert when a customer requests a human agent or triggers complaint routing.",
-            },
-            {
-              id: "quota_alert",
-              title: "📊 Quota & Storage Overage",
-              desc: "Alert at 80% and 100% monthly AI conversation or storage limits.",
-            },
-            {
-              id: "weekly_insights",
-              title: "🤖 Weekly Executive AI Insight Digest",
-              desc: "Weekly report with AI sales growth analysis and recommendations.",
-            },
-          ].map((evt) => {
-            const current = notifPrefs[evt.id] ?? { emailEnabled: true, inAppEnabled: true };
-            return (
-              <div key={evt.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3 border-b last:border-0">
-                <div>
-                  <p className="text-sm font-semibold">{evt.title}</p>
-                  <p className="text-xs text-muted-foreground">{evt.desc}</p>
-                </div>
-                <div className="flex items-center gap-6 shrink-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground font-medium">Email</span>
-                    <Switch
-                      checked={current.emailEnabled}
-                      onCheckedChange={(val) => handleNotifToggle(evt.id, "emailEnabled", val)}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground font-medium">In-App</span>
-                    <Switch
-                      checked={current.inAppEnabled}
-                      onCheckedChange={(val) => handleNotifToggle(evt.id, "inAppEnabled", val)}
-                    />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-
-          <div className="flex justify-end border-t pt-4">
-            <Button
-              onClick={handleSaveNotifPrefs}
-              disabled={saving === "notif_prefs"}
-              className="gap-2 rounded-lg"
-            >
-              <Save className="h-4 w-4" />
-              {saving === "notif_prefs" ? "Saving..." : "Save Notification Preferences"}
-            </Button>
-          </div>
-        </div>
-      </SectionCard>
-
-      {/* ─── AI Agent ───────────────────────────────────────────── */}
-      <SectionCard
-        icon={Bot}
-        title="AI Agent"
-        description="How the AI sales agent introduces itself, talks, and follows up on abandoned conversations."
-      >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="agent-name">Agent Name</Label>
-            <Input
-              id="agent-name"
-              value={agentName}
-              onChange={(e) => setAgentName(e.target.value)}
-              placeholder={storeName || "Defaults to your business name"}
-              className={inputCls}
+        {/* ─── Content ────────────────────────────────────────────────── */}
+        <div className="min-w-0 flex-1 space-y-6">
+          {activeSection === "business" && (
+            <BusinessProfileSection
+              storeName={storeName}
+              setStoreName={setStoreName}
+              storeDescription={storeDescription}
+              setStoreDescription={setStoreDescription}
+              storeLogo={storeLogo}
+              storeSlug={storeProfile.slug}
+              bpCurrency={bpCurrency}
+              setBpCurrency={setBpCurrency}
+              bpShippingCost={bpShippingCost}
+              setBpShippingCost={setBpShippingCost}
+              bpEmail={bpEmail}
+              setBpEmail={setBpEmail}
+              bpNotificationEmail={bpNotificationEmail}
+              setBpNotificationEmail={setBpNotificationEmail}
+              bpPhone={bpPhone}
+              setBpPhone={setBpPhone}
+              isBusinessDirty={isBusinessDirty}
+              saving={saving === "business"}
+              uploading={uploading}
+              onSave={handleSaveBusiness}
+              onLogoUpload={handleLogoUpload}
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="agent-tone">Conversation Tone</Label>
-            <select
-              id="agent-tone"
-              value={conversationTone}
-              onChange={(e) => setConversationTone(e.target.value)}
-              className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <option value="friendly">Friendly</option>
-              <option value="professional">Professional</option>
-              <option value="playful">Playful</option>
-              <option value="formal">Formal</option>
-            </select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="agent-language">Preferred Reply Language</Label>
-            <select
-              id="agent-language"
-              value={preferredLanguage}
-              onChange={(e) => setPreferredLanguage(e.target.value)}
-              className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <option value="auto">Auto-detect (matches customer)</option>
-              <option value="bangla">Always Bangla</option>
-              <option value="english">Always English</option>
-            </select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="agent-followup" className="flex items-center gap-1.5">
-              <Clock className="h-3.5 w-3.5" /> Abandoned Follow-up Delay (minutes)
-            </Label>
-            <Input
-              id="agent-followup"
-              type="number"
-              min={1}
-              value={followUpMinutes}
-              onChange={(e) => setFollowUpMinutes(e.target.value)}
-              placeholder="30"
-              className={inputCls}
-            />
-          </div>
-        </div>
+          )}
 
-        {/* ─── Auto-Escalation (FR-AGT-15 / FR-SET-01) ───────────── */}
-        <div className="mt-6 border-t pt-4">
-          <h4 className="mb-3 text-sm font-semibold text-foreground">Auto-Escalation on Low Confidence</h4>
-          <p className="mb-4 text-xs text-muted-foreground">
-            When the AI is uncertain about its reply, automatically hand the conversation to a human agent.
-          </p>
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <div className="space-y-0.5">
-              <Label className="text-sm font-medium">Enable auto-escalation</Label>
-              <p className="text-xs text-muted-foreground">
-                Escalate to human when AI confidence falls below the threshold
-              </p>
-            </div>
-            <Switch
-              checked={autoEscalateOnLowConfidence}
-              onCheckedChange={setAutoEscalateOnLowConfidence}
+          {activeSection === "profile" && <PersonalProfileSection user={user} />}
+
+          {activeSection === "notifications" && (
+            <NotificationsSection
+              notifPrefs={notifPrefs}
+              onToggle={handleNotifToggle}
+              saving={saving === "notif_prefs"}
+              onSave={handleSaveNotifPrefs}
             />
-          </div>
-          {autoEscalateOnLowConfidence && (
-            <div className="mt-3 rounded-lg border p-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">Confidence Threshold</Label>
-                <span className="text-sm font-bold text-primary">{confidenceThreshold}%</span>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Below this confidence level, the AI will escalate to a human agent
-              </p>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={5}
-                value={confidenceThreshold}
-                onChange={(e) => setConfidenceThreshold(e.target.value)}
-                className="mt-2 w-full accent-primary"
-              />
-              <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
-                <span>0% (always escalate)</span>
-                <span>50%</span>
-                <span>100% (never escalate)</span>
-              </div>
-            </div>
+          )}
+
+          {activeSection === "ai-agent" && (
+            <AiAgentSection
+              storeName={storeName}
+              agentName={agentName}
+              setAgentName={setAgentName}
+              conversationTone={conversationTone}
+              setConversationTone={setConversationTone}
+              preferredLanguage={preferredLanguage}
+              setPreferredLanguage={setPreferredLanguage}
+              followUpMinutes={followUpMinutes}
+              setFollowUpMinutes={setFollowUpMinutes}
+              autoEscalateOnLowConfidence={autoEscalateOnLowConfidence}
+              setAutoEscalateOnLowConfidence={setAutoEscalateOnLowConfidence}
+              confidenceThreshold={confidenceThreshold}
+              setConfidenceThreshold={setConfidenceThreshold}
+              saving={saving === "ai-agent"}
+              onSave={handleSaveAiAgent}
+            />
+          )}
+
+          {activeSection === "shipping" && (
+            <ShippingSection
+              shippingRates={shippingRates}
+              isOwner={isOwner}
+              deleting={deleteShippingRate.isPending}
+              onCreate={() => setCreateDialog("shipping")}
+              onDelete={(rate) => setDeleteTarget({ kind: "shipping", row: rate })}
+            />
+          )}
+
+          {activeSection === "faqs" && (
+            <FaqsSection
+              faqs={faqs}
+              isOwner={isOwner}
+              deleting={deleteFaq.isPending}
+              onCreate={() => setCreateDialog("faq")}
+              onDelete={(f) => setDeleteTarget({ kind: "faq", row: f })}
+            />
+          )}
+
+          {activeSection === "policies" && (
+            <PoliciesSection
+              policies={policies}
+              isOwner={isOwner}
+              deleting={deletePolicy.isPending}
+              onCreate={() => setCreateDialog("policy")}
+              onDelete={(p) => setDeleteTarget({ kind: "policy", row: p })}
+            />
           )}
         </div>
-        <div className="mt-4 flex justify-end border-t pt-4">
-          <Button
-            onClick={handleSaveAiAgent}
-            disabled={saving === "ai-agent"}
-            className="gap-2 rounded-lg"
-          >
-            <Save className="h-4 w-4" />
-            {saving === "ai-agent" ? "Saving..." : "Save AI Agent Settings"}
-          </Button>
-        </div>
-      </SectionCard>
+      </div>
 
-      {/* ─── Shipping Rates ─────────────────────────────────────── */}
-      <SectionCard
-        icon={Truck}
-        title="Shipping Rates"
-        description={`${shippingRates.length} district rates configured. The AI uses these to calculate shipping.`}
-      >
-        {shippingRates.length > 0 ? (
-          <div className="space-y-2">
-            <div className="grid grid-cols-4 gap-4 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              <span>District</span>
-              <span>Cost</span>
-              <span>Est. Days</span>
-              <span>Status</span>
-            </div>
-            {shippingRates.map((rate) => (
-              <div
-                key={rate.id}
-                className="grid grid-cols-4 items-center gap-4 rounded-lg bg-muted/30 px-3 py-2.5 text-sm"
-              >
-                <span className="flex items-center gap-1.5 font-medium">
-                  <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                  {rate.district}
-                </span>
-                <span className="tabular-nums">৳{rate.cost}</span>
-                <span className="text-muted-foreground">
-                  {rate.estimatedDays ? `${rate.estimatedDays} days` : "—"}
-                </span>
-                <Badge variant={rate.active ? "success" : "secondary"} className="w-fit text-[10px]">
-                  {rate.active ? "Active" : "Inactive"}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="py-4 text-center text-sm text-muted-foreground">
-            No shipping rates configured yet.
-          </p>
-        )}
-      </SectionCard>
+      {/* ─── Create dialogs (owner only) ─────────────────────────────── */}
+      {isOwner && createDialog === "shipping" && (
+        <CreateShippingRateDialog
+          onClose={() => setCreateDialog(null)}
+          onCreated={() => {
+            setCreateDialog(null);
+            router.refresh();
+          }}
+        />
+      )}
+      {isOwner && createDialog === "faq" && (
+        <CreateFaqDialog
+          onClose={() => setCreateDialog(null)}
+          onCreated={() => {
+            setCreateDialog(null);
+            router.refresh();
+          }}
+        />
+      )}
+      {isOwner && createDialog === "policy" && (
+        <CreatePolicyDialog
+          onClose={() => setCreateDialog(null)}
+          onCreated={() => {
+            setCreateDialog(null);
+            router.refresh();
+          }}
+        />
+      )}
 
-      {/* ─── FAQs ───────────────────────────────────────────────── */}
-      <SectionCard
-        icon={HelpCircle}
-        title="FAQs"
-        description={`${faqs.length} frequently asked questions. The AI agent uses these to answer customer queries.`}
-      >
-        {faqs.length > 0 ? (
-          <div className="space-y-3">
-            {faqs.map((f) => (
-              <div key={f.id} className="rounded-lg bg-muted/30 p-4">
-                <p className="text-sm font-semibold text-foreground">
-                  Q: {f.question}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  A: {f.answer}
-                </p>
-                {f.tags.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {f.tags.map((tag) => (
-                      <Badge key={tag} variant="outline" className="text-[10px]">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="py-4 text-center text-sm text-muted-foreground">
-            No FAQs configured yet.
-          </p>
-        )}
-      </SectionCard>
-
-      {/* ─── Policies ───────────────────────────────────────────── */}
-      <SectionCard
-        icon={FileText}
-        title="Policies"
-        description={`${policies.length} store policies. These give the AI context about your return, shipping, and warranty rules.`}
-      >
-        {policies.length > 0 ? (
-          <div className="space-y-3">
-            {policies.map((p) => (
-              <div key={p.id} className="rounded-lg bg-muted/30 p-4">
-                <div className="flex items-center gap-2">
-                  <Badge variant={p.active ? "default" : "secondary"} className="text-[10px] capitalize">
-                    {p.type}
-                  </Badge>
-                  <h4 className="text-sm font-semibold text-foreground">
-                    {p.title}
-                  </h4>
-                  {!p.active && (
-                    <Badge variant="destructive" className="text-[10px]">
-                      Inactive
-                    </Badge>
-                  )}
-                </div>
-                <p className="mt-2 text-sm text-muted-foreground line-clamp-3">
-                  {p.body}
-                </p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="py-4 text-center text-sm text-muted-foreground">
-            No policies configured yet.
-          </p>
-        )}
-      </SectionCard>
+      {/* ─── Delete confirmations ─────────────────────────────────────── */}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title={deleteTarget?.kind === "shipping" ? "Delete shipping rate?" : deleteTarget?.kind === "faq" ? "Delete FAQ?" : "Delete policy?"}
+        description={
+          deleteTarget?.kind === "shipping"
+            ? `This permanently deletes the shipping rate for ${deleteTarget.row.district}.`
+            : deleteTarget?.kind === "faq"
+              ? "This permanently deletes this FAQ. The AI agent will no longer use it."
+              : `This permanently deletes "${deleteTarget?.row.title}".`
+        }
+        confirmLabel="Delete"
+        destructive
+        loading={deleteShippingRate.isPending || deleteFaq.isPending || deletePolicy.isPending}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }
