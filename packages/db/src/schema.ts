@@ -26,6 +26,7 @@ export * from "./auth-schema";
 export * from "./role-schema";
 export * from "./meta-connection-schema";
 export * from "./meta-webhook-event-schema";
+export * from "./store-connection-schema";
 export * from "./product-schema";
 export * from "./agent-schema";
 export * from "./analytics-schema";

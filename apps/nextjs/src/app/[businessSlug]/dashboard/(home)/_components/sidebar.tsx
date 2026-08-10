@@ -29,6 +29,7 @@ import {
   User,
   Shield,
   Wallet,
+  Store,
 } from "lucide-react";
 
 import { useQuery } from "@tanstack/react-query";
@@ -113,9 +114,10 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    title: "Channels",
+    title: "Cannel & Store",
     items: [
-      { href: "/dashboard/integrations", icon: Plug, label: "Integrations" },
+      { href: "/dashboard/integrations", icon: Plug, label: "Connect Channels" },
+      { href: "/dashboard/store-connections", icon: Store, label: "Connect Store" },
     ],
   },
   {
@@ -159,6 +161,7 @@ const NAV_PERMISSIONS: Record<string, string> = {
   "/dashboard/offers": "offers:view",
   "/dashboard/invoices": "invoices:view",
   "/dashboard/integrations": "__owner__",
+  "/dashboard/store-connections": "__owner__",
   "/dashboard/billing": "__owner__",
   "/dashboard/roles": "users:view",
   "/dashboard/activity": "activity:view",

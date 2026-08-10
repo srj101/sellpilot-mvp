@@ -83,6 +83,7 @@
     "NVIDIA_API_KEY",
     "NVIDIA_EMBEDDINGS_URL",
     "NVIDIA_EMBED_MODEL",
+    "STORE_CONNECTION_ENCRYPTION_KEY",
     "REDIS_URL"
   ],
   "globalPassThroughEnv": [

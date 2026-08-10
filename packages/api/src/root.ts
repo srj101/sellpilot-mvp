@@ -15,6 +15,8 @@ import { ordersRouter } from "./router/orders";
 import { paymentsRouter } from "./router/payments";
 import { postRouter } from "./router/post";
 import { productsRouter } from "./router/products";
+import { storeConnectionsRouter } from "./router/store-connections";
+import { importsRouter } from "./router/imports";
 import { rolesRouter } from "./router/roles";
 import { settingsRouter } from "./router/settings";
 import { subscriptionRouter } from "./router/subscription";
@@ -33,6 +35,8 @@ export const appRouter = createTRPCRouter({
   dashboard: dashboardRouter,
   ecommerce: ecommerceRouter,
   products: productsRouter,
+  storeConnections: storeConnectionsRouter,
+  imports: importsRouter,
   customers: customersRouter,
   orders: ordersRouter,
   payments: paymentsRouter,

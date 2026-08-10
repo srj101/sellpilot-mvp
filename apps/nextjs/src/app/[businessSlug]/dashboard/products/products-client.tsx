@@ -15,6 +15,7 @@ import {
   Loader2,
   Lock,
   Plus,
+  Plug,
   Search,
   Sparkles,
   Trash2,
@@ -35,6 +36,7 @@ import { cn } from "@acme/ui";
 import { ConfirmDialog } from "~/app/[businessSlug]/dashboard/_components/confirm-dialog";
 import { useTRPC } from "~/trpc/react";
 import { useBusinessSlug } from "~/hooks/use-business-slug";
+import { ImportFromStoreDialog } from "./_components/import-from-store-dialog";
 import { ProductForm } from "./product-form";
 
 interface BulkRow {
@@ -95,6 +97,7 @@ export function ProductsClient() {
 
   // CSV bulk import state
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isStoreImportOpen, setIsStoreImportOpen] = useState(false);
   const [csvRows, setCsvRows] = useState<BulkRow[]>([]);
   const [csvSkipped, setCsvSkipped] = useState(0);
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
@@ -381,6 +384,10 @@ export function ProductsClient() {
           <Button variant="outline" size="sm" onClick={openImportDialog} className="h-8 gap-1.5 text-xs">
             <UploadCloud className="h-4 w-4" />
             Import CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setIsStoreImportOpen(true)} className="h-8 gap-1.5 text-xs">
+            <Plug className="h-4 w-4" />
+            Import from Store
           </Button>
           {atLimit ? (
             <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
@@ -734,6 +741,9 @@ export function ProductsClient() {
         </div>
       </div>
       )}
+
+      {/* Store Import Dialog */}
+      <ImportFromStoreDialog open={isStoreImportOpen} onOpenChange={setIsStoreImportOpen} />
 
       {/* CSV Bulk Import Dialog */}
       <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
