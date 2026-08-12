@@ -62,7 +62,12 @@ export function ImportFromStoreDialog({
   const qc = useQueryClient();
   const businessSlug = useBusinessSlug();
 
-  const { data: connectionsData } = useQuery(trpc.storeConnections.list.queryOptions());
+  // `enabled: open` — this mounts alongside the Products page regardless of whether the
+  // dialog is actually open, and storeConnections.list requires integrations:view, which not
+  // every role has (e.g. a role with only products:view/create). Firing it unconditionally
+  // meant every page load for such a role logged a background FORBIDDEN error for a feature
+  // they never opened.
+  const { data: connectionsData } = useQuery(trpc.storeConnections.list.queryOptions(undefined, { enabled: open }));
   const connections = connectionsData ?? [];
 
   const activeConnection = connections[0] as Connection | undefined;

@@ -154,9 +154,9 @@ export function BillingClient({ businessSlug }: { businessSlug: string }) {
     }),
   );
 
-  function handleChangePlan(plan: PlanKey, cycle: BillingCycle) {
+  function handleChangePlan(plan: PlanKey, cycle: BillingCycle, extraConversations: number) {
     setBusyPlan(plan);
-    changePlan.mutate({ plan, billingCycle: cycle });
+    changePlan.mutate({ plan, billingCycle: cycle, extraConversations });
   }
 
   function handleCancel() {
@@ -295,7 +295,7 @@ export function BillingClient({ businessSlug }: { businessSlug: string }) {
                       <div className="px-1 pb-4">
                         <PlanGrid
                           mode="dashboard"
-                          dashboardState={{ currentPlan: current.plan, isTrialing, pendingPlan: current.pendingPlan }}
+                          dashboardState={{ currentPlan: current.plan, isTrialing, pendingPlan: current.pendingPlan, extraConversations: current.extraConversations }}
                           onChoosePlan={handleChangePlan}
                           busyPlan={busyPlan}
                           initialCycle={current.billingCycle}

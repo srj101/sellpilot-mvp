@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Mail,
@@ -21,6 +21,8 @@ import {
   Gift,
   Plug,
   Settings as SettingsIcon,
+  Activity,
+  Wallet,
   ChevronRight,
   Plus
 } from "lucide-react";
@@ -32,11 +34,13 @@ import { cn } from "@acme/ui";
 import { UpgradeBanner } from "../_components/upgrade-banner";
 import { useTRPC } from "~/trpc/react";
 import { useBusinessSlug } from "~/hooks/use-business-slug";
+import { usePermissions } from "~/hooks/use-permissions";
 
 /* ─── Constants & Icon Mapping ───────────────────────────────────────── */
 
 const RESOURCES = [
   { key: "orders",       label: "Orders",       icon: ShoppingCart },
+  { key: "payments",     label: "Payments",     icon: Wallet },
   { key: "products",     label: "Products",     icon: Package },
   { key: "customers",    label: "Customers",    icon: User },
   { key: "invoices",     label: "Invoices",     icon: FileText },
@@ -47,6 +51,7 @@ const RESOURCES = [
   { key: "offers",       label: "Offers",       icon: Gift },
   { key: "integrations", label: "Integrations", icon: Plug },
   { key: "settings",     label: "Settings",     icon: SettingsIcon },
+  { key: "activity",     label: "Activity Log", icon: Activity },
 ] as const;
 
 const ACTIONS = [
@@ -55,6 +60,39 @@ const ACTIONS = [
   { key: "edit",   label: "Edit" },
   { key: "delete", label: "Delete" },
 ] as const;
+
+/**
+ * Which resource:action combinations an actual permissionProcedure checks somewhere in the
+ * API — derived from `grep -rn 'permissionProcedure(' packages/api/src/router/*.ts`. A custom
+ * role can only ever be MORE permissive than what the backend enforces, never less, so ticking
+ * a box for a combo nothing checks would be a no-op that misleads whoever builds the role.
+ * - invoices: the whole router is ownerOnlyProcedure (dead code — no frontend caller uses it,
+ *   see NAV_PERMISSIONS in sidebar.tsx), so no action here does anything for a custom role.
+ * - integrations/settings: only `view` is permission-gated: connect/disconnect and shipping/
+ *   FAQ/policy CRUD are all ownerOnlyProcedure, not delegable via custom role at all.
+ * - inbox: mutations (reply, tag, note, etc.) are all gated on inbox:edit — there's no
+ *   separate create/delete action.
+ * - analytics: create/delete exist (custom KPI targets); there's no analytics:edit procedure.
+ * - agent: only view/edit exist — no create/delete action.
+ * - activity: read-only log, view only.
+ * - payments: view + refund(edit) only — no create/delete (transactions aren't created or
+ *   deleted by hand, they come from checkout). Gateway credential setup stays owner-only.
+ */
+const RESOURCE_ACTIONS: Record<(typeof RESOURCES)[number]["key"], readonly (typeof ACTIONS)[number]["key"][]> = {
+  orders: ["view", "create", "edit", "delete"],
+  payments: ["view", "edit"],
+  products: ["view", "create", "edit", "delete"],
+  customers: ["view", "create", "edit", "delete"],
+  invoices: [],
+  users: ["view", "create", "edit", "delete"],
+  inbox: ["view", "edit"],
+  analytics: ["view", "create", "delete"],
+  agent: ["view", "edit"],
+  offers: ["view", "create", "edit", "delete"],
+  integrations: ["view"],
+  settings: ["view"],
+  activity: ["view"],
+};
 
 function initials(name: string | null) {
   const safeName = name ?? "User";
@@ -135,6 +173,9 @@ function TabBar({
 export function RolesClient() {
   const trpc = useTRPC();
   const businessSlug = useBusinessSlug();
+  const { can } = usePermissions();
+  const canCreateRole = can("users", "create");
+  const canDeleteRole = can("users", "delete");
   const rolesQuery = useQuery(trpc.roles.list.queryOptions());
   const membersQuery = useQuery(trpc.roles.listMembers.queryOptions());
   const usageQuery = useQuery(trpc.subscription.getUsage.queryOptions());
@@ -169,11 +210,24 @@ export function RolesClient() {
   const [newRole, setNewRole] = useState({ name: "", permissions: [] as string[] });
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("viewer");
+  const [inviteRole, setInviteRole] = useState("");
 
   const roles = (rolesQuery.data ?? []) as RoleRow[];
   const members = membersQuery.data?.members ?? [];
   const invitations = membersQuery.data?.invitations ?? [];
+
+  // The invite dialog's <select> is keyed to whatever roles actually exist for this
+  // business (DEFAULT_ROLES like "viewer" only apply when zero custom roles exist yet —
+  // once one is created, the list becomes exactly that custom set). If inviteRole ever
+  // points at a key that isn't in the current list, the native <select> silently falls back
+  // to displaying its first <option> while the stale value stays selected underneath — so
+  // the dropdown visually shows the right role but the invite submits the wrong one.
+  useEffect(() => {
+    const firstRoleKey = roles[0]?.key;
+    if (firstRoleKey && !roles.some((r) => r.key === inviteRole)) {
+      setInviteRole(firstRoleKey);
+    }
+  }, [roles, inviteRole]);
   const seats = usageQuery.data?.seats;
   const seatsAtLimit = seats !== undefined && seats.limit !== null && seats.used >= seats.limit;
 
@@ -220,7 +274,7 @@ export function RolesClient() {
         
         {/* Inline Tab-Specific Buttons */}
         <div className="flex shrink-0 items-center gap-3">
-          {tab === "roles" && !showCreate && (
+          {tab === "roles" && !showCreate && canCreateRole && (
             <Button
               onClick={() => setShowCreate(true)}
               size="sm"
@@ -338,16 +392,29 @@ export function RolesClient() {
                               {ACTIONS.map((a) => {
                                 const cell = `${r.key}:${a.key}`;
                                 const isChecked = newRole.permissions.includes(cell);
+                                const isAvailable = (RESOURCE_ACTIONS[r.key] as readonly string[]).includes(a.key);
                                 return (
                                   <td key={a.key} className="px-5 py-3 text-center">
-                                    <label className="relative inline-flex items-center justify-center cursor-pointer">
+                                    <label
+                                      className={cn(
+                                        "relative inline-flex items-center justify-center",
+                                        isAvailable ? "cursor-pointer" : "cursor-not-allowed",
+                                      )}
+                                      title={isAvailable ? undefined : `No ${a.label.toLowerCase()} action exists for ${r.label} — this checkbox would do nothing.`}
+                                    >
                                       <input
                                         type="checkbox"
                                         checked={isChecked}
+                                        disabled={!isAvailable}
                                         onChange={() => togglePermission(cell)}
                                         className="sr-only peer"
                                       />
-                                      <div className="h-5 w-5 rounded border border-border/80 bg-background transition-all peer-checked:border-primary peer-checked:bg-primary/10 peer-checked:text-primary flex items-center justify-center hover:border-primary/60">
+                                      <div
+                                        className={cn(
+                                          "h-5 w-5 rounded border border-border/80 bg-background transition-all peer-checked:border-primary peer-checked:bg-primary/10 peer-checked:text-primary flex items-center justify-center",
+                                          isAvailable ? "hover:border-primary/60" : "opacity-30",
+                                        )}
+                                      >
                                         <Check className={cn("h-3.5 w-3.5 scale-50 opacity-0 transition-all", isChecked && "scale-100 opacity-100")} />
                                       </div>
                                     </label>
@@ -395,7 +462,7 @@ export function RolesClient() {
                         </div>
                       </div>
 
-                      {!["admin", "editor", "viewer"].includes(r.key) && (
+                      {!["admin", "editor", "viewer"].includes(r.key) && canDeleteRole && (
                         <Button
                           size="icon"
                           variant="ghost"

@@ -27,7 +27,7 @@ export const paymentsRouter = {
   /** One "Online" status covering card/bank/bKash/Nagad (all one SSLCommerz gateway) —
    * there's nothing to connect per-rail, see billing plan S5-C. Per-business now, not a
    * global env check — each business's own SSLCommerz store, see checkout.ts. */
-  getGatewayStatus: permissionProcedure("orders", "view").query(async ({ ctx }) => {
+  getGatewayStatus: permissionProcedure("payments", "view").query(async ({ ctx }) => {
     const profile = await ctx.db.query.businessProfile.findFirst({ where: eq(businessProfile.businessId, ctx.businessId) });
     return {
       online: hasCredentials({
@@ -66,7 +66,7 @@ export const paymentsRouter = {
       return { success: true };
     }),
 
-  getSummary: permissionProcedure("orders", "view")
+  getSummary: permissionProcedure("payments", "view")
     .input(
       z.object({
         range: z.enum(["7d", "30d", "90d", "1y", "custom"]).default("30d"),
@@ -122,7 +122,7 @@ export const paymentsRouter = {
       };
     }),
 
-  list: permissionProcedure("orders", "view")
+  list: permissionProcedure("payments", "view")
     .input(
       z.object({
         method: z.enum(["bkash", "nagad", "card", "internetbank", "cod"]).optional(),
@@ -181,7 +181,7 @@ export const paymentsRouter = {
     }),
 
   /** Refund a transaction — partial refunds allowed, never more than was actually charged. */
-  refund: permissionProcedure("orders", "edit")
+  refund: permissionProcedure("payments", "edit")
     .input(z.object({ id: z.string(), amount: z.number().positive() }))
     .mutation(async ({ ctx, input }) => {
       const [row] = await ctx.db

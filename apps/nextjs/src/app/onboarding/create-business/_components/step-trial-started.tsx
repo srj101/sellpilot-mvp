@@ -6,6 +6,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { PLAN_CATALOG } from "@acme/api/plans";
 import type { PlanKey } from "@acme/api/plans";
+import { Skeleton } from "@acme/ui/skeleton";
 import { useTRPC } from "~/trpc/react";
 
 export function StepTrialStarted({
@@ -17,9 +18,25 @@ export function StepTrialStarted({
 }) {
   const trpc = useTRPC();
   const completeOnboarding = useMutation(trpc.business.completeOnboarding.mutationOptions());
-  const { data: subscription } = useQuery(trpc.subscription.getCurrent.queryOptions());
-  const planKey = (subscription?.plan as PlanKey | undefined) ?? "starter";
-  const plan = PLAN_CATALOG[planKey];
+  // No `?? "starter"` fallback while this is loading — that briefly rendered the wrong
+  // plan's features (always Starter) before flashing over to the plan actually selected.
+  // isLoading gates the whole card below into a skeleton instead.
+  const { data: subscription, isLoading } = useQuery(trpc.subscription.getCurrent.queryOptions());
+  const planKey = subscription?.plan as PlanKey | undefined;
+  const plan = planKey ? PLAN_CATALOG[planKey] : undefined;
+  const extraConversations = subscription?.extraConversations ?? 0;
+  const baseConversations = plan?.limits.aiConversationsPerMonth ?? null;
+  // Only override the catalog's generic "20,000 AI conversations / month" line when the
+  // owner actually purchased extra capacity via the pricing-page slider — otherwise leave
+  // plan.features exactly as-is so unrelated plans/wording (e.g. Pro's "(fair use)") don't
+  // change.
+  const displayFeatures =
+    plan && extraConversations > 0 && baseConversations !== null
+      ? [
+          `${(baseConversations + extraConversations).toLocaleString()} AI conversations / month (${baseConversations.toLocaleString()} base + ${extraConversations.toLocaleString()} extra)`,
+          ...plan.features.filter((feature) => !feature.includes("AI conversations / month")),
+        ]
+      : (plan?.features ?? []);
   const [dateStr, setDateStr] = useState("");
   const [navigating, setNavigating] = useState(false);
 
@@ -68,22 +85,35 @@ export function StepTrialStarted({
           </div>
 
           <div className="mb-8 w-full rounded-xl border bg-background/50 p-4 text-left">
-            <h3 className="mb-3 text-sm font-semibold flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              What's included in {plan.name}:
-            </h3>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              {plan.features.map((feature) => (
-                <li key={feature} className="flex items-center gap-2">
-                  <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                  {feature}
-                </li>
-              ))}
-              <li className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                No payment method required yet
-              </li>
-            </ul>
+            {isLoading || !plan ? (
+              <div className="space-y-3">
+                <Skeleton className="h-4 w-40" />
+                <div className="space-y-2">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <Skeleton key={i} className="h-3.5 w-full" style={{ width: `${85 - i * 4}%` }} />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                <h3 className="mb-3 text-sm font-semibold flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  What's included in {plan.name}:
+                </h3>
+                <ul className="space-y-2 text-sm text-muted-foreground">
+                  {displayFeatures.map((feature) => (
+                    <li key={feature} className="flex items-center gap-2">
+                      <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+                      {feature}
+                    </li>
+                  ))}
+                  <li className="flex items-center gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+                    No payment method required yet
+                  </li>
+                </ul>
+              </>
+            )}
           </div>
 
           <button

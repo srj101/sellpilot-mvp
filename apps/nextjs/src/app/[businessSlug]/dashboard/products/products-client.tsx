@@ -36,6 +36,7 @@ import { cn } from "@acme/ui";
 import { ConfirmDialog } from "~/app/[businessSlug]/dashboard/_components/confirm-dialog";
 import { useTRPC } from "~/trpc/react";
 import { useBusinessSlug } from "~/hooks/use-business-slug";
+import { usePermissions } from "~/hooks/use-permissions";
 import { ImportFromStoreDialog } from "./_components/import-from-store-dialog";
 import { ProductForm } from "./product-form";
 
@@ -78,6 +79,10 @@ export function ProductsClient() {
   const trpc = useTRPC();
   const qc = useQueryClient();
   const businessSlug = useBusinessSlug();
+  const { can } = usePermissions();
+  const canCreate = can("products", "create");
+  const canEdit = can("products", "edit");
+  const canDelete = can("products", "delete");
   const deleteProductMutation = useMutation(trpc.products.delete.mutationOptions());
   const testImageSearchMutation = useMutation(trpc.products.testImageSearch.mutationOptions());
   const bulkCreateMutation = useMutation(trpc.products.bulkCreate.mutationOptions());
@@ -322,7 +327,7 @@ export function ProductsClient() {
 
   const productFormSheet = (
     <Sheet open={view === "create" || view === "edit"} onOpenChange={(open) => !open && setView("list")}>
-      <SheetContent side="right" scrollBody className="w-full sm:max-w-2xl">
+      <SheetContent side="right" className="w-full p-0 sm:max-w-3xl">
         <SheetTitle className="sr-only">{view === "edit" ? "Edit Product" : "Add Product"}</SheetTitle>
         {(view === "create" || view === "edit") && (
           <ProductForm
@@ -330,7 +335,7 @@ export function ProductsClient() {
             onSave={closeForm}
             onCancel={() => setView("list")}
             onDelete={
-              view === "edit"
+              view === "edit" && canDelete
                 ? () => {
                     setView("list");
                     setDeleteTarget(editingProduct.id);
@@ -381,26 +386,30 @@ export function ProductsClient() {
             <Eye className="h-4 w-4" />
             {view === "sandbox" ? "Back to Products" : "Vector Sandbox"}
           </Button>
-          <Button variant="outline" size="sm" onClick={openImportDialog} className="h-8 gap-1.5 text-xs">
-            <UploadCloud className="h-4 w-4" />
-            Import CSV
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setIsStoreImportOpen(true)} className="h-8 gap-1.5 text-xs">
-            <Plug className="h-4 w-4" />
-            Import from Store
-          </Button>
-          {atLimit ? (
-            <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
-              <Link href={`/${businessSlug}/dashboard/billing`}>
-                <Lock className="h-4 w-4" />
-                Upgrade
-              </Link>
-            </Button>
-          ) : (
-            <Button size="sm" onClick={() => setView("create")} className="h-8 gap-1.5 text-xs">
-              <Plus className="h-4 w-4" />
-              Add Product
-            </Button>
+          {canCreate && (
+            <>
+              <Button variant="outline" size="sm" onClick={openImportDialog} className="h-8 gap-1.5 text-xs">
+                <UploadCloud className="h-4 w-4" />
+                Import CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setIsStoreImportOpen(true)} className="h-8 gap-1.5 text-xs">
+                <Plug className="h-4 w-4" />
+                Import from Store
+              </Button>
+              {atLimit ? (
+                <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
+                  <Link href={`/${businessSlug}/dashboard/billing`}>
+                    <Lock className="h-4 w-4" />
+                    Upgrade
+                  </Link>
+                </Button>
+              ) : (
+                <Button size="sm" onClick={() => setView("create")} className="h-8 gap-1.5 text-xs">
+                  <Plus className="h-4 w-4" />
+                  Add Product
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -685,24 +694,28 @@ export function ProductsClient() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleEditClick(p)}
-                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                          aria-label="Edit"
-                        >
-                          <Edit className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDeleteClick(p.id)}
-                          className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                          aria-label="Delete"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        {canEdit && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleEditClick(p)}
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            aria-label="Edit"
+                          >
+                            <Edit className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteClick(p.id)}
+                            className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            aria-label="Delete"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -723,7 +736,7 @@ export function ProductsClient() {
                             ? "Create your first product to generate variation image vector embeddings for AI recommendations."
                             : "No products match your search — try a different name or category."}
                         </p>
-                        {products.length === 0 && (
+                        {products.length === 0 && canCreate && (
                           <Button
                             onClick={() => setView("create")}
                             className="mt-4 h-8 text-xs gap-1.5"

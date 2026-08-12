@@ -161,16 +161,47 @@ function PasswordInput({
   );
 }
 
-function SocialButtons() {
+function SocialButtons({
+  selectedPlan,
+  selectedCycle,
+  selectedExtra,
+  invitationId,
+}: {
+  /** Only passed from SignUpForm (never SignInForm) — stashed into the same localStorage
+   * key the email/password path uses, before handing off to the OAuth provider, so a new
+   * account created via Google/Facebook also lands on the plan chosen on the Pricing page
+   * instead of silently defaulting to Starter/Monthly. */
+  selectedPlan?: string;
+  selectedCycle?: string;
+  selectedExtra?: string;
+  /** From the accept-invitation page's Sign in/Create account links (both forms). The
+   * email/password path handles this with an explicit router.push after auth completes;
+   * OAuth has no such step of its own — signIn.social's callbackURL IS where the user lands
+   * after the whole provider round-trip, so it has to be set correctly up front or an
+   * invited user gets dropped onto /dashboard and bounced into onboarding instead of
+   * /accept-invitation. */
+  invitationId?: string;
+} = {}) {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isFacebookLoading, setIsFacebookLoading] = useState(false);
+  const callbackURL = invitationId ? `/accept-invitation?id=${invitationId}` : "/dashboard";
+
+  function stashSelectedPlan() {
+    if (selectedPlan && selectedCycle) {
+      localStorage.setItem(
+        "sellpilot_selected_plan",
+        JSON.stringify({ plan: selectedPlan, cycle: selectedCycle, extra: selectedExtra }),
+      );
+    }
+  }
 
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);
     try {
+      stashSelectedPlan();
       await authClient.signIn.social({
         provider: "google",
-        callbackURL: "/dashboard",
+        callbackURL,
       });
     } catch (e) {
       console.error(e);
@@ -182,9 +213,10 @@ function SocialButtons() {
   const handleFacebookSignIn = async () => {
     setIsFacebookLoading(true);
     try {
+      stashSelectedPlan();
       await authClient.signIn.social({
         provider: "facebook",
-        callbackURL: "/dashboard",
+        callbackURL,
       });
     } catch (e) {
       console.error(e);
@@ -341,7 +373,7 @@ export function SignInForm({
 
   return (
     <div className="flex flex-col gap-5 sm:gap-6">
-      <SocialButtons />
+      <SocialButtons invitationId={invitationId} />
       <FieldSeparator className="text-[11px] uppercase tracking-wider">
         or continue with email
       </FieldSeparator>
@@ -429,15 +461,18 @@ export function SignUpForm({
   invitationId,
   selectedPlan,
   selectedCycle,
+  selectedExtra,
 }: {
   defaultEmail?: string;
   invitationId?: string;
-  /** From the Pricing page's ?plan=&cycle= link — carried across the signup -> email
+  /** From the Pricing page's ?plan=&cycle=&extra= link — carried across the signup -> email
    * verification -> onboarding page chain via localStorage (see FR-SAS-03), since
    * nothing else threads state across those redirects, and read back once by
    * business-chat-intake.tsx right before business.create. */
   selectedPlan?: string;
   selectedCycle?: string;
+  /** Extra AI-conversation capacity chosen on the pricing-page slider, alongside selectedPlan. */
+  selectedExtra?: string;
 } = {}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -469,7 +504,10 @@ export function SignUpForm({
           });
 
           if (selectedPlan && selectedCycle) {
-            localStorage.setItem("sellpilot_selected_plan", JSON.stringify({ plan: selectedPlan, cycle: selectedCycle }));
+            localStorage.setItem(
+              "sellpilot_selected_plan",
+              JSON.stringify({ plan: selectedPlan, cycle: selectedCycle, extra: selectedExtra }),
+            );
           }
 
           router.push(invitationId ? `/accept-invitation?id=${invitationId}` : "/dashboard");
@@ -487,7 +525,7 @@ export function SignUpForm({
 
   return (
     <div className="flex flex-col gap-5 sm:gap-6">
-      <SocialButtons />
+      <SocialButtons selectedPlan={selectedPlan} selectedCycle={selectedCycle} selectedExtra={selectedExtra} invitationId={invitationId} />
       <FieldSeparator className="text-[11px] uppercase tracking-wider">
         or create with email
       </FieldSeparator>

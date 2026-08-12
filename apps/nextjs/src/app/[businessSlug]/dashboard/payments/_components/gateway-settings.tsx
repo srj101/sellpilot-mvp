@@ -19,12 +19,21 @@ import { useTRPC } from "~/trpc/react";
  * settle directly into whichever store is configured here; until it is, checkout only offers
  * Cash on Delivery (see checkout.ts's startOnlinePayment).
  * Owner-only — getGatewayCredentials/updateGatewayCredentials both 403 for non-owner staff,
- * so this quietly renders nothing for them rather than a broken form.
+ * so this quietly renders nothing for them rather than a broken form. The query itself is
+ * gated on isOwner (not just left to fail and be swallowed by isError) so non-owner staff
+ * don't generate a background FORBIDDEN error on every Payments page visit.
  */
 export function GatewaySettings() {
   const trpc = useTRPC();
   const qc = useQueryClient();
-  const { data, isPending, isError } = useQuery(trpc.payments.getGatewayCredentials.queryOptions());
+  const { data: myPermissions, isPending: permissionsPending } = useQuery(trpc.roles.getMyPermissions.queryOptions());
+  const isOwner = myPermissions?.role === "owner";
+  const { data, isPending: credentialsPending, isError } = useQuery(
+    trpc.payments.getGatewayCredentials.queryOptions(undefined, { enabled: isOwner }),
+  );
+  // Still figuring out whether this member is the owner — keep showing the loading shell
+  // instead of flashing "nothing" for an owner whose permissions just haven't loaded yet.
+  const isPending = permissionsPending || (isOwner && credentialsPending);
   const [storeId, setStoreId] = useState("");
   const [storePassword, setStorePassword] = useState("");
 
@@ -44,7 +53,7 @@ export function GatewaySettings() {
     }),
   );
 
-  if (isError) return null;
+  if (!permissionsPending && (!isOwner || isError)) return null;
 
   return (
     <Card>

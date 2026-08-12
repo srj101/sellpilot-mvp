@@ -16,6 +16,7 @@ import {
 } from "@acme/ui/sheet";
 import { toast } from "@acme/ui/toast";
 import { useTRPC } from "~/trpc/react";
+import { usePermissions } from "~/hooks/use-permissions";
 import { formatCurrency } from "./inbox-utils";
 
 const inputClass = "flex h-9 w-full rounded-md border bg-background px-3 text-sm";
@@ -35,6 +36,8 @@ export function CreateOrderSheet({
 }) {
   const trpc = useTRPC();
   const router = useRouter();
+  const { can } = usePermissions();
+  const canCreate = can("orders", "create");
   const [open, setOpen] = useState(false);
 
   const [productId, setProductId] = useState("");
@@ -90,6 +93,8 @@ export function CreateOrderSheet({
   });
 
   const createOrder = useMutation(trpc.orders.create.mutationOptions());
+
+  if (!canCreate) return null;
 
   function reset() {
     setProductId("");

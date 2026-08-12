@@ -277,6 +277,34 @@ export const permissionProcedure = (resource: Resource, action: Action) =>
   });
 
 /**
+ * Like permissionProcedure, but for endpoints that blend data from several resources (e.g.
+ * the Overview dashboard mixes orders/products/customers/analytics) — passes if the caller
+ * holds ANY one of the listed resource:action pairs, rather than requiring one specific pair.
+ * Same staged RBAC_ENFORCE rollout behavior as permissionProcedure.
+ */
+export const permissionAnyProcedure = (checks: readonly (readonly [Resource, Action])[]) =>
+  businessScopedProcedure.use(async ({ ctx, next, path }) => {
+    if (ctx.permissions.includes("*") || checks.some(([resource, action]) => ctx.permissions.includes(`${resource}:${action}`))) {
+      return next({ ctx });
+    }
+
+    const wanted = checks.map(([resource, action]) => `${resource}:${action}`).join(" or ");
+
+    if (!RBAC_ENFORCE) {
+      console.warn(
+        `[rbac] would deny ${path} for user ${ctx.session.user.id} business ${ctx.businessId} ` +
+          `role=${ctx.memberRole} customRoleKey=${ctx.customRoleKey}: missing any of ${wanted}`,
+      );
+      return next({ ctx });
+    }
+
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `Your role doesn't allow you to view this — it requires one of: ${wanted}.`,
+    });
+  });
+
+/**
  * Superadmin procedure — for the SellPilot platform owner / developer.
  * Assigned manually via DB: UPDATE \"user\" SET role = 'superadmin' WHERE email = '...';
  * Has no business restrictions — can view any user, any store, enter any dashboard.

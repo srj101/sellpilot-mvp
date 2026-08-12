@@ -13,6 +13,7 @@ import { toast } from "@acme/ui/toast";
 import { cn } from "@acme/ui";
 
 import { useTRPC } from "~/trpc/react";
+import { usePermissions } from "~/hooks/use-permissions";
 import { MethodStatusStrip } from "./method-status-strip";
 import { GatewaySettings } from "./gateway-settings";
 import type { TransactionRow } from "./transaction-table";
@@ -93,6 +94,8 @@ type StatusFilter = "" | "success" | "pending" | "failed" | "refunded";
 export function PaymentsClient() {
   const trpc = useTRPC();
   const qc = useQueryClient();
+  const { can } = usePermissions();
+  const canRefund = can("payments", "edit");
   const [search, setSearch] = useState("");
   const [method, setMethod] = useState<MethodFilter>("");
   const [status, setStatus] = useState<StatusFilter>("");
@@ -223,7 +226,7 @@ export function PaymentsClient() {
             </button>
           </div>
 
-          <TransactionTable rows={rows?.items ?? []} isLoading={isLoading} onRefund={handleRefund} refundingId={refundingId} />
+          <TransactionTable rows={rows?.items ?? []} isLoading={isLoading} onRefund={handleRefund} refundingId={refundingId} canRefund={canRefund} />
         </CardContent>
       </Card>
 

@@ -24,6 +24,7 @@ import { Skeleton } from "@acme/ui/skeleton";
 import { toast } from "@acme/ui/toast";
 import { cn } from "@acme/ui";
 import { useTRPC } from "~/trpc/react";
+import { usePermissions } from "~/hooks/use-permissions";
 import { OrderStatusTimeline } from "./_components/order-status-timeline";
 
 const UPDATABLE_STATUSES = ["pending", "confirmed", "paid", "shipped", "delivered", "cancelled", "returned"] as const;
@@ -109,6 +110,8 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = {
 export function OrdersClient() {
   const trpc = useTRPC();
   const qc = useQueryClient();
+  const { can } = usePermissions();
+  const canEdit = can("orders", "edit");
   const { data, isPending } = useQuery(trpc.orders.list.queryOptions({}));
   const initialOrders = data?.orders ?? [];
   const initialItems = data?.items ?? [];
@@ -342,17 +345,24 @@ export function OrdersClient() {
                         </span>
                         {updatingOrderId === o.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
                       </div>
-                      <select
-                        value={o.status}
-                        disabled={updatingOrderId === o.id}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => handleStatusChange(o.id, e.target.value as (typeof UPDATABLE_STATUSES)[number], o.channel)}
-                        className="rounded-lg border bg-background px-3 py-1.5 text-xs font-semibold capitalize outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        {UPDATABLE_STATUSES.map((s) => (
-                          <option key={s} value={s}>{s}</option>
-                        ))}
-                      </select>
+                      {canEdit ? (
+                        <select
+                          value={o.status}
+                          disabled={updatingOrderId === o.id}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => handleStatusChange(o.id, e.target.value as (typeof UPDATABLE_STATUSES)[number], o.channel)}
+                          className="rounded-lg border bg-background px-3 py-1.5 text-xs font-semibold capitalize outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {UPDATABLE_STATUSES.map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <Badge variant={config.variant} className="gap-1">
+                          <StatusIcon className="h-3 w-3" />
+                          {config.label}
+                        </Badge>
+                      )}
                     </div>
                     {(o.channel === "facebook_page" || o.channel === "instagram" || o.channel === "whatsapp") && (
                       <p className="mb-4 text-xs text-muted-foreground">

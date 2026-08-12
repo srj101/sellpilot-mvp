@@ -75,6 +75,10 @@ export const saasInvoice = pgTable(
      * invoice can show "Plan: X, Overage: Y, Total: X+Y" transparently instead of one
      * unexplained number (pricing doc: "billed simply and transparently"). */
     overageAmount: integer("overage_amount").default(0).notNull(),
+    /** Snapshot of the extra-capacity quantity this invoice is for — copied onto
+     * subscription.extraConversations by markInvoicePaid once payment is confirmed. Not set
+     * directly on the subscription at invoice-creation time since payment isn't confirmed yet. */
+    extraConversations: integer("extra_conversations").default(0).notNull(),
     /** "paid" | "pending" | "failed" | "refunded" */
     status: text("status").default("pending").notNull(),
     periodStart: timestamp("period_start").notNull(),

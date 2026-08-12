@@ -460,6 +460,10 @@ export const subscription = pgTable(
     /** Reset by the renewal job each period — counts one per AI-generated message/reply
      * sent, not LLM token volume. See apps/worker/src/lib/ai-conversations.ts. */
     aiConversationsUsed: integer("ai_conversations_used").default(0),
+    /** Extra AI-conversation capacity purchased on top of the plan's base included volume,
+     * via the pricing-page slider. Recurring — priced at computeExtraConversationsCost and
+     * folded into `amount` every period, persists across renewals until explicitly changed. */
+    extraConversations: integer("extra_conversations").default(0).notNull(),
     /** "starter" | "growth" | "pro" — must match PLAN_CATALOG keys in api/src/lib/plans.ts */
     plan: text("plan").notNull(),
     /** "trialing" | "active" | "past_due" | "cancelled" */

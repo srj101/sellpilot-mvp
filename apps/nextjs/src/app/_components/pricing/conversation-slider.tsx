@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback } from "react";
 import { MessageSquare, Plus, Minus } from "lucide-react";
 
 import type { PlanKey } from "@acme/api/plans";
-import { PLAN_CATALOG, OVERAGE_RATES } from "@acme/api/plans";
+import { PLAN_CATALOG, extraConversationsRate, EXTRA_CONVERSATIONS_STEP, EXTRA_CONVERSATIONS_MAX_MULTIPLIER, computeExtraConversationsCost } from "@acme/api/plans";
 import { cn, Slider } from "@acme/ui";
 
 interface ConversationSliderProps {
@@ -12,30 +12,24 @@ interface ConversationSliderProps {
   baseConversations: number;
   onChange: (extraConversations: number, extraCost: number) => void;
   className?: string;
+  /** Seeds the slider from the account's currently purchased allotment (dashboard contexts
+   * only) instead of always starting at 0. */
+  initialExtra?: number;
 }
-
-/** Step sizes for the slider — each step adds this many conversations. */
-const STEP_SIZE = 500;
-
-/** Maximum extra conversations beyond base plan (capped at 3x base). */
-const MAX_MULTIPLIER = 3;
 
 export function ConversationSlider({
   plan,
   baseConversations,
   onChange,
   className,
+  initialExtra = 0,
 }: ConversationSliderProps) {
-  const maxExtra = baseConversations * MAX_MULTIPLIER;
-  const [extra, setExtra] = useState(0);
+  const maxExtra = baseConversations * EXTRA_CONVERSATIONS_MAX_MULTIPLIER;
+  const [extra, setExtra] = useState(() => Math.max(0, Math.min(maxExtra, initialExtra)));
 
-  const overageRate = OVERAGE_RATES[plan];
+  const overageRate = extraConversationsRate(plan);
 
-  const extraCost = useMemo(() => {
-    if (!overageRate || extra <= 0) return 0;
-    const blocks = Math.ceil(extra / overageRate.blockSize);
-    return blocks * overageRate.pricePerBlock;
-  }, [extra, overageRate]);
+  const extraCost = useMemo(() => computeExtraConversationsCost(plan, extra), [plan, extra]);
 
   const totalConversations = baseConversations + extra;
 
@@ -44,34 +38,22 @@ export function ConversationSlider({
       const next = value[0] ?? 0;
       const clamped = Math.max(0, Math.min(maxExtra, next));
       setExtra(clamped);
-      onChange(
-        clamped,
-        Math.ceil(clamped / (overageRate?.blockSize ?? 500)) *
-          (overageRate?.pricePerBlock ?? 0),
-      );
+      onChange(clamped, computeExtraConversationsCost(plan, clamped));
     },
-    [maxExtra, onChange, overageRate],
+    [maxExtra, onChange, plan],
   );
 
   const increment = useCallback(() => {
-    const next = Math.min(maxExtra, extra + STEP_SIZE);
+    const next = Math.min(maxExtra, extra + EXTRA_CONVERSATIONS_STEP);
     setExtra(next);
-    onChange(
-      next,
-      Math.ceil(next / (overageRate?.blockSize ?? 500)) *
-        (overageRate?.pricePerBlock ?? 0),
-    );
-  }, [extra, maxExtra, onChange, overageRate]);
+    onChange(next, computeExtraConversationsCost(plan, next));
+  }, [extra, maxExtra, onChange, plan]);
 
   const decrement = useCallback(() => {
-    const next = Math.max(0, extra - STEP_SIZE);
+    const next = Math.max(0, extra - EXTRA_CONVERSATIONS_STEP);
     setExtra(next);
-    onChange(
-      next,
-      Math.ceil(next / (overageRate?.blockSize ?? 500)) *
-        (overageRate?.pricePerBlock ?? 0),
-    );
-  }, [extra, onChange, overageRate]);
+    onChange(next, computeExtraConversationsCost(plan, next));
+  }, [extra, onChange, plan]);
 
   return (
     <div className={cn("space-y-3", className)}>
@@ -109,7 +91,7 @@ export function ConversationSlider({
           onValueChange={handleChange}
           min={0}
           max={maxExtra}
-          step={STEP_SIZE}
+          step={EXTRA_CONVERSATIONS_STEP}
           className="flex-1"
         />
 

@@ -14,14 +14,20 @@ import {
   X,
 } from "lucide-react";
 
+import { cn } from "@acme/ui";
 import { Button } from "@acme/ui/button";
 import { Input } from "@acme/ui/input";
 import { Separator } from "@acme/ui/separator";
-import { cn } from "@acme/ui";
 
 import { useTRPC } from "~/trpc/react";
 
-function StarPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+function StarPicker({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+}) {
   return (
     <div className="flex items-center gap-1">
       {[1, 2, 3, 4, 5].map((n) => (
@@ -35,7 +41,9 @@ function StarPicker({ value, onChange }: { value: number; onChange: (n: number) 
           <Star
             className={cn(
               "h-5 w-5 transition-colors",
-              n <= value ? "fill-amber-400 text-amber-400" : "text-muted-foreground",
+              n <= value
+                ? "fill-amber-400 text-amber-400"
+                : "text-muted-foreground",
             )}
           />
         </button>
@@ -59,10 +67,18 @@ export function ProductForm({
 }: ProductFormProps) {
   const isEditing = !!initialProduct;
   const trpc = useTRPC();
-  const createProductMutation = useMutation(trpc.products.create.mutationOptions());
-  const updateProductMutation = useMutation(trpc.products.update.mutationOptions());
-  const getImageUploadUrl = useMutation(trpc.products.getImageUploadUrl.mutationOptions());
-  const confirmUploadMutation = useMutation(trpc.products.confirmUpload.mutationOptions());
+  const createProductMutation = useMutation(
+    trpc.products.create.mutationOptions(),
+  );
+  const updateProductMutation = useMutation(
+    trpc.products.update.mutationOptions(),
+  );
+  const getImageUploadUrl = useMutation(
+    trpc.products.getImageUploadUrl.mutationOptions(),
+  );
+  const confirmUploadMutation = useMutation(
+    trpc.products.confirmUpload.mutationOptions(),
+  );
 
   const [title, setTitle] = useState(initialProduct?.title ?? "");
   const [description, setDescription] = useState(
@@ -153,9 +169,13 @@ export function ProductForm({
         option2: combo[1] ?? null,
         option3: combo[2] ?? null,
         price: existing ? existing.price : Number(price) || 0,
-        compareAtPrice: existing ? existing.compareAtPrice : Number(compareAtPrice) || null,
+        compareAtPrice: existing
+          ? existing.compareAtPrice
+          : Number(compareAtPrice) || null,
         sku: existing ? existing.sku : sku || "",
-        inventoryQuantity: existing ? existing.inventoryQuantity : Number(inventoryQuantity) || 0,
+        inventoryQuantity: existing
+          ? existing.inventoryQuantity
+          : Number(inventoryQuantity) || 0,
         imageUrl: existing ? existing.imageUrl : images[0] || "",
       };
     });
@@ -224,7 +244,8 @@ export function ProductForm({
   // fully freeform (any option name, e.g. Material/Style), this just skips typing for
   // the common Colour/Size case.
   const handleQuickAddOption = (name: string) => {
-    if (options.some((o) => o.name.toLowerCase() === name.toLowerCase())) return;
+    if (options.some((o) => o.name.toLowerCase() === name.toLowerCase()))
+      return;
     if (options.length >= 3) {
       setError("Maximum 3 options are allowed (Shopify limit)");
       return;
@@ -278,7 +299,9 @@ export function ProductForm({
       let finalVariants: any[] = [];
       if (hasVariants) {
         if (variants.length === 0) {
-          throw new Error("Please add options and values to generate variants.");
+          throw new Error(
+            "Please add options and values to generate variants.",
+          );
         }
         finalVariants = variants;
       } else {
@@ -322,537 +345,564 @@ export function ProductForm({
       // unreadable JSON array of Zod issues — not something to show an owner directly.
       // z.flattenError only buckets single-level paths into fieldErrors; anything nested
       // (e.g. variants.0.compareAtPrice) lands in formErrors instead, so check both.
-      const zodError = err?.data?.zodError as { fieldErrors?: Record<string, string[]>; formErrors?: string[] } | undefined;
-      const friendlyError = zodError && (Object.values(zodError.fieldErrors ?? {}).flat()[0] ?? zodError.formErrors?.[0]);
-      setError(friendlyError ?? (typeof err?.message === "string" && !err.message.trim().startsWith("[") ? err.message : "An error occurred while saving the product"));
+      const zodError = err?.data?.zodError as
+        | { fieldErrors?: Record<string, string[]>; formErrors?: string[] }
+        | undefined;
+      const friendlyError =
+        zodError &&
+        (Object.values(zodError.fieldErrors ?? {}).flat()[0] ??
+          zodError.formErrors?.[0]);
+      setError(
+        friendlyError ??
+          (typeof err?.message === "string" &&
+          !err.message.trim().startsWith("[")
+            ? err.message
+            : "An error occurred while saving the product"),
+      );
     } finally {
       setIsSaving(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">
-            {isEditing ? "Edit Product" : "Add Product"}
-          </h2>
-          <p className="text-muted-foreground text-sm">
-            {isEditing ? "Modify your product catalog details" : "Add a new product to your inventory"}
-          </p>
+    <form onSubmit={handleSubmit} className="flex h-full min-h-0 flex-col">
+      {/* Pinned header — stays visible while the body below scrolls */}
+      <div className="shrink-0 border-b px-6 pt-6 pb-4 sm:px-8">
+        <h2 className="text-xl font-bold tracking-tight">
+          {isEditing ? "Edit Product" : "Add Product"}
+        </h2>
+        <p className="text-muted-foreground mt-0.5 text-sm">
+          {isEditing
+            ? "Modify your product catalog details"
+            : "Add a new product to your inventory"}
+        </p>
+      </div>
+
+      {error && (
+        <div className="bg-destructive/10 border-destructive/20 text-destructive mx-6 mt-4 flex shrink-0 items-center gap-3 rounded-xl border p-3.5 text-sm shadow-sm sm:mx-8">
+          <AlertCircle className="h-5 w-5 shrink-0" />
+          <div>{error}</div>
         </div>
-        <div className="flex gap-3">
+      )}
+
+      {/* Scrollable body — only this area scrolls, header and footer stay put */}
+      <div className="scrollbar-thin min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6 sm:px-8">
+        {/* Card: Publishing — surfaced right under Details since Active/Draft is a
+            high-priority field, not an afterthought buried below Options & Variants. */}
+        <div className="bg-card rounded-2xl border p-5 shadow-sm">
+          <h3 className="mb-3 text-lg font-semibold tracking-tight">
+            Publishing
+          </h3>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="sm:max-w-sm">
+              <label className="text-muted-foreground mb-1.5 block text-xs font-semibold tracking-wider uppercase">
+                Product status
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="border-input bg-background/50 focus:bg-background ring-offset-background focus:ring-ring h-10 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 focus:ring-offset-2 sm:w-48"
+              >
+                <option value="active">Active</option>
+                <option value="draft">Draft</option>
+              </select>
+            </div>
+            <p className="text-muted-foreground text-xs leading-5 sm:max-w-xs">
+              Active products are immediately available for automated customer
+              recommendations and stock validation in the Meta AI Chat Employee.
+            </p>
+          </div>
+        </div>
+
+        {/* Card: Details */}
+        <div className="bg-card rounded-2xl border p-5 shadow-sm">
+          <h3 className="mb-4 text-lg font-semibold tracking-tight">
+            Product Details
+          </h3>
+          <div className="space-y-4">
+            <div>
+              <label className="text-muted-foreground mb-1.5 block text-xs font-semibold tracking-wider uppercase">
+                Title
+              </label>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Premium Black Panjabi"
+                className="bg-background/50 focus:bg-background rounded-xl border"
+              />
+            </div>
+            <div>
+              <label className="text-muted-foreground mb-1.5 block text-xs font-semibold tracking-wider uppercase">
+                Category
+              </label>
+              <Input
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                placeholder="e.g. Shirts, Panjabi, Sandals"
+                className="bg-background/50 focus:bg-background rounded-xl border"
+              />
+            </div>
+            <div>
+              <label className="text-muted-foreground mb-1.5 block text-xs font-semibold tracking-wider uppercase">
+                Gender
+              </label>
+              <select
+                value={gender}
+                onChange={(e) => setGender(e.target.value)}
+                className="border-input bg-background/50 focus:bg-background ring-offset-background focus:ring-ring h-10 w-full rounded-xl border px-3 text-sm outline-none focus:ring-2 focus:ring-offset-2"
+              >
+                <option value="">Not specified</option>
+                <option value="men">Men</option>
+                <option value="women">Women</option>
+                <option value="unisex">Unisex</option>
+                <option value="kids">Kids</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-muted-foreground mb-1.5 block text-xs font-semibold tracking-wider uppercase">
+                Rating
+              </label>
+              <StarPicker value={rating} onChange={setRating} />
+            </div>
+            <div>
+              <label className="text-muted-foreground mb-1.5 block text-xs font-semibold tracking-wider uppercase">
+                Description
+              </label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Describe your product benefits, fabric, sizes, and specs..."
+                rows={5}
+                className="placeholder:text-muted-foreground border-input ring-offset-background focus-visible:ring-ring bg-background/50 focus:bg-background w-full rounded-xl border px-3.5 py-3 text-sm transition-all outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Card: Media */}
+        <div className="bg-card rounded-2xl border p-5 shadow-sm">
+          <h3 className="mb-2 text-lg font-semibold tracking-tight">Media</h3>
+          <p className="text-muted-foreground mb-4 text-xs leading-5">
+            Add product images by URL or upload files. Uploaded files are stored
+            in S3-compatible storage and saved as public URLs.
+          </p>
+
+          <div className="grid gap-4">
+            <div className="flex gap-2">
+              <Input
+                value={newImageUrl}
+                onChange={(e) => setNewImageUrl(e.target.value)}
+                placeholder="Paste image URL here..."
+                className="bg-background/50 focus:bg-background rounded-xl border"
+              />
+              <Button type="button" onClick={handleAddImageUrl}>
+                Add URL
+              </Button>
+            </div>
+
+            <div className="bg-background/50 hover:bg-background relative flex items-center justify-center rounded-2xl border-2 border-dashed p-6 text-center transition-colors">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                disabled={uploadingImage}
+                className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
+              />
+              <div className="space-y-1.5">
+                <Upload className="text-muted-foreground mx-auto h-8 w-8" />
+                <div className="text-sm font-medium">
+                  {uploadingImage ? "Uploading..." : "Upload image from device"}
+                </div>
+                <div className="text-muted-foreground text-xs">
+                  {uploadingImage
+                    ? "Please wait while the image uploads"
+                    : "Drag and drop or click to choose file"}
+                </div>
+              </div>
+            </div>
+
+            {/* Gallery Grid */}
+            {images.length > 0 && (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
+                {images.map((url, idx) => (
+                  <div
+                    key={idx}
+                    className="group bg-background relative aspect-square overflow-hidden rounded-2xl border shadow-sm"
+                  >
+                    <img
+                      src={url}
+                      alt={`Preview ${idx}`}
+                      className="h-full w-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveImage(idx)}
+                      className="bg-destructive text-destructive-foreground absolute top-2 right-2 rounded-full p-1.5 opacity-0 shadow-md transition-opacity group-hover:opacity-100"
+                      aria-label="Remove image"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                    {idx === 0 && (
+                      <span className="bg-primary text-primary-foreground absolute bottom-2 left-2 rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wider uppercase">
+                        Cover
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Options & Variants Selector */}
+        <div className="bg-card rounded-2xl border p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold tracking-tight">
+              Options & Variants
+            </h3>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="hasVariants"
+                checked={hasVariants}
+                onChange={(e) => setHasVariants(e.target.checked)}
+                className="accent-primary h-4 w-4 rounded"
+              />
+              <label
+                htmlFor="hasVariants"
+                className="cursor-pointer text-sm font-semibold"
+              >
+                This product has variations (e.g. Size, Color)
+              </label>
+            </div>
+          </div>
+
+          {hasVariants && (
+            <div className="mt-6 space-y-6">
+              <Separator />
+              {/* Options Builder */}
+              <div className="space-y-4">
+                <h4 className="text-foreground text-sm font-semibold tracking-tight">
+                  Define Options
+                </h4>
+
+                {options.map((opt, optIdx) => (
+                  <div
+                    key={optIdx}
+                    className="bg-background flex flex-col gap-3 rounded-2xl border p-4 shadow-sm"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-foreground text-sm font-bold">
+                        Option {optIdx + 1}: {opt.name}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRemoveOption(optIdx)}
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive h-8 w-8"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      {opt.values.map((val, valIdx) => (
+                        <span
+                          key={valIdx}
+                          className="bg-secondary text-secondary-foreground inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold"
+                        >
+                          {val}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleRemoveOptionValue(optIdx, valIdx)
+                            }
+                            className="text-muted-foreground hover:text-foreground font-bold"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Add value (e.g. Red, XL)..."
+                        id={`opt-val-input-${optIdx}`}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            const inputEl = e.currentTarget as HTMLInputElement;
+                            handleAddOptionValue(optIdx, inputEl.value);
+                            inputEl.value = "";
+                          }
+                        }}
+                        className="bg-background/50 focus:bg-background rounded-xl border text-xs"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const inputEl = document.getElementById(
+                            `opt-val-input-${optIdx}`,
+                          ) as HTMLInputElement;
+                          if (inputEl) {
+                            handleAddOptionValue(optIdx, inputEl.value);
+                            inputEl.value = "";
+                          }
+                        }}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+
+                {options.length < 3 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleQuickAddOption("Colour")}
+                        className="text-muted-foreground hover:bg-muted rounded-full border px-3 py-1 text-xs font-medium"
+                      >
+                        + Colour
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleQuickAddOption("Size")}
+                        className="text-muted-foreground hover:bg-muted rounded-full border px-3 py-1 text-xs font-medium"
+                      >
+                        + Size
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Input
+                        value={newOptionName}
+                        onChange={(e) => setNewOptionName(e.target.value)}
+                        placeholder="Or type a custom option name (e.g. Material)..."
+                        className="bg-background/50 focus:bg-background rounded-xl border"
+                      />
+                      <Button
+                        type="button"
+                        onClick={handleAddOption}
+                        variant="outline"
+                        className="shrink-0"
+                      >
+                        <Plus className="mr-2 h-4 w-4" /> Add Option
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {variants.length > 0 && (
+                <>
+                  <Separator />
+                  {/* Variants list editor */}
+                  <div className="space-y-4">
+                    <h4 className="text-foreground text-sm font-semibold tracking-tight">
+                      Configure Variants ({variants.length})
+                    </h4>
+                    <div className="overflow-x-auto rounded-2xl border">
+                      <table className="w-full border-collapse text-left">
+                        <thead>
+                          <tr className="bg-muted/40 text-muted-foreground border-b text-xs font-semibold tracking-wider uppercase">
+                            <th className="p-3">Variant</th>
+                            <th className="p-3">Price</th>
+                            <th className="p-3">Compare At</th>
+                            <th className="p-3">SKU</th>
+                            <th className="p-3">Inventory</th>
+                            <th className="p-3">Image URL</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {variants.map((v, idx) => (
+                            <tr
+                              key={idx}
+                              className="hover:bg-muted/10 border-b"
+                            >
+                              <td className="text-foreground p-3 text-sm font-semibold">
+                                {v.title}
+                              </td>
+                              <td className="p-3">
+                                <Input
+                                  type="number"
+                                  value={v.price}
+                                  onChange={(e) =>
+                                    handleVariantChange(
+                                      idx,
+                                      "price",
+                                      Number(e.target.value) || 0,
+                                    )
+                                  }
+                                  className="h-8 max-w-[100px] rounded-lg text-xs"
+                                />
+                              </td>
+                              <td className="p-3">
+                                <Input
+                                  type="number"
+                                  value={v.compareAtPrice ?? ""}
+                                  onChange={(e) =>
+                                    handleVariantChange(
+                                      idx,
+                                      "compareAtPrice",
+                                      e.target.value
+                                        ? Number(e.target.value)
+                                        : "",
+                                    )
+                                  }
+                                  className="h-8 max-w-[100px] rounded-lg text-xs"
+                                />
+                              </td>
+                              <td className="p-3">
+                                <Input
+                                  value={v.sku ?? ""}
+                                  onChange={(e) =>
+                                    handleVariantChange(
+                                      idx,
+                                      "sku",
+                                      e.target.value,
+                                    )
+                                  }
+                                  className="h-8 max-w-[120px] rounded-lg text-xs"
+                                />
+                              </td>
+                              <td className="p-3">
+                                <Input
+                                  type="number"
+                                  value={v.inventoryQuantity}
+                                  onChange={(e) =>
+                                    handleVariantChange(
+                                      idx,
+                                      "inventoryQuantity",
+                                      Number(e.target.value) || 0,
+                                    )
+                                  }
+                                  className="h-8 max-w-[80px] rounded-lg text-xs"
+                                />
+                              </td>
+                              <td className="p-3">
+                                <select
+                                  value={v.imageUrl ?? ""}
+                                  onChange={(e) =>
+                                    handleVariantChange(
+                                      idx,
+                                      "imageUrl",
+                                      e.target.value,
+                                    )
+                                  }
+                                  className="border-input bg-background/50 focus:ring-ring h-8 max-w-[120px] rounded-lg border px-2 text-xs outline-none focus:ring-1"
+                                >
+                                  <option value="">None</option>
+                                  {images.map((img, i) => (
+                                    <option key={i} value={img}>
+                                      Image {i + 1}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {!hasVariants && (
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <label className="text-muted-foreground mb-1 block text-xs font-semibold tracking-wider uppercase">
+                  Price
+                </label>
+                <Input
+                  type="number"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  placeholder="1850"
+                  className="bg-background/50 focus:bg-background rounded-xl border"
+                />
+              </div>
+              <div>
+                <label className="text-muted-foreground mb-1 block text-xs font-semibold tracking-wider uppercase">
+                  Compare At Price
+                </label>
+                <Input
+                  type="number"
+                  value={compareAtPrice}
+                  onChange={(e) => setCompareAtPrice(e.target.value)}
+                  placeholder="2200"
+                  className="bg-background/50 focus:bg-background rounded-xl border"
+                />
+              </div>
+              <div>
+                <label className="text-muted-foreground mb-1 block text-xs font-semibold tracking-wider uppercase">
+                  SKU
+                </label>
+                <Input
+                  value={sku}
+                  onChange={(e) => setSku(e.target.value)}
+                  placeholder="PANJABI-BLK-M"
+                  className="bg-background/50 focus:bg-background rounded-xl border"
+                />
+              </div>
+              <div>
+                <label className="text-muted-foreground mb-1 block text-xs font-semibold tracking-wider uppercase">
+                  Inventory Qty
+                </label>
+                <Input
+                  type="number"
+                  value={inventoryQuantity}
+                  onChange={(e) => setInventoryQuantity(e.target.value)}
+                  placeholder="50"
+                  className="bg-background/50 focus:bg-background rounded-xl border"
+                />
+              </div>
+              <div>
+                <label className="text-muted-foreground mb-1 block text-xs font-semibold tracking-wider uppercase">
+                  Low Stock Threshold
+                </label>
+                <Input
+                  type="number"
+                  value={lowStockThreshold}
+                  onChange={(e) => setLowStockThreshold(e.target.value)}
+                  placeholder="5"
+                  className="bg-background/50 focus:bg-background rounded-xl border"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Pinned footer — Delete stays separated on the left so it can't be fat-fingered
+          next to Cancel/Save. */}
+      <div className="flex shrink-0 items-center justify-between gap-3 border-t px-6 py-4 sm:px-8">
+        <div>
           {onDelete && (
-            <Button type="button" variant="destructive" onClick={onDelete}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onDelete}
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            >
               <Trash2 className="mr-2 h-4 w-4" /> Delete product
             </Button>
           )}
+        </div>
+        <div className="flex gap-2">
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
           </Button>
           <Button type="submit" disabled={isSaving}>
             {isSaving ? "Saving..." : "Save Product"}
           </Button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="bg-destructive/10 border-destructive/20 text-destructive flex items-center gap-3 rounded-2xl border p-4 text-sm shadow-sm">
-          <AlertCircle className="h-5 w-5 shrink-0" />
-          <div>{error}</div>
-        </div>
-      )}
-
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-        {/* Main Column */}
-        <div className="space-y-6">
-          {/* Card: Details */}
-          <div className="bg-card rounded-[28px] border p-6 shadow-sm">
-            <h3 className="mb-4 text-lg font-semibold tracking-tight">
-              Product Details
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="text-muted-foreground mb-1.5 block text-xs font-semibold uppercase tracking-wider">
-                  Title
-                </label>
-                <Input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Premium Black Panjabi"
-                  className="rounded-xl border bg-background/50 focus:bg-background"
-                />
-              </div>
-              <div>
-                <label className="text-muted-foreground mb-1.5 block text-xs font-semibold uppercase tracking-wider">
-                  Category
-                </label>
-                <Input
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  placeholder="e.g. Shirts, Panjabi, Sandals"
-                  className="rounded-xl border bg-background/50 focus:bg-background"
-                />
-              </div>
-              <div>
-                <label className="text-muted-foreground mb-1.5 block text-xs font-semibold uppercase tracking-wider">
-                  Gender
-                </label>
-                <select
-                  value={gender}
-                  onChange={(e) => setGender(e.target.value)}
-                  className="border-input bg-background/50 focus:bg-background h-10 w-full rounded-xl border px-3 text-sm outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                >
-                  <option value="">Not specified</option>
-                  <option value="men">Men</option>
-                  <option value="women">Women</option>
-                  <option value="unisex">Unisex</option>
-                  <option value="kids">Kids</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-muted-foreground mb-1.5 block text-xs font-semibold uppercase tracking-wider">
-                  Rating
-                </label>
-                <StarPicker value={rating} onChange={setRating} />
-              </div>
-              <div>
-                <label className="text-muted-foreground mb-1.5 block text-xs font-semibold uppercase tracking-wider">
-                  Description
-                </label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Describe your product benefits, fabric, sizes, and specs..."
-                  rows={5}
-                  className="placeholder:text-muted-foreground border-input ring-offset-background focus-visible:ring-ring bg-background/50 focus:bg-background w-full rounded-xl border px-3.5 py-3 text-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-offset-2"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Card: Media */}
-          <div className="bg-card rounded-[28px] border p-6 shadow-sm">
-            <h3 className="mb-2 text-lg font-semibold tracking-tight">
-              Media
-            </h3>
-            <p className="text-muted-foreground mb-4 text-xs leading-5">
-              Add product images by URL or upload files. Uploaded files are stored in S3-compatible storage and saved as public URLs.
-            </p>
-
-            <div className="grid gap-4">
-              <div className="flex gap-2">
-                <Input
-                  value={newImageUrl}
-                  onChange={(e) => setNewImageUrl(e.target.value)}
-                  placeholder="Paste image URL here..."
-                  className="rounded-xl border bg-background/50 focus:bg-background"
-                />
-                <Button type="button" onClick={handleAddImageUrl}>
-                  Add URL
-                </Button>
-              </div>
-
-              <div className="flex items-center justify-center rounded-2xl border-2 border-dashed bg-background/50 p-6 text-center hover:bg-background transition-colors relative">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  disabled={uploadingImage}
-                  className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
-                />
-                <div className="space-y-1.5">
-                  <Upload className="mx-auto h-8 w-8 text-muted-foreground" />
-                  <div className="text-sm font-medium">
-                    {uploadingImage ? "Uploading..." : "Upload image from device"}
-                  </div>
-                  <div className="text-muted-foreground text-xs">
-                    {uploadingImage ? "Please wait while the image uploads" : "Drag and drop or click to choose file"}
-                  </div>
-                </div>
-              </div>
-
-              {/* Gallery Grid */}
-              {images.length > 0 && (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5">
-                  {images.map((url, idx) => (
-                    <div
-                      key={idx}
-                      className="group bg-background relative aspect-square overflow-hidden rounded-2xl border shadow-sm"
-                    >
-                      <img
-                        src={url}
-                        alt={`Preview ${idx}`}
-                        className="h-full w-full object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveImage(idx)}
-                        className="bg-destructive text-destructive-foreground absolute right-2 top-2 rounded-full p-1.5 shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
-                        aria-label="Remove image"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                      {idx === 0 && (
-                        <span className="bg-primary text-primary-foreground absolute bottom-2 left-2 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
-                          Cover
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Options & Variants Selector */}
-          <div className="bg-card rounded-[28px] border p-6 shadow-sm">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold tracking-tight">
-                Options & Variants
-              </h3>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="hasVariants"
-                  checked={hasVariants}
-                  onChange={(e) => setHasVariants(e.target.checked)}
-                  className="accent-primary h-4 w-4 rounded"
-                />
-                <label
-                  htmlFor="hasVariants"
-                  className="text-sm font-semibold cursor-pointer"
-                >
-                  This product has variations (e.g. Size, Color)
-                </label>
-              </div>
-            </div>
-
-            {hasVariants && (
-              <div className="mt-6 space-y-6">
-                <Separator />
-                {/* Options Builder */}
-                <div className="space-y-4">
-                  <h4 className="text-sm font-semibold tracking-tight text-foreground">
-                    Define Options
-                  </h4>
-
-                  {options.map((opt, optIdx) => (
-                    <div
-                      key={optIdx}
-                      className="bg-background flex flex-col gap-3 rounded-2xl border p-4 shadow-sm"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-bold text-foreground">
-                          Option {optIdx + 1}: {opt.name}
-                        </span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleRemoveOption(optIdx)}
-                          className="text-destructive hover:bg-destructive/10 hover:text-destructive h-8 w-8"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-
-                      <div className="flex flex-wrap gap-1.5">
-                        {opt.values.map((val, valIdx) => (
-                          <span
-                            key={valIdx}
-                            className="bg-secondary text-secondary-foreground inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border"
-                          >
-                            {val}
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleRemoveOptionValue(optIdx, valIdx)
-                              }
-                              className="text-muted-foreground hover:text-foreground font-bold"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="Add value (e.g. Red, XL)..."
-                          id={`opt-val-input-${optIdx}`}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              const inputEl = e.currentTarget as HTMLInputElement;
-                              handleAddOptionValue(optIdx, inputEl.value);
-                              inputEl.value = "";
-                            }
-                          }}
-                          className="rounded-xl border bg-background/50 focus:bg-background text-xs"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const inputEl = document.getElementById(
-                              `opt-val-input-${optIdx}`,
-                            ) as HTMLInputElement;
-                            if (inputEl) {
-                              handleAddOptionValue(optIdx, inputEl.value);
-                              inputEl.value = "";
-                            }
-                          }}
-                        >
-                          Add
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-
-                  {options.length < 3 && (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleQuickAddOption("Colour")}
-                          className="rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-muted"
-                        >
-                          + Colour
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleQuickAddOption("Size")}
-                          className="rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-muted"
-                        >
-                          + Size
-                        </button>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Input
-                          value={newOptionName}
-                          onChange={(e) => setNewOptionName(e.target.value)}
-                          placeholder="Or type a custom option name (e.g. Material)..."
-                          className="rounded-xl border bg-background/50 focus:bg-background"
-                        />
-                        <Button
-                          type="button"
-                          onClick={handleAddOption}
-                          variant="outline"
-                          className="shrink-0"
-                        >
-                          <Plus className="mr-2 h-4 w-4" /> Add Option
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {variants.length > 0 && (
-                  <>
-                    <Separator />
-                    {/* Variants list editor */}
-                    <div className="space-y-4">
-                      <h4 className="text-sm font-semibold tracking-tight text-foreground">
-                        Configure Variants ({variants.length})
-                      </h4>
-                      <div className="overflow-x-auto rounded-2xl border">
-                        <table className="w-full text-left border-collapse">
-                          <thead>
-                            <tr className="bg-muted/40 text-muted-foreground border-b text-xs font-semibold uppercase tracking-wider">
-                              <th className="p-3">Variant</th>
-                              <th className="p-3">Price</th>
-                              <th className="p-3">Compare At</th>
-                              <th className="p-3">SKU</th>
-                              <th className="p-3">Inventory</th>
-                              <th className="p-3">Image URL</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {variants.map((v, idx) => (
-                              <tr key={idx} className="border-b hover:bg-muted/10">
-                                <td className="p-3 text-sm font-semibold text-foreground">
-                                  {v.title}
-                                </td>
-                                <td className="p-3">
-                                  <Input
-                                    type="number"
-                                    value={v.price}
-                                    onChange={(e) =>
-                                      handleVariantChange(
-                                        idx,
-                                        "price",
-                                        Number(e.target.value) || 0,
-                                      )
-                                    }
-                                    className="h-8 max-w-[100px] text-xs rounded-lg"
-                                  />
-                                </td>
-                                <td className="p-3">
-                                  <Input
-                                    type="number"
-                                    value={v.compareAtPrice ?? ""}
-                                    onChange={(e) =>
-                                      handleVariantChange(
-                                        idx,
-                                        "compareAtPrice",
-                                        e.target.value
-                                          ? Number(e.target.value)
-                                          : "",
-                                      )
-                                    }
-                                    className="h-8 max-w-[100px] text-xs rounded-lg"
-                                  />
-                                </td>
-                                <td className="p-3">
-                                  <Input
-                                    value={v.sku ?? ""}
-                                    onChange={(e) =>
-                                      handleVariantChange(
-                                        idx,
-                                        "sku",
-                                        e.target.value,
-                                      )
-                                    }
-                                    className="h-8 max-w-[120px] text-xs rounded-lg"
-                                  />
-                                </td>
-                                <td className="p-3">
-                                  <Input
-                                    type="number"
-                                    value={v.inventoryQuantity}
-                                    onChange={(e) =>
-                                      handleVariantChange(
-                                        idx,
-                                        "inventoryQuantity",
-                                        Number(e.target.value) || 0,
-                                      )
-                                    }
-                                    className="h-8 max-w-[80px] text-xs rounded-lg"
-                                  />
-                                </td>
-                                <td className="p-3">
-                                  <select
-                                    value={v.imageUrl ?? ""}
-                                    onChange={(e) =>
-                                      handleVariantChange(
-                                        idx,
-                                        "imageUrl",
-                                        e.target.value,
-                                      )
-                                    }
-                                    className="border-input bg-background/50 h-8 max-w-[120px] rounded-lg border px-2 text-xs outline-none focus:ring-1 focus:ring-ring"
-                                  >
-                                    <option value="">None</option>
-                                    {images.map((img, i) => (
-                                      <option key={i} value={img}>
-                                        Image {i + 1}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
-            {!hasVariants && (
-              <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <div>
-                  <label className="text-muted-foreground mb-1 block text-xs font-semibold uppercase tracking-wider">
-                    Price
-                  </label>
-                  <Input
-                    type="number"
-                    value={price}
-                    onChange={(e) => setPrice(e.target.value)}
-                    placeholder="1850"
-                    className="rounded-xl border bg-background/50 focus:bg-background"
-                  />
-                </div>
-                <div>
-                  <label className="text-muted-foreground mb-1 block text-xs font-semibold uppercase tracking-wider">
-                    Compare At Price
-                  </label>
-                  <Input
-                    type="number"
-                    value={compareAtPrice}
-                    onChange={(e) => setCompareAtPrice(e.target.value)}
-                    placeholder="2200"
-                    className="rounded-xl border bg-background/50 focus:bg-background"
-                  />
-                </div>
-                <div>
-                  <label className="text-muted-foreground mb-1 block text-xs font-semibold uppercase tracking-wider">
-                    SKU
-                  </label>
-                  <Input
-                    value={sku}
-                    onChange={(e) => setSku(e.target.value)}
-                    placeholder="PANJABI-BLK-M"
-                    className="rounded-xl border bg-background/50 focus:bg-background"
-                  />
-                </div>
-                <div>
-                  <label className="text-muted-foreground mb-1 block text-xs font-semibold uppercase tracking-wider">
-                    Inventory Qty
-                  </label>
-                  <Input
-                    type="number"
-                    value={inventoryQuantity}
-                    onChange={(e) => setInventoryQuantity(e.target.value)}
-                    placeholder="50"
-                    className="rounded-xl border bg-background/50 focus:bg-background"
-                  />
-                </div>
-                <div>
-                  <label className="text-muted-foreground mb-1 block text-xs font-semibold uppercase tracking-wider">
-                    Low Stock Threshold
-                  </label>
-                  <Input
-                    type="number"
-                    value={lowStockThreshold}
-                    onChange={(e) => setLowStockThreshold(e.target.value)}
-                    placeholder="5"
-                    className="rounded-xl border bg-background/50 focus:bg-background"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Sidebar Status Column */}
-        <div className="space-y-6">
-          <div className="bg-card rounded-[28px] border p-6 shadow-sm">
-            <h3 className="mb-4 text-lg font-semibold tracking-tight">
-              Publishing
-            </h3>
-            <div>
-              <label className="text-muted-foreground mb-1.5 block text-xs font-semibold uppercase tracking-wider">
-                Product status
-              </label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="border-input bg-background/50 focus:bg-background h-10 w-full rounded-xl border px-3 text-sm outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
-              >
-                <option value="active">Active</option>
-                <option value="draft">Draft</option>
-              </select>
-            </div>
-            <Separator className="my-5" />
-            <div className="text-muted-foreground text-xs leading-5">
-              Active products are immediately available for automated customer recommendations and stock validation in the Meta AI Chat Employee.
-            </div>
-          </div>
         </div>
       </div>
     </form>

@@ -49,9 +49,10 @@ interface TransactionTableProps {
   isLoading: boolean;
   onRefund: (row: TransactionRow) => void;
   refundingId: string | null;
+  canRefund: boolean;
 }
 
-export function TransactionTable({ rows, isLoading, onRefund, refundingId }: TransactionTableProps) {
+export function TransactionTable({ rows, isLoading, onRefund, refundingId, canRefund }: TransactionTableProps) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -105,7 +106,7 @@ export function TransactionTable({ rows, isLoading, onRefund, refundingId }: Tra
                 <td className="py-3 text-right text-muted-foreground">{formatCurrency(r.deliveryCharge)}</td>
                 <td className="py-3 text-muted-foreground">{formatDate(r.createdAt)}</td>
                 <td className="py-3 text-right">
-                  {r.status === "success" && (
+                  {r.status === "success" && canRefund && (
                     <Button
                       variant="ghost"
                       size="icon"

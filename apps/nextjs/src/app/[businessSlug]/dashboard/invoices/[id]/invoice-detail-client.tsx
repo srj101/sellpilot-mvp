@@ -21,6 +21,7 @@ import {
 import { Button } from "@acme/ui/button";
 import { useTRPC } from "~/trpc/react";
 import { useBusinessSlug } from "~/hooks/use-business-slug";
+import { usePermissions } from "~/hooks/use-permissions";
 import { ConfirmDialog } from "~/app/[businessSlug]/dashboard/_components/confirm-dialog";
 import { formatCurrency } from "../../(home)/_components/dashboard-utils";
 
@@ -59,6 +60,9 @@ export function InvoiceDetailClient({ invoice }: { invoice: InvoiceDetail }) {
   const searchParams = useSearchParams();
   const trpc = useTRPC();
   const businessSlug = useBusinessSlug();
+  const { can } = usePermissions();
+  const canEdit = can("orders", "edit");
+  const canDelete = can("orders", "delete");
 
   const updateStatusMutation = useMutation(trpc.orders.updateStatus.mutationOptions());
   const deleteMutation = useMutation(trpc.orders.delete.mutationOptions());
@@ -131,9 +135,9 @@ export function InvoiceDetailClient({ invoice }: { invoice: InvoiceDetail }) {
             <span className="text-xs text-muted-foreground font-medium">Status:</span>
             <select
               value={status}
-              disabled={isUpdating}
+              disabled={isUpdating || !canEdit}
               onChange={(e) => handleStatusChange(e.target.value as "pending" | "confirmed" | "paid" | "shipped" | "delivered" | "cancelled" | "returned")}
-              className="text-xs font-semibold bg-transparent border-none outline-none text-foreground cursor-pointer"
+              className="text-xs font-semibold bg-transparent border-none outline-none text-foreground cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
             >
               <option value="pending">Pending</option>
               <option value="paid">Paid</option>
@@ -149,15 +153,17 @@ export function InvoiceDetailClient({ invoice }: { invoice: InvoiceDetail }) {
             Print
           </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleDelete}
-            className="h-8 gap-1.5 text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10 border-red-500/20"
-          >
-            <Trash2 className="h-4 w-4" />
-            Delete
-          </Button>
+          {canDelete && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDelete}
+              className="h-8 gap-1.5 text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10 border-red-500/20"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </Button>
+          )}
         </div>
       </div>
 

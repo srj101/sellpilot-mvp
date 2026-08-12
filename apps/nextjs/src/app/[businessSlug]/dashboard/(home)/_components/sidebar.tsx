@@ -48,6 +48,7 @@ import {
   DropdownMenuTrigger,
 } from "@acme/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@acme/ui/sheet";
+import { Skeleton } from "@acme/ui/skeleton";
 import { toast } from "@acme/ui/toast";
 import {
   Tooltip,
@@ -146,41 +147,60 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 /**
- * Business-level (resource:action) permission required for each gated nav item — matches the
- * table in SELLPILOT_USER_FLOWS.md §4.3. "__owner__" means owner-only regardless of permissions
- * array. Items not listed here (Overview, eCommerce, Support, Pricing, Notifications) are
- * ungated. This is UX-only — the actual enforcement lives in each page's own procedure.
+ * Business-level (resource:action) permission required for each gated nav item. "__owner__"
+ * means owner-only regardless of permissions array. A value can also be an array, meaning
+ * "any one of these" — used for pages that blend several resources (e.g. Overview). Items not
+ * listed here (Notifications) are ungated because their backing procedures genuinely accept
+ * any business member (no resource-scoped data). This is UX-only — the actual
+ * enforcement lives in each page's own procedure; a mismatch here just means a member sees a
+ * link that then throws FORBIDDEN when they click it, rather than a security hole.
  */
-const NAV_PERMISSIONS: Record<string, string> = {
+const NAV_PERMISSIONS: Record<string, string | string[]> = {
+  // Overview blends orders/revenue, product/customer counts, and analytics — gated on
+  // dashboard.getOverview's permissionAnyProcedure(orders|products|customers|analytics :view).
+  "/dashboard": ["orders:view", "products:view", "customers:view", "analytics:view"],
   "/dashboard/inbox": "inbox:view",
+  "/dashboard/support": "inbox:view", // support-client.tsx calls inbox.getInboxData/setStatus
   "/dashboard/products": "products:view",
   "/dashboard/orders": "orders:view",
-  "/dashboard/payments": "orders:view",
+  "/dashboard/payments": "payments:view",
   "/dashboard/customers": "customers:view",
   "/dashboard/analytics": "analytics:view",
+  "/dashboard/ecommerce": "analytics:view", // ecommerce.getAccessTier/getOverview require analytics:view
   "/dashboard/offers": "offers:view",
-  "/dashboard/invoices": "invoices:view",
+  // invoices-client.tsx actually derives customer-facing invoices from orders.list, not the
+  // invoices.ts router (which has zero frontend callers and is entirely owner-only) — gate
+  // on what the page really calls, not the resource name that happens to match its label.
+  "/dashboard/invoices": "orders:view",
   "/dashboard/integrations": "__owner__",
   "/dashboard/store-connections": "__owner__",
   "/dashboard/billing": "__owner__",
+  // Choosing/changing the subscription plan is a billing decision — owner-only, matching
+  // billing/page.tsx's server-side enforcement.
+  "/dashboard/pricing": "__owner__",
   "/dashboard/roles": "users:view",
   "/dashboard/activity": "activity:view",
   "/dashboard/settings": "settings:view",
 };
 
-function useFilteredNavGroups() {
+function useFilteredNavGroups(): { groups: NavGroup[]; isLoading: boolean } {
   const trpc = useTRPC();
   const session = authClient.useSession();
   const role = session.data?.user?.role ?? "client";
   const isPlatformAdmin = role === "admin" || role === "superadmin";
 
-  const { data: myPermissions } = useQuery(trpc.roles.getMyPermissions.queryOptions());
-  const permissionsLoaded = myPermissions !== undefined;
+  const { data: myPermissions, isLoading: permissionsLoading } = useQuery(trpc.roles.getMyPermissions.queryOptions());
   const isOwner = myPermissions?.role === "owner";
   const permissions = myPermissions?.permissions ?? [];
   const hasAllPermissions = permissions.includes("*");
 
-  return NAV_GROUPS.map((group) => ({
+  // Wait for both session (drives the platform-admin items) and permissions (drives every
+  // gated item) before rendering real nav — resolving either one to a skeleton first avoids
+  // a flash of items the member doesn't actually have access to, or a flash of a fully-empty
+  // sidebar for owners/full-access members, on first paint.
+  const isLoading = session.isPending || permissionsLoading;
+
+  const groups = NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) => {
       if ((item.href === "/dashboard/saas" || item.href === "/dashboard/users") && !isPlatformAdmin) {
@@ -189,13 +209,14 @@ function useFilteredNavGroups() {
 
       const required = NAV_PERMISSIONS[item.href];
       if (!required) return true;
-      // Fail open while the permissions query is still loading — avoids a flash of hidden
-      // items on first paint for the common case (owners / full-access members).
-      if (!permissionsLoaded || isOwner || hasAllPermissions) return true;
+      if (isOwner || hasAllPermissions) return true;
       if (required === "__owner__") return false;
+      if (Array.isArray(required)) return required.some((r) => permissions.includes(r));
       return permissions.includes(required);
     }),
   })).filter((group) => group.items.length > 0);
+
+  return { groups, isLoading };
 }
 
 /* ─── Helpers ───────────────────────────────────────────────────────── */
@@ -627,7 +648,9 @@ function useActiveStoreInfo() {
   const activeStore = storesQuery.data?.find((s) => s.isActive);
   return {
     name: activeStore?.name ?? null,
-    role: activeStore?.role ?? null,
+    // roleLabel resolves to the assigned custom role's display name (e.g. "Management"),
+    // not just the base owner/member distinction — see business.ts's listMine.
+    role: activeStore?.roleLabel ?? null,
   };
 }
 
@@ -728,13 +751,45 @@ function SidebarLogoHeader({ isCollapsed }: { isCollapsed: boolean }) {
   );
 }
 
+/* ─── Loading skeleton (permissions/session still resolving) ────────── */
+
+function NavSkeleton({ isCollapsed }: { isCollapsed: boolean }) {
+  if (isCollapsed) {
+    return (
+      <div className="flex flex-col items-center gap-2 py-2">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Skeleton key={i} className="h-9 w-9 rounded-lg" />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 px-0 py-2">
+      {Array.from({ length: 3 }).map((_, g) => (
+        <div key={g} className="space-y-1.5">
+          <div className="px-3 pb-1">
+            <Skeleton className="h-2.5 w-20" />
+          </div>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 px-3 py-2">
+              <Skeleton className="h-7 w-7 shrink-0 rounded-lg" />
+              <Skeleton className="h-3.5 flex-1" />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ─── Desktop sidebar ──────────────────────────────────────────────── */
 
 function SidebarBody({ isCollapsed }: { isCollapsed: boolean }) {
   const { pathname, active: _active, unreadCount, notificationCount, businessSlug } = useSidebarData();
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
 
-  const filteredGroups = useFilteredNavGroups();
+  const { groups: filteredGroups, isLoading } = useFilteredNavGroups();
 
   return (
     <div
@@ -752,7 +807,10 @@ function SidebarBody({ isCollapsed }: { isCollapsed: boolean }) {
           isCollapsed ? "px-0 py-2 flex flex-col items-center pl-3" : "px-0 py-0",
         )}
       >
-        {filteredGroups.map((group) => (
+        {isLoading ? (
+          <NavSkeleton isCollapsed={isCollapsed} />
+        ) : (
+          filteredGroups.map((group) => (
           <div key={group.title} className={cn("mb-1", isCollapsed ? "flex flex-col items-center" : "")}>
             {!isCollapsed && <GroupTitle title={group.title} />}
             {isCollapsed && (
@@ -774,7 +832,8 @@ function SidebarBody({ isCollapsed }: { isCollapsed: boolean }) {
               ))}
             </div>
           </div>
-        ))}
+          ))
+        )}
       </nav>
 
       {/* Footer */}
@@ -789,32 +848,36 @@ function MobileSidebarSheet() {
   const { pathname, unreadCount, notificationCount, businessSlug } = useSidebarData();
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
 
-  const filteredGroups = useFilteredNavGroups();
+  const { groups: filteredGroups, isLoading } = useFilteredNavGroups();
 
   return (
     <div className="flex h-full flex-col overflow-hidden px-3 py-5">
 
       <nav className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-1">
-        {filteredGroups.map((group) => (
-          <div key={group.title} className="mb-1">
-            <GroupTitle title={group.title} />
-            <div className="space-y-0.5">
-              {group.items.map((item) => (
-                <NavRow
-                  key={item.label}
-                  item={item}
-                  pathname={pathname}
-                  isCollapsed={false}
-                  openMenus={openMenus}
-                  setOpenMenus={setOpenMenus}
-                  unreadCount={unreadCount}
-                  notificationCount={notificationCount}
-                  businessSlug={businessSlug}
-                />
-              ))}
+        {isLoading ? (
+          <NavSkeleton isCollapsed={false} />
+        ) : (
+          filteredGroups.map((group) => (
+            <div key={group.title} className="mb-1">
+              <GroupTitle title={group.title} />
+              <div className="space-y-0.5">
+                {group.items.map((item) => (
+                  <NavRow
+                    key={item.label}
+                    item={item}
+                    pathname={pathname}
+                    isCollapsed={false}
+                    openMenus={openMenus}
+                    setOpenMenus={setOpenMenus}
+                    unreadCount={unreadCount}
+                    notificationCount={notificationCount}
+                    businessSlug={businessSlug}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </nav>
       <SidebarFooter isCollapsed={false} />
     </div>

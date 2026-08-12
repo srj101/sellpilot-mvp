@@ -257,14 +257,47 @@ export function effectiveRatePerConversation(plan: PlanKey, cycle: BillingCycle 
   return price / volume;
 }
 
-/** Whole-taka overage charge for a period's usage against a plan's included volume, per
- * OVERAGE_RATES above. 0 when under the limit, or when the plan has no fixed overage rate
- * (Pro — "custom scaling", billed via PRO_ADD_ONS instead, never auto-charged here). */
-export function computeOverageAmount(plan: PlanKey, used: number): number {
+/** Slider step size and cap for pre-purchasing extra conversation capacity on top of a
+ * plan's base included volume (see ConversationSlider / computeExtraConversationsCost). */
+export const EXTRA_CONVERSATIONS_STEP = 500;
+export const EXTRA_CONVERSATIONS_MAX_MULTIPLIER = 3;
+
+/** Block price used to price a *deliberate* extra-capacity purchase (the pricing-page
+ * slider) — OVERAGE_RATES for Starter/Growth, or Pro's existing "Additional 5,000 AI
+ * conversations" scale-up add-on for Pro, since OVERAGE_RATES.pro is intentionally null
+ * (Pro's *automatic* metered overage is never auto-charged — see computeOverageAmount).
+ * An explicit purchase is a different thing from silent metered billing, so it's fine for
+ * Pro to have a price here even though it has no OVERAGE_RATES entry. */
+export function extraConversationsRate(plan: PlanKey): { pricePerBlock: number; blockSize: number } | null {
+  const rate = OVERAGE_RATES[plan];
+  if (rate) return rate;
+  const proAddOn = PRO_ADD_ONS.find((addOn) => addOn.key === "extra_conversations_5k");
+  return proAddOn ? { pricePerBlock: proAddOn.price, blockSize: 5000 } : null;
+}
+
+/** ৳ cost to add `extra` conversations on top of a plan's included volume, at
+ * extraConversationsRate's block price. Shared by the pricing-page slider preview and by
+ * subscribe/changePlan/business.create, so the price shown is always the price charged. */
+export function computeExtraConversationsCost(plan: PlanKey, extra: number): number {
+  const rate = extraConversationsRate(plan);
+  if (!rate || extra <= 0) return 0;
+  const blocks = Math.ceil(extra / rate.blockSize);
+  return blocks * rate.pricePerBlock;
+}
+
+/** Whole-taka *automatic* overage charge for a period's usage against a plan's included
+ * volume plus any pre-purchased extra capacity (`includedExtra`) — strictly OVERAGE_RATES,
+ * not extraConversationsRate's Pro fallback above: Pro usage beyond what was deliberately
+ * purchased is never auto-charged at renewal (billing plan intent — scale-up needs a
+ * conscious purchase, not a silent metered charge). 0 when under the effective limit, or
+ * when the plan has no fixed overage rate (Pro). */
+export function computeOverageAmount(plan: PlanKey, used: number, includedExtra = 0): number {
   const limit = PLAN_CATALOG[plan].limits.aiConversationsPerMonth;
   const rate = OVERAGE_RATES[plan];
-  if (limit === null || !rate || used <= limit) return 0;
-  const overageUnits = used - limit;
+  if (limit === null || !rate) return 0;
+  const effectiveLimit = limit + includedExtra;
+  if (used <= effectiveLimit) return 0;
+  const overageUnits = used - effectiveLimit;
   const blocks = Math.ceil(overageUnits / rate.blockSize);
   return blocks * rate.pricePerBlock;
 }

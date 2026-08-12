@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Check, Crown, Rocket, Sparkles, TrendingUp } from "lucide-react";
 
 import type { BillingCycle, PlanKey } from "@acme/api/plans";
-import { CYCLE_META, PLAN_CATALOG, PLAN_KEYS, formatPlanPrice, OVERAGE_RATES } from "@acme/api/plans";
+import { CYCLE_META, PLAN_CATALOG, PLAN_KEYS, formatPlanPrice, OVERAGE_RATES, computeExtraConversationsCost } from "@acme/api/plans";
 import { Button } from "@acme/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@acme/ui/card";
 import { cn } from "@acme/ui";
@@ -17,6 +17,9 @@ interface DashboardPlanState {
   currentPlan: PlanKey | null;
   isTrialing: boolean;
   pendingPlan: PlanKey | null;
+  /** Extra conversation capacity already purchased on the current plan, so the slider
+   * reopens showing what's actually billed instead of always resetting to 0. */
+  extraConversations?: number;
 }
 
 /** One visual identity per tier — a quick glance beats reading the name (lucide icons,
@@ -37,8 +40,8 @@ interface PlanGridProps {
   mode: "public" | "dashboard";
   /** Only meaningful in "dashboard" mode. */
   dashboardState?: DashboardPlanState;
-  /** Called only in "dashboard" mode when the owner picks a plan+cycle. */
-  onChoosePlan?: (plan: PlanKey, cycle: BillingCycle) => void;
+  /** Called only in "dashboard" mode when the owner picks a plan+cycle+extra capacity. */
+  onChoosePlan?: (plan: PlanKey, cycle: BillingCycle, extraConversations: number) => void;
   /** Disables all CTAs while a checkout mutation is in flight. */
   busyPlan?: PlanKey | null;
   initialCycle?: BillingCycle;
@@ -60,16 +63,19 @@ export function PlanGrid({
   compact = false,
 }: PlanGridProps) {
   const [cycle, setCycle] = useState<BillingCycle>(initialCycle);
-  const [extraConversations, setExtraConversations] = useState<Record<PlanKey, number>>({
-    starter: 0,
-    growth: 0,
-    pro: 0,
-  });
-  const [extraCosts, setExtraCosts] = useState<Record<PlanKey, number>>({
-    starter: 0,
-    growth: 0,
-    pro: 0,
-  });
+  // Seeded once from the account's current plan so reopening the "Change plan" sheet shows
+  // what's actually billed instead of always resetting to 0 — other tiers still start at 0
+  // since block sizes differ per plan and switching tiers means consciously re-picking capacity.
+  const [extraConversations, setExtraConversations] = useState<Record<PlanKey, number>>(() => ({
+    starter: dashboardState?.currentPlan === "starter" ? (dashboardState.extraConversations ?? 0) : 0,
+    growth: dashboardState?.currentPlan === "growth" ? (dashboardState.extraConversations ?? 0) : 0,
+    pro: dashboardState?.currentPlan === "pro" ? (dashboardState.extraConversations ?? 0) : 0,
+  }));
+  const [extraCosts, setExtraCosts] = useState<Record<PlanKey, number>>(() => ({
+    starter: computeExtraConversationsCost("starter", dashboardState?.currentPlan === "starter" ? (dashboardState.extraConversations ?? 0) : 0),
+    growth: computeExtraConversationsCost("growth", dashboardState?.currentPlan === "growth" ? (dashboardState.extraConversations ?? 0) : 0),
+    pro: computeExtraConversationsCost("pro", dashboardState?.currentPlan === "pro" ? (dashboardState.extraConversations ?? 0) : 0),
+  }));
 
   const handleConversationChange = useCallback((plan: PlanKey, extra: number, cost: number) => {
     setExtraConversations((prev) => ({ ...prev, [plan]: extra }));
@@ -93,7 +99,7 @@ export function PlanGrid({
           const isPending = mode === "dashboard" && dashboardState?.pendingPlan === key;
           const isBusy = busyPlan === key;
           const Icon = PLAN_ICON[key];
-          const hasSlider = !compact && cycle === "monthly";
+          const hasSlider = cycle === "monthly";
 
           return (
             <Card
@@ -168,13 +174,14 @@ export function PlanGrid({
                   ))}
                 </ul>
 
-                {/* Conversation Slider — only on dashboard, monthly cycle */}
+                {/* Conversation Slider — monthly cycle only, since overage is billed per month */}
                 {hasSlider && (
                   <div className="mt-2 border-t pt-4">
                     <ConversationSlider
                       plan={key}
                       baseConversations={plan.limits.aiConversationsPerMonth ?? 0}
                       onChange={(extra, cost) => handleConversationChange(key, extra, cost)}
+                      initialExtra={isCurrent ? (dashboardState?.extraConversations ?? 0) : 0}
                     />
                   </div>
                 )}
@@ -198,7 +205,7 @@ export function PlanGrid({
                       </Button>
                     )}
                   </>
-                ) : isCurrent ? (
+                ) : isCurrent && extraConversations[key] === (dashboardState?.extraConversations ?? 0) ? (
                   <Button className="w-full" variant="outline" disabled>
                     {dashboardState.isTrialing ? "Your trial plan" : "Your current plan"}
                   </Button>
@@ -207,9 +214,15 @@ export function PlanGrid({
                     className="w-full"
                     variant={plan.popular ? "default" : "outline"}
                     disabled={isBusy}
-                    onClick={() => onChoosePlan?.(key, cycle)}
+                    onClick={() => onChoosePlan?.(key, cycle, extraConversations[key])}
                   >
-                    {isBusy ? "Redirecting…" : isPending ? "Change scheduled plan" : "Choose Plan"}
+                    {isBusy
+                      ? "Redirecting…"
+                      : isPending
+                        ? "Change scheduled plan"
+                        : isCurrent
+                          ? "Update capacity"
+                          : "Choose Plan"}
                   </Button>
                 )}
               </CardFooter>

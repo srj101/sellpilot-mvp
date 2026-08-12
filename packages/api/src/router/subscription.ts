@@ -7,7 +7,7 @@ import type { db as Db } from "@acme/db/client";
 import { business, businessMember, order, paymentMethod, product, saasInvoice, subscription } from "@acme/db/schema";
 
 import type { BillingCycle, PlanKey } from "../lib/plans";
-import { BILLING_CYCLES, CYCLE_META, PLAN_CATALOG, PLAN_KEYS, priceForCycle } from "../lib/plans";
+import { BILLING_CYCLES, CYCLE_META, EXTRA_CONVERSATIONS_MAX_MULTIPLIER, PLAN_CATALOG, PLAN_KEYS, computeExtraConversationsCost, priceForCycle } from "../lib/plans";
 import { getStorageUsage } from "../lib/plan-limits";
 import { CARD_AND_BANK_GATEWAYS, initiatePayment, resolvePlatformCredentials as resolvePlatformCredentialsRaw, validatePayment } from "../lib/sslcommerz";
 import { enqueueActivityLog } from "../lib/activity-queue";
@@ -35,6 +35,15 @@ function addMonths(date: Date, months: number): Date {
 
 function planRank(plan: PlanKey): number {
   return PLAN_KEYS.indexOf(plan);
+}
+
+/** Defense in depth against a modified client — the slider already clamps to this cap. */
+function assertExtraConversationsWithinCap(plan: PlanKey, extraConversations: number) {
+  const base = PLAN_CATALOG[plan].limits.aiConversationsPerMonth ?? 0;
+  const maxExtra = base * EXTRA_CONVERSATIONS_MAX_MULTIPLIER;
+  if (extraConversations > maxExtra) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Extra conversations exceed the allowed maximum for this plan." });
+  }
 }
 
 function invoiceNumber(): string {
@@ -78,6 +87,7 @@ export const subscriptionRouter = {
         status: null,
         billingCycle: null,
         amount: 0,
+        extraConversations: 0,
         currentPeriodStart: null,
         currentPeriodEnd: null,
         cancelAtPeriodEnd: false,
@@ -104,6 +114,7 @@ export const subscriptionRouter = {
       status: sub.status,
       billingCycle: sub.billingCycle as BillingCycle,
       amount: sub.amount,
+      extraConversations: sub.extraConversations,
       currentPeriodStart: sub.currentPeriodStart,
       currentPeriodEnd: sub.currentPeriodEnd,
       cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
@@ -144,8 +155,18 @@ export const subscriptionRouter = {
 
     const pct = (used: number, limit: number | null) => (limit === null ? null : Math.min(100, Math.round((used / limit) * 100)));
 
+    // Purchased extra capacity raises the effective limit the usage meter compares
+    // against — otherwise an owner who bought extra conversations would see themselves as
+    // near/over limit against the plan's base volume alone.
+    const aiConversationsLimit =
+      limits.aiConversationsPerMonth === null ? null : limits.aiConversationsPerMonth + (sub?.extraConversations ?? 0);
+
     return {
-      aiConversations: { used: sub?.aiConversationsUsed ?? 0, limit: limits.aiConversationsPerMonth, pct: pct(sub?.aiConversationsUsed ?? 0, limits.aiConversationsPerMonth) },
+      aiConversations: {
+        used: sub?.aiConversationsUsed ?? 0,
+        limit: aiConversationsLimit,
+        pct: pct(sub?.aiConversationsUsed ?? 0, aiConversationsLimit),
+      },
       products: { used: productsUsed, limit: limits.products, pct: pct(productsUsed, limits.products) },
       seats: { used: seatsUsed, limit: limits.teamSeats, pct: pct(seatsUsed, limits.teamSeats) },
       invoices: { used: invoicesUsed, limit: limits.invoices, pct: pct(invoicesUsed, limits.invoices) },
@@ -163,9 +184,10 @@ export const subscriptionRouter = {
    * (e.g. from the locked page). Does NOT flip subscription status — markInvoicePaid does,
    * called from the IPN, which is the only trustworthy confirmation channel. */
   subscribe: ownerOnlyProcedure
-    .input(z.object({ plan: PlanKeySchema, billingCycle: BillingCycleSchema }))
+    .input(z.object({ plan: PlanKeySchema, billingCycle: BillingCycleSchema, extraConversations: z.number().int().min(0).optional().default(0) }))
     .mutation(async ({ ctx, input }) => {
-      const amount = priceForCycle(input.plan, input.billingCycle);
+      assertExtraConversationsWithinCap(input.plan, input.extraConversations);
+      const amount = priceForCycle(input.plan, input.billingCycle) + computeExtraConversationsCost(input.plan, input.extraConversations);
 
       const periodStart = new Date();
       const months = CYCLE_META[input.billingCycle].months;
@@ -179,6 +201,7 @@ export const subscriptionRouter = {
           plan: input.plan,
           billingCycle: input.billingCycle,
           amount,
+          extraConversations: input.extraConversations,
           status: "pending",
           periodStart,
           periodEnd,
@@ -215,12 +238,13 @@ export const subscriptionRouter = {
    * otherwise deferred to period end via pendingPlan so existing members/products are never
    * force-removed mid-cycle. */
   changePlan: ownerOnlyProcedure
-    .input(z.object({ plan: PlanKeySchema, billingCycle: BillingCycleSchema }))
+    .input(z.object({ plan: PlanKeySchema, billingCycle: BillingCycleSchema, extraConversations: z.number().int().min(0).optional().default(0) }))
     .mutation(async ({ ctx, input }) => {
       const sub = await getSubscriptionRow(ctx.db, ctx.businessId);
       if (!sub) throw new TRPCError({ code: "NOT_FOUND", message: "No subscription found." });
 
-      const newAmount = priceForCycle(input.plan, input.billingCycle);
+      assertExtraConversationsWithinCap(input.plan, input.extraConversations);
+      const newAmount = priceForCycle(input.plan, input.billingCycle) + computeExtraConversationsCost(input.plan, input.extraConversations);
 
       const isDowngrade = planRank(input.plan) < planRank(sub.plan as PlanKey);
 
@@ -274,7 +298,16 @@ export const subscriptionRouter = {
       if (chargeNow === 0) {
         await ctx.db
           .update(subscription)
-          .set({ plan: input.plan, billingCycle: input.billingCycle, amount: newAmount, status: "active", currentPeriodStart: periodStart, currentPeriodEnd: periodEnd, pendingPlan: null })
+          .set({
+            plan: input.plan,
+            billingCycle: input.billingCycle,
+            amount: newAmount,
+            extraConversations: input.extraConversations,
+            status: "active",
+            currentPeriodStart: periodStart,
+            currentPeriodEnd: periodEnd,
+            pendingPlan: null,
+          })
           .where(eq(subscription.businessId, ctx.businessId));
         return { applied: true as const, gatewayUrl: null };
       }
@@ -287,6 +320,7 @@ export const subscriptionRouter = {
           plan: input.plan,
           billingCycle: input.billingCycle,
           amount: chargeNow,
+          extraConversations: input.extraConversations,
           status: "pending",
           periodStart,
           periodEnd,
@@ -525,6 +559,7 @@ export const subscriptionRouter = {
           plan: invoice.plan,
           billingCycle: invoice.billingCycle,
           amount: invoice.amount,
+          extraConversations: invoice.extraConversations,
           status: "active",
           currentPeriodStart: invoice.periodStart,
           currentPeriodEnd: invoice.periodEnd,

@@ -453,7 +453,7 @@ export function SelectBusinessClient() {
                     <StoreCard
                       key={s.businessId}
                       name={s.name}
-                      role={s.role}
+                      role={s.roleLabel}
                       isActive={s.isActive}
                       isPending={!!enteringBusinessId}
                       isEntering={enteringBusinessId === s.businessId}

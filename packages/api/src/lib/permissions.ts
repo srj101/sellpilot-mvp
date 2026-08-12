@@ -15,6 +15,7 @@ export const RESOURCES = [
   "integrations",
   "settings",
   "activity",
+  "payments",
 ] as const;
 export const ACTIONS = ["view", "create", "edit", "delete"] as const;
 
@@ -42,6 +43,7 @@ export const DEFAULT_ROLES = [
     permissions: [
       ...perms(["orders", "products", "customers", "invoices", "users"], ACTIONS),
       ...perms(["inbox", "analytics", "agent", "offers", "settings", "activity"], ACTIONS),
+      ...perms(["payments"], ["view", "edit"]),
       "integrations:view",
     ],
   },
@@ -52,6 +54,7 @@ export const DEFAULT_ROLES = [
     permissions: [
       ...perms(["orders", "products", "customers", "invoices"], ["view", "create", "edit"]),
       ...perms(["inbox", "offers"], ["view", "create", "edit"]),
+      ...perms(["payments"], ["view", "edit"]),
       "users:view",
       "analytics:view",
       "agent:view",
@@ -63,7 +66,7 @@ export const DEFAULT_ROLES = [
     key: "viewer",
     description: "Read-only access across the store.",
     permissions: perms(
-      ["orders", "products", "customers", "invoices", "users", "inbox", "analytics", "agent", "offers", "integrations", "settings"],
+      ["orders", "products", "customers", "invoices", "users", "inbox", "analytics", "agent", "offers", "integrations", "settings", "payments"],
       ["view"],
     ),
   },

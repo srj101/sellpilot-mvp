@@ -22,12 +22,15 @@ import { toast } from "@acme/ui/toast";
 
 import { useBusinessSlug } from "~/hooks/use-business-slug";
 import { useTRPC } from "~/trpc/react";
+import { usePermissions } from "~/hooks/use-permissions";
 import { avatarColor, formatCurrency, initials } from "../(home)/_components/dashboard-utils";
 
 export function CustomersClient() {
   const trpc = useTRPC();
   const qc = useQueryClient();
   const businessSlug = useBusinessSlug();
+  const { can } = usePermissions();
+  const canCreate = can("customers", "create");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -83,6 +86,7 @@ export function CustomersClient() {
           <p className="mt-1 text-sm text-muted-foreground">Manage your customer database</p>
         </div>
         <div className="flex items-center gap-2">
+          {canCreate && (
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" className="h-8 gap-1.5 px-2.5">
@@ -171,6 +175,7 @@ export function CustomersClient() {
               </form>
             </DialogContent>
           </Dialog>
+          )}
         </div>
       </div>
 

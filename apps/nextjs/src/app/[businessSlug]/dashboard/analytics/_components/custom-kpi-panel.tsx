@@ -21,10 +21,14 @@ import { Label } from "@acme/ui/label";
 import { toast } from "@acme/ui/toast";
 
 import { useTRPC } from "~/trpc/react";
+import { usePermissions } from "~/hooks/use-permissions";
 
 export function CustomKpiPanel({ businessSlug }: { businessSlug: string }) {
   const trpc = useTRPC();
   const qc = useQueryClient();
+  const { can } = usePermissions();
+  const canCreate = can("analytics", "create");
+  const canDelete = can("analytics", "delete");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [metricType, setMetricType] = useState<"revenue" | "orders" | "aov">("revenue");
@@ -112,10 +116,12 @@ export function CustomKpiPanel({ businessSlug }: { businessSlug: string }) {
             Live progress metrics for your pinned business targets
           </CardDescription>
         </div>
-        <Button size="sm" variant="outline" className="gap-1.5 rounded-lg" onClick={() => setIsModalOpen(true)}>
-          <Plus className="h-4 w-4" />
-          Add Target
-        </Button>
+        {canCreate && (
+          <Button size="sm" variant="outline" className="gap-1.5 rounded-lg" onClick={() => setIsModalOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Add Target
+          </Button>
+        )}
       </CardHeader>
       <CardContent>
         {isPending ? (
@@ -140,14 +146,16 @@ export function CustomKpiPanel({ businessSlug }: { businessSlug: string }) {
                       <p className="text-xs font-semibold text-foreground">{kpi.title}</p>
                       <p className="text-[11px] text-muted-foreground capitalize">{kpi.period} {kpi.metricType}</p>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 text-muted-foreground hover:text-(--destructive)"
-                      onClick={() => deleteKpi.mutate({ id: kpi.id })}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-muted-foreground hover:text-(--destructive)"
+                        onClick={() => deleteKpi.mutate({ id: kpi.id })}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </div>
                   <div className="flex items-baseline justify-between text-xs pt-1">
                     <span className="font-bold text-foreground">

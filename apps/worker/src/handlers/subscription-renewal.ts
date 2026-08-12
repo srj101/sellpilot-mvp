@@ -12,7 +12,7 @@ import { and, eq } from "@acme/db";
 import { db } from "@acme/db/client";
 import { business, businessMember, saasInvoice, subscription, user } from "@acme/db/schema";
 import type { BillingCycle, PlanKey } from "@acme/api/plans";
-import { computeOverageAmount, CYCLE_META, PLAN_CATALOG, priceForCycle } from "@acme/api/plans";
+import { computeExtraConversationsCost, computeOverageAmount, CYCLE_META, PLAN_CATALOG, priceForCycle } from "@acme/api/plans";
 import { CARD_AND_BANK_GATEWAYS, initiatePayment, resolvePlatformCredentials } from "@acme/api/sslcommerz";
 import { sendEmail } from "@acme/auth/email";
 
@@ -134,11 +134,14 @@ async function processOne(sub: typeof subscription.$inferSelect) {
   if (!existingInvoice) {
     const effectivePlan = (sub.pendingPlan ?? sub.plan) as PlanKey;
     const cycle = sub.billingCycle as BillingCycle;
-    const baseAmount = priceForCycle(effectivePlan, cycle) ?? sub.amount;
+    // Purchased extra capacity is a recurring add-on — it renews with the plan every period
+    // until the owner explicitly changes it, so it must be re-priced and re-billed here too.
+    const extraConversations = sub.extraConversations ?? 0;
+    const baseAmount = (priceForCycle(effectivePlan, cycle) ?? sub.amount) + computeExtraConversationsCost(effectivePlan, extraConversations);
     // Billed against the plan actually used during the period that just ended (sub.plan),
     // not effectivePlan — a mid-cycle upgrade shouldn't retroactively erase overage run up
-    // on the old, lower-volume plan.
-    const overageAmount = computeOverageAmount(sub.plan as PlanKey, sub.aiConversationsUsed ?? 0);
+    // on the old, lower-volume plan. Usage under the purchased extra capacity is not overage.
+    const overageAmount = computeOverageAmount(sub.plan as PlanKey, sub.aiConversationsUsed ?? 0, extraConversations);
     const amount = baseAmount + overageAmount;
     const periodStart = sub.currentPeriodEnd;
     const periodEnd = new Date(periodStart);
@@ -153,6 +156,7 @@ async function processOne(sub: typeof subscription.$inferSelect) {
         billingCycle: cycle,
         amount,
         overageAmount,
+        extraConversations,
         status: "pending",
         periodStart,
         periodEnd,

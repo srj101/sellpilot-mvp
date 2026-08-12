@@ -31,6 +31,7 @@ import { toast } from "@acme/ui/toast";
 import { cn } from "@acme/ui";
 import { useTRPC } from "~/trpc/react";
 import { useBusinessSlug } from "~/hooks/use-business-slug";
+import { usePermissions } from "~/hooks/use-permissions";
 
 interface Offer {
   id: string;
@@ -144,9 +145,15 @@ function StatCard({
   );
 }
 
-export function OffersClient({ initialOffers, canManage }: { initialOffers: Offer[]; canManage: boolean }) {
+export function OffersClient({ initialOffers, canManage: planAllowsManage }: { initialOffers: Offer[]; canManage: boolean }) {
   const trpc = useTRPC();
   const businessSlug = useBusinessSlug();
+  const { can } = usePermissions();
+  // Plan tier gates the feature entirely; role permission gates each action per-member on top of that.
+  const canCreate = planAllowsManage && can("offers", "create");
+  const canEdit = planAllowsManage && can("offers", "edit");
+  const canDelete = planAllowsManage && can("offers", "delete");
+  const canManage = canCreate || canEdit || canDelete;
   const createMutation = useMutation(trpc.offers.create.mutationOptions());
   const updateMutation = useMutation(trpc.offers.update.mutationOptions());
   const deleteMutation = useMutation(trpc.offers.delete.mutationOptions());
@@ -305,20 +312,20 @@ export function OffersClient({ initialOffers, canManage }: { initialOffers: Offe
             Manage discount codes and combo/bundle deals.
           </p>
         </div>
-        {canManage ? (
+        {canCreate ? (
           <Button onClick={openCreateModal} size="sm" className="rounded-lg shadow-sm gap-1.5">
             <Plus className="h-4 w-4" /> Create Offer
           </Button>
-        ) : (
+        ) : !planAllowsManage ? (
           <Link href={`/${businessSlug}/dashboard/pricing`}>
             <Button size="sm" variant="outline" className="rounded-lg gap-1.5">
               <Lock className="h-4 w-4" /> Upgrade to Pro
             </Button>
           </Link>
-        )}
+        ) : null}
       </div>
 
-      {!canManage && (
+      {!planAllowsManage && (
         <Card className="border-dashed">
           <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
             <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
@@ -364,7 +371,7 @@ export function OffersClient({ initialOffers, canManage }: { initialOffers: Offe
           <p className="mt-4 text-lg font-medium text-muted-foreground">
             {offers.length === 0 ? "No offers yet" : "No offers match this filter"}
           </p>
-          {offers.length === 0 && canManage && (
+          {offers.length === 0 && canCreate && (
             <Button onClick={openCreateModal} size="sm" className="mt-4 gap-1.5">
               <Plus className="h-4 w-4" /> Create your first offer
             </Button>
@@ -477,10 +484,14 @@ export function OffersClient({ initialOffers, canManage }: { initialOffers: Offe
 
                 {canManage && (
                 <div className="mt-6 pt-4 border-t flex items-center justify-end gap-2">
-                  <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => openEditModal(o)}>
-                    <Edit2 className="h-4 w-4" />
-                  </Button>
-                  <DeleteButton pending={deleteMutation.isPending} onConfirm={() => handleDelete(o.id)} />
+                  {canEdit && (
+                    <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => openEditModal(o)}>
+                      <Edit2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {canDelete && (
+                    <DeleteButton pending={deleteMutation.isPending} onConfirm={() => handleDelete(o.id)} />
+                  )}
                 </div>
                 )}
               </Card>

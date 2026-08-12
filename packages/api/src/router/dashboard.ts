@@ -3,10 +3,21 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { and, desc, eq, inArray } from "@acme/db";
 import { agentSession, customer, metaWebhookEvent, offer, order, orderItem, product } from "@acme/db/schema";
 
-import { businessScopedProcedure } from "../trpc";
+import { permissionAnyProcedure } from "../trpc";
+
+// Overview blends orders/revenue, product/customer counts, offers, and conversation stats —
+// no single resource owns all of it, so access requires holding view on at least one of the
+// resources it actually surfaces, rather than being open to every business member regardless
+// of their configured scope (SRS §5.4: RBAC must restrict staff to their configured scopes).
+const OVERVIEW_ACCESS = [
+  ["orders", "view"],
+  ["products", "view"],
+  ["customers", "view"],
+  ["analytics", "view"],
+] as const;
 
 export const dashboardRouter = {
-  getOverview: businessScopedProcedure.query(async ({ ctx }) => {
+  getOverview: permissionAnyProcedure(OVERVIEW_ACCESS).query(async ({ ctx }) => {
     const businessId = ctx.businessId;
 
     const [orders, products, customers, offers, recentEvents, sessions] = await Promise.all([

@@ -16,7 +16,7 @@ export function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <Card className="card-hover">
+    <Card className="card-hover gap-3">
       <CardHeader className="border-b">
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
@@ -29,7 +29,7 @@ export function SectionCard({
           {action ? <div className="shrink-0">{action}</div> : null}
         </div>
       </CardHeader>
-      <CardContent className="pt-6">{children}</CardContent>
+      <CardContent className="">{children}</CardContent>
     </Card>
   );
 }

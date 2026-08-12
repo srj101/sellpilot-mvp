@@ -4,11 +4,16 @@ import { z } from "zod/v4";
 
 import { desc, eq, and } from "@acme/db";
 import { role, businessMember, businessInvitation, user, business } from "@acme/db/schema";
+import { sendEmail } from "@acme/auth/email";
 
 import { DEFAULT_ROLES, resolvePermissions } from "../lib/permissions";
 import { enqueueActivityLog } from "../lib/activity-queue";
 import { assertPlanLimit } from "../lib/plan-limits";
 import { businessProcedure, protectedProcedure, permissionProcedure, publicProcedure, businessScopedProcedure } from "../trpc";
+
+function appUrl(): string {
+  return process.env.APP_URL ?? "http://localhost:3000";
+}
 
 export const rolesRouter = {
   list: permissionProcedure("users", "view").query(async ({ ctx }) => {
@@ -279,8 +284,10 @@ export const rolesRouter = {
         await assertPlanLimit({ db: ctx.db, businessId }, "seats");
       }
 
+      const invitationId = `invitation_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
+
       await ctx.db.insert(businessInvitation).values({
-        id: `invitation_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`,
+        id: invitationId,
         businessId,
         email: input.email,
         role: "member",
@@ -301,16 +308,40 @@ export const rolesRouter = {
         summary: `${ctx.session.user.name ?? "Staff"} invited ${input.email} to the team (${input.customRoleKey ?? "member"})`,
       });
 
+      const [biz] = await ctx.db.select({ name: business.name }).from(business).where(eq(business.id, businessId)).limit(1);
+      const inviterName = ctx.session.user.name ?? "A team member";
+      const businessName = biz?.name ?? "a SellPilot store";
+      const inviteUrl = `${appUrl()}/accept-invitation?id=${invitationId}`;
+      // Best-effort — a failed invite email shouldn't fail the whole mutation, since the
+      // invitation row already exists and is reachable from the in-app store switcher too
+      // (listMyInvitations) for anyone who logs in with the invited email regardless.
+      try {
+        await sendEmail({
+          to: input.email,
+          subject: `${inviterName} invited you to join ${businessName} on SellPilot`,
+          text: `${inviterName} has invited you to join ${businessName} on SellPilot as a team member. Accept the invitation: ${inviteUrl}\n\nThis invite expires in 7 days.`,
+          html: `<p>${inviterName} has invited you to join <strong>${businessName}</strong> on SellPilot as a team member.</p><p><a href="${inviteUrl}">Accept the invitation</a></p><p>This invite expires in 7 days.</p>`,
+        });
+      } catch (err) {
+        console.error(`[roles] failed to send invitation email to ${input.email}:`, err);
+      }
+
       return { success: true };
     }),
 
+  /** No "organization" better-auth plugin is installed (see packages/auth) — team
+   * invitations/membership are this app's own businessInvitation/businessMember tables, so
+   * this operates on them directly rather than through a nonexistent authApi.* org method. */
   cancelInvitation: permissionProcedure("users", "edit")
     .input(z.object({ invitationId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.memberRole !== "owner" && ctx.customRoleKey !== "admin") {
         throw new TRPCError({ code: "FORBIDDEN", message: "Only the store owner or an Admin can manage team members" });
       }
-      await ctx.authApi.cancelInvitation({ body: { invitationId: input.invitationId }, headers: ctx.headers });
+      await ctx.db
+        .update(businessInvitation)
+        .set({ status: "cancelled" })
+        .where(and(eq(businessInvitation.id, input.invitationId), eq(businessInvitation.businessId, ctx.businessId)));
       return { success: true };
     }),
 
@@ -319,15 +350,32 @@ export const rolesRouter = {
     .mutation(async ({ ctx, input }) => {
       const [inv] = await ctx.db.select().from(businessInvitation).where(eq(businessInvitation.id, input.invitationId)).limit(1);
       if (!inv) throw new TRPCError({ code: "NOT_FOUND", message: "Invitation not found or already used" });
-
-      await ctx.authApi.acceptInvitation({ body: { invitationId: input.invitationId }, headers: ctx.headers });
-
-      if (inv.customRoleKey) {
-        await ctx.db
-          .update(businessMember)
-          .set({ customRoleKey: inv.customRoleKey })
-          .where(and(eq(businessMember.businessId, inv.businessId), eq(businessMember.userId, ctx.session.user.id)));
+      if (inv.status !== "pending") throw new TRPCError({ code: "BAD_REQUEST", message: "This invitation is no longer pending." });
+      if (inv.expiresAt.getTime() < Date.now()) throw new TRPCError({ code: "BAD_REQUEST", message: "This invitation has expired." });
+      if (inv.email !== ctx.session.user.email) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "This invitation was sent to a different email address." });
       }
+
+      const [existingMember] = await ctx.db
+        .select({ id: businessMember.id })
+        .from(businessMember)
+        .where(and(eq(businessMember.businessId, inv.businessId), eq(businessMember.userId, ctx.session.user.id)))
+        .limit(1);
+
+      if (existingMember) {
+        await ctx.db.update(businessMember).set({ customRoleKey: inv.customRoleKey }).where(eq(businessMember.id, existingMember.id));
+      } else {
+        await ctx.db.insert(businessMember).values({
+          id: `member_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`,
+          businessId: inv.businessId,
+          userId: ctx.session.user.id,
+          role: inv.role ?? "member",
+          customRoleKey: inv.customRoleKey,
+          createdAt: new Date(),
+        });
+      }
+
+      await ctx.db.update(businessInvitation).set({ status: "accepted" }).where(eq(businessInvitation.id, inv.id));
 
       const [org] = await ctx.db
         .select({ slug: business.slug })
@@ -358,7 +406,12 @@ export const rolesRouter = {
   rejectInvitation: protectedProcedure
     .input(z.object({ invitationId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      await ctx.authApi.rejectInvitation({ body: { invitationId: input.invitationId }, headers: ctx.headers });
+      const [inv] = await ctx.db.select({ email: businessInvitation.email }).from(businessInvitation).where(eq(businessInvitation.id, input.invitationId)).limit(1);
+      if (!inv) throw new TRPCError({ code: "NOT_FOUND", message: "Invitation not found." });
+      if (inv.email !== ctx.session.user.email) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "This invitation was sent to a different email address." });
+      }
+      await ctx.db.update(businessInvitation).set({ status: "rejected" }).where(eq(businessInvitation.id, input.invitationId));
       return { success: true };
     }),
 
@@ -392,10 +445,15 @@ export const rolesRouter = {
       if (ctx.memberRole !== "owner" && ctx.customRoleKey !== "admin") {
         throw new TRPCError({ code: "FORBIDDEN", message: "Only the store owner or an Admin can manage team members" });
       }
-      await ctx.authApi.removeMember({
-        body: { memberIdOrEmail: input.memberId, businessId: ctx.businessId },
-        headers: ctx.headers,
-      });
+      const [target] = await ctx.db
+        .select({ role: businessMember.role })
+        .from(businessMember)
+        .where(and(eq(businessMember.id, input.memberId), eq(businessMember.businessId, ctx.businessId)))
+        .limit(1);
+      if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "Team member not found." });
+      if (target.role === "owner") throw new TRPCError({ code: "FORBIDDEN", message: "The store owner can't be removed." });
+
+      await ctx.db.delete(businessMember).where(and(eq(businessMember.id, input.memberId), eq(businessMember.businessId, ctx.businessId)));
       await enqueueActivityLog({
         businessId: ctx.businessId,
         actorUserId: ctx.session.user.id,

@@ -16,18 +16,22 @@ import { CURRENCY_OPTIONS } from "./currency-options";
 import type { CurrencyCode } from "./currency-options";
 import { OnboardingShell } from "./onboarding-shell";
 
-/** Reads the plan/cycle persisted by SignUpForm (FR-SAS-03) — validated against the real
- * enum values so a malformed/tampered localStorage entry can never reach business.create,
- * it just silently falls back to the server's starter/monthly default instead. */
-function readSelectedPlan(): { plan: PlanKey; billingCycle: BillingCycle } | undefined {
+/** Reads the plan/cycle/extra-capacity persisted by SignUpForm (FR-SAS-03) — validated
+ * against the real enum values so a malformed/tampered localStorage entry can never reach
+ * business.create, it just silently falls back to the server's starter/monthly default
+ * instead. extraConversations is omitted entirely (rather than defaulted) when missing or
+ * invalid, so business.create's own `?? 0` default applies. */
+function readSelectedPlan(): { plan: PlanKey; billingCycle: BillingCycle; extraConversations?: number } | undefined {
   try {
     const raw = localStorage.getItem("sellpilot_selected_plan");
     if (!raw) return undefined;
-    const parsed = JSON.parse(raw) as { plan?: string; cycle?: string };
+    const parsed = JSON.parse(raw) as { plan?: string; cycle?: string; extra?: string };
     if (!PLAN_KEYS.includes(parsed.plan as PlanKey) || !BILLING_CYCLES.includes(parsed.cycle as BillingCycle)) {
       return undefined;
     }
-    return { plan: parsed.plan as PlanKey, billingCycle: parsed.cycle as BillingCycle };
+    const extra = Number(parsed.extra);
+    const extraConversations = Number.isInteger(extra) && extra >= 0 ? extra : undefined;
+    return { plan: parsed.plan as PlanKey, billingCycle: parsed.cycle as BillingCycle, extraConversations };
   } catch {
     return undefined;
   }

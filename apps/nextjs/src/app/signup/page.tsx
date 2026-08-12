@@ -28,6 +28,7 @@ export default async function SignUpPage({ searchParams }: SignUpPageProps) {
   const invitation = getSearchValue(params, "invitation");
   const plan = getSearchValue(params, "plan");
   const cycle = getSearchValue(params, "cycle");
+  const extra = getSearchValue(params, "extra");
 
   return (
     <AuthShell
@@ -35,7 +36,7 @@ export default async function SignUpPage({ searchParams }: SignUpPageProps) {
       title="Create your SellPilot workspace"
       description="Spin up your AI agent, connect your channels, and start selling — no credit card required."
     >
-      <SignUpForm defaultEmail={email} invitationId={invitation} selectedPlan={plan} selectedCycle={cycle} />
+      <SignUpForm defaultEmail={email} invitationId={invitation} selectedPlan={plan} selectedCycle={cycle} selectedExtra={extra} />
     </AuthShell>
   );
 }

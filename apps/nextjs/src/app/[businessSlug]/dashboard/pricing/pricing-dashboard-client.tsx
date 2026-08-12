@@ -26,9 +26,9 @@ export function PricingDashboardClient() {
     }),
   );
 
-  function handleChoosePlan(plan: PlanKey, cycle: BillingCycle) {
+  function handleChoosePlan(plan: PlanKey, cycle: BillingCycle, extraConversations: number) {
     setBusyPlan(plan);
-    subscribe.mutate({ plan, billingCycle: cycle });
+    subscribe.mutate({ plan, billingCycle: cycle, extraConversations });
   }
 
   return (
@@ -38,6 +38,7 @@ export function PricingDashboardClient() {
         currentPlan: current?.plan ?? null,
         isTrialing: current?.isTrialing ?? false,
         pendingPlan: current?.pendingPlan ?? null,
+        extraConversations: current?.extraConversations ?? 0,
       }}
       onChoosePlan={handleChoosePlan}
       busyPlan={busyPlan}

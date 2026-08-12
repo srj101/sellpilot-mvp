@@ -3,10 +3,11 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
 import { and, eq, ilike, isNotNull } from "@acme/db";
-import { businessMember, business, businessProfile, subscription } from "@acme/db/schema";
+import { businessMember, business, businessProfile, subscription, role } from "@acme/db/schema";
 import { sendEmail } from "@acme/auth/email";
 
-import { priceForCycle, PLAN_KEYS, BILLING_CYCLES } from "../lib/plans";
+import { priceForCycle, PLAN_KEYS, BILLING_CYCLES, PLAN_CATALOG, EXTRA_CONVERSATIONS_MAX_MULTIPLIER, computeExtraConversationsCost } from "../lib/plans";
+import { DEFAULT_ROLES } from "../lib/permissions";
 
 import { enqueueActivityLog } from "../lib/activity-queue";
 import { ownerOnlyProcedure, protectedProcedure, businessScopedProcedure, publicProcedure } from "../trpc";
@@ -85,6 +86,9 @@ export const businessRouter = {
       // instead of always defaulting to Starter/Monthly.
       plan: z.enum(PLAN_KEYS).optional(),
       billingCycle: z.enum(BILLING_CYCLES).optional(),
+      // Extra AI-conversation capacity chosen on the Pricing page's slider alongside the
+      // plan above — folded into the trial's renewal amount so it isn't silently dropped.
+      extraConversations: z.number().int().min(0).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const name = input.name.trim();
@@ -133,6 +137,11 @@ export const businessRouter = {
 
       const plan = input.plan ?? "starter";
       const billingCycle = input.billingCycle ?? "monthly";
+      const baseConversations = PLAN_CATALOG[plan].limits.aiConversationsPerMonth ?? 0;
+      const extraConversations = Math.min(
+        Math.max(0, input.extraConversations ?? 0),
+        baseConversations * EXTRA_CONVERSATIONS_MAX_MULTIPLIER,
+      );
 
       await ctx.db.insert(subscription).values({
         businessId,
@@ -141,7 +150,8 @@ export const businessRouter = {
         billingCycle,
         // The price the trial will actually renew at once it ends — was previously never
         // set at all here, silently defaulting to 0 regardless of plan.
-        amount: priceForCycle(plan, billingCycle),
+        amount: priceForCycle(plan, billingCycle) + computeExtraConversationsCost(plan, extraConversations),
+        extraConversations,
         currentPeriodStart: new Date(),
         currentPeriodEnd: trialEnd,
         aiConversationsUsed: 0,
@@ -164,6 +174,8 @@ export const businessRouter = {
       .select({
         businessId: businessMember.businessId,
         role: businessMember.role,
+        customRoleKey: businessMember.customRoleKey,
+        customRoleName: role.name,
         name: business.name,
         slug: business.slug,
         logo: business.logo,
@@ -175,9 +187,20 @@ export const businessRouter = {
       .from(businessMember)
       .innerJoin(business, eq(businessMember.businessId, business.id))
       .leftJoin(subscription, eq(subscription.businessId, business.id))
+      // Custom-role display name — businessMember.role is just the base "owner"/"member"
+      // distinction; the human-readable label (e.g. "Management") for a non-owner lives on
+      // the business's own `role` row keyed by customRoleKey, not on businessMember itself.
+      .leftJoin(role, and(eq(role.businessId, businessMember.businessId), eq(role.key, businessMember.customRoleKey)))
       .where(eq(businessMember.userId, userId));
 
-    return rows.map((r) => ({ ...r, isActive: r.businessId === activeBusinessId }));
+    return rows.map((r) => {
+      // No custom role row yet for this key — the business may never have created any
+      // custom roles, in which case customRoleKey still points at a synthesized default
+      // (see DEFAULT_ROLES) that has no DB row to join against.
+      const fallbackDefault = r.customRoleKey ? DEFAULT_ROLES.find((d) => d.key === r.customRoleKey) : undefined;
+      const roleLabel = r.role === "owner" ? "owner" : (r.customRoleName ?? fallbackDefault?.name ?? r.customRoleKey ?? r.role);
+      return { ...r, roleLabel, isActive: r.businessId === activeBusinessId };
+    });
   }),
 
   setActive: protectedProcedure
