@@ -30,9 +30,7 @@ export function AcceptInvitationCard({
               // Hard navigation (not router.push) so the new membership/active-org
               // state is picked up fresh, matching the business-switch pattern used
               // in onboarding — the client query cache doesn't auto-scope by tenant.
-              window.location.href = data.businessSlug
-                ? `/${data.businessSlug}/dashboard`
-                : "/dashboard";
+              window.location.href = "/dashboard/loading";
             },
             onError: (err) => toast.error(err.message),
           },

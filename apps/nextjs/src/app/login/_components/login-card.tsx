@@ -34,19 +34,19 @@ function FacebookIcon(props: React.ComponentProps<"svg">) {
 }
 
 export function LoginCard() {
-  const handleGoogleSignIn = () => {
-    void authClient.signIn.social({
-      provider: "google",
-      callbackURL: "/dashboard",
-    });
-  };
+      const handleGoogleSignIn = () => {
+        void authClient.signIn.social({
+          provider: "google",
+          callbackURL: "/dashboard/loading",
+        });
+      };
 
-  const handleFacebookSignIn = () => {
-    void authClient.signIn.social({
-      provider: "facebook",
-      callbackURL: "/dashboard",
-    });
-  };
+      const handleFacebookSignIn = () => {
+        void authClient.signIn.social({
+          provider: "facebook",
+          callbackURL: "/dashboard/loading",
+        });
+      };
 
   return (
     <div className="bg-card/80 text-card-foreground w-full max-w-md rounded-2xl border p-8 shadow-xl backdrop-blur-xl">
