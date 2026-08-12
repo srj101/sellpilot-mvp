@@ -50,6 +50,23 @@ export const businessProfile = pgTable(
     sslcommerzStoreId: text("sslcommerz_store_id"),
     sslcommerzStorePassword: text("sslcommerz_store_password"),
     /**
+     * Cached result of the last SSLCommerz gateway probe (see probeActiveGateways in
+     * packages/api/src/lib/sslcommerz.ts) — which rails (bKash/Nagad/card/internet
+     * banking) are actually active on this business's own store, for the per-method
+     * connection status on the Payments page (spec FR-PAY-01). Null until credentials
+     * are saved and probed at least once; refreshed on credential save or manual
+     * "Test Connection", never polled live on page load.
+     */
+    sslcommerzGatewayStatus: jsonb("sslcommerz_gateway_status").$type<{
+      status: "unchecked" | "checked" | "error";
+      bkash: boolean;
+      nagad: boolean;
+      card: boolean;
+      internetBanking: boolean;
+      checkedAt: string;
+      error?: string;
+    } | null>(),
+    /**
      * AI agent persona/behavior settings (spec §5.2 Settings > AI Agent tab). All nullable
      * or defaulted so an owner who never opens that tab still gets sane behavior — null
      * agentName falls back to the store name, "auto" language keeps the existing

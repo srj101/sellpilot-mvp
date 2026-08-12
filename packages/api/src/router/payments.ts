@@ -1,11 +1,32 @@
 import type { TRPCRouterRecord } from "@trpc/server";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
 import { and, desc, eq, ilike, or, lt } from "@acme/db";
 import { businessProfile, order, transaction } from "@acme/db/schema";
 
-import { hasCredentials } from "../lib/sslcommerz";
+import { hasCredentials, probeActiveGateways } from "../lib/sslcommerz";
 import { ownerOnlyProcedure, permissionProcedure } from "../trpc";
+
+export interface GatewayStatus {
+  status: "unchecked" | "checked" | "error";
+  bkash: boolean;
+  nagad: boolean;
+  card: boolean;
+  internetBanking: boolean;
+  checkedAt: string;
+  error?: string;
+}
+
+/** Runs probeActiveGateways and shapes its result for storage on businessProfile.sslcommerzGatewayStatus. */
+async function probeAndShape(storeId: string, storePassword: string, businessId: string): Promise<GatewayStatus> {
+  const result = await probeActiveGateways({ storeId, storePassword }, businessId);
+  const checkedAt = new Date().toISOString();
+  if (!result.ok) {
+    return { status: "error", bkash: false, nagad: false, card: false, internetBanking: false, checkedAt, error: result.reason };
+  }
+  return { status: "checked", bkash: result.bkash, nagad: result.nagad, card: result.card, internetBanking: result.internetBanking, checkedAt };
+}
 
 const DAY = 86_400_000;
 const RANGE_DAYS = { "7d": 7, "30d": 30, "90d": 90, "1y": 365 } as const;
@@ -24,16 +45,20 @@ function inWindow(ms: number, start: number, end: number) {
  * own SaaS billing in router/subscription.ts. See billing plan D3.
  */
 export const paymentsRouter = {
-  /** One "Online" status covering card/bank/bKash/Nagad (all one SSLCommerz gateway) —
-   * there's nothing to connect per-rail, see billing plan S5-C. Per-business now, not a
-   * global env check — each business's own SSLCommerz store, see checkout.ts. */
+  /** Per-rail (bKash/Nagad/card) connection status, sourced from the cached result of the
+   * last probeActiveGateways call — never a live SSLCommerz call on page load, see
+   * sslcommerzGatewayStatus's doc comment in agent-schema.ts. `gateway` is null until
+   * credentials are saved and probed at least once (updateGatewayCredentials/
+   * refreshGatewayStatus below). Per-business — each business's own SSLCommerz store,
+   * see checkout.ts. */
   getGatewayStatus: permissionProcedure("payments", "view").query(async ({ ctx }) => {
     const profile = await ctx.db.query.businessProfile.findFirst({ where: eq(businessProfile.businessId, ctx.businessId) });
     return {
-      online: hasCredentials({
+      hasCredentials: hasCredentials({
         storeId: profile?.sslcommerzStoreId ?? undefined,
         storePassword: profile?.sslcommerzStorePassword ?? undefined,
       }),
+      gateway: profile?.sslcommerzGatewayStatus ?? null,
       cod: true,
     };
   }),
@@ -59,12 +84,40 @@ export const paymentsRouter = {
     .mutation(async ({ ctx, input }) => {
       const profile = await ctx.db.query.businessProfile.findFirst({ where: eq(businessProfile.businessId, ctx.businessId) });
       const storePassword = input.storePassword?.trim() || profile?.sslcommerzStorePassword || null;
+
+      // Best-effort probe — a network hiccup here shouldn't block saving valid credentials.
+      const gatewayStatus = storePassword
+        ? await probeAndShape(input.storeId, storePassword, ctx.businessId).catch(
+            (err): GatewayStatus => ({
+              status: "error",
+              bkash: false,
+              nagad: false,
+              card: false,
+              internetBanking: false,
+              checkedAt: new Date().toISOString(),
+              error: err instanceof Error ? err.message : "Gateway verification failed.",
+            }),
+          )
+        : null;
+
       await ctx.db
         .update(businessProfile)
-        .set({ sslcommerzStoreId: input.storeId, sslcommerzStorePassword: storePassword })
+        .set({ sslcommerzStoreId: input.storeId, sslcommerzStorePassword: storePassword, sslcommerzGatewayStatus: gatewayStatus })
         .where(eq(businessProfile.businessId, ctx.businessId));
       return { success: true };
     }),
+
+  /** Manually re-runs the gateway probe against the currently-stored credentials, without
+   * changing them — powers the Payments page's "Test Connection" button. */
+  refreshGatewayStatus: ownerOnlyProcedure.mutation(async ({ ctx }) => {
+    const profile = await ctx.db.query.businessProfile.findFirst({ where: eq(businessProfile.businessId, ctx.businessId) });
+    if (!hasCredentials({ storeId: profile?.sslcommerzStoreId ?? undefined, storePassword: profile?.sslcommerzStorePassword ?? undefined })) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Save your SSLCommerz credentials first." });
+    }
+    const gatewayStatus = await probeAndShape(profile!.sslcommerzStoreId!, profile!.sslcommerzStorePassword!, ctx.businessId);
+    await ctx.db.update(businessProfile).set({ sslcommerzGatewayStatus: gatewayStatus }).where(eq(businessProfile.businessId, ctx.businessId));
+    return gatewayStatus;
+  }),
 
   getSummary: permissionProcedure("payments", "view")
     .input(

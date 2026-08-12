@@ -142,6 +142,82 @@ export async function initiatePayment(input: InitiatePaymentInput): Promise<Init
   return { ok: true, gatewayUrl: data.GatewayPageURL, sessionKey: data.sessionkey ?? "" };
 }
 
+export type GatewayProbeResult =
+  | { ok: true; bkash: boolean; nagad: boolean; card: boolean; internetBanking: boolean }
+  | { ok: false; reason: string };
+
+/**
+ * Probes which payment rails are actually active on this business's own SSLCommerz store,
+ * for the per-method connection status the Payments page shows (spec FR-PAY-01). SSLCommerz
+ * has no dedicated "check enabled gateways" endpoint — this reuses the Create Session call
+ * (same endpoint as initiatePayment) since its response already lists every active gateway
+ * in `desc`/`gw`, and just never redirects anyone to the resulting GatewayPageURL. The
+ * `SPVERIFY-` tran_id prefix keeps this identifiable (and harmless — it will never match a
+ * real order.paymentToken) if a business owner ever spots it in their SSLCommerz dashboard.
+ */
+export async function probeActiveGateways(
+  credentials: SslcommerzCredentials,
+  businessId: string,
+): Promise<GatewayProbeResult> {
+  const { storeId, storePassword } = credentials;
+  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+  const base = `${appUrl}/api/payments/sslcommerz`;
+
+  const body = new URLSearchParams({
+    store_id: storeId,
+    store_passwd: storePassword,
+    total_amount: "10",
+    currency: "BDT",
+    tran_id: `SPVERIFY-${businessId}-${Date.now()}`,
+    success_url: `${base}/success`,
+    fail_url: `${base}/fail`,
+    cancel_url: `${base}/cancel`,
+    ipn_url: `${base}/ipn`,
+    cus_name: "SellPilot Verification",
+    cus_email: "no-reply@sellpilot.ai",
+    cus_add1: "N/A",
+    cus_city: "Dhaka",
+    cus_country: "Bangladesh",
+    cus_phone: "0000000000",
+    shipping_method: "NO",
+    product_name: "Gateway verification",
+    product_category: "General",
+    product_profile: "general",
+    num_of_item: "1",
+  });
+
+  const res = await fetch(`${baseUrl()}/gwprocess/v4/api.php`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+
+  if (!res.ok) {
+    return { ok: false, reason: `SSLCommerz init request failed (HTTP ${res.status})` };
+  }
+
+  const data = (await res.json()) as {
+    status?: string;
+    failedreason?: string;
+    desc?: { name?: string; type?: string }[];
+  };
+
+  if (data.status !== "SUCCESS") {
+    return { ok: false, reason: data.failedreason ?? "SSLCommerz rejected the credentials." };
+  }
+
+  const desc = data.desc ?? [];
+  const has = (pred: (entry: { name?: string; type?: string }) => boolean) => desc.some(pred);
+
+  return {
+    ok: true,
+    bkash: has((d) => (d.name ?? "").toLowerCase().includes("bkash")),
+    nagad: has((d) => (d.name ?? "").toLowerCase().includes("nagad")),
+    card: has((d) => ["visa", "master", "amex", "othercards"].includes((d.type ?? "").toLowerCase())),
+    internetBanking: has((d) => (d.type ?? "").toLowerCase() === "internetbanking"),
+  };
+}
+
 export interface ValidatePaymentResult {
   valid: boolean;
   transactionId?: string;

@@ -1,23 +1,28 @@
 import type { TRPCRouterRecord } from "@trpc/server";
 
 import { and, desc, eq, inArray } from "@acme/db";
-import { agentSession, customer, metaWebhookEvent, offer, order, orderItem, product } from "@acme/db/schema";
+import {
+  agentSession,
+  conversationMeta,
+  customer,
+  metaConnection,
+  metaWebhookEvent,
+  offer,
+  order,
+  orderItem,
+  product,
+} from "@acme/db/schema";
 
-import { permissionAnyProcedure } from "../trpc";
-
-// Overview blends orders/revenue, product/customer counts, offers, and conversation stats —
-// no single resource owns all of it, so access requires holding view on at least one of the
-// resources it actually surfaces, rather than being open to every business member regardless
-// of their configured scope (SRS §5.4: RBAC must restrict staff to their configured scopes).
-const OVERVIEW_ACCESS = [
-  ["orders", "view"],
-  ["products", "view"],
-  ["customers", "view"],
-  ["analytics", "view"],
-] as const;
+import { buildInboxData } from "../lib/meta-inbox";
+import { permissionProcedure } from "../trpc";
 
 export const dashboardRouter = {
-  getOverview: permissionAnyProcedure(OVERVIEW_ACCESS).query(async ({ ctx }) => {
+  /** The Overview dashboard (FR-DSH-01) blends orders/revenue, product/customer counts,
+   * offers, and conversation stats — but unlike before, access is gated on a single
+   * dedicated "overview:view" permission so a store owner can grant the Overview page
+   * independently of (or without) the individual orders/products/customers/analytics
+   * resources (SRS §5.4: RBAC must restrict staff to their configured scopes). */
+  getOverview: permissionProcedure("overview", "view").query(async ({ ctx }) => {
     const businessId = ctx.businessId;
 
     const [orders, products, customers, offers, recentEvents, sessions] = await Promise.all([
@@ -71,5 +76,43 @@ export const dashboardRouter = {
         },
       },
     };
+  }),
+
+  /** FR-DSH-03 — active (non-archived) conversations right now, split by handling mode,
+   * mirroring the same defaults getInboxData uses (status ?? "open", handlingMode ?? "ai")
+   * but without the full per-thread merge (tags/orders/summaries) a count doesn't need.
+   * Gated on "inbox" view since it surfaces the same underlying data as the Inbox page. */
+  getLiveConversations: permissionProcedure("inbox", "view").query(async ({ ctx }) => {
+    const businessId = ctx.businessId;
+
+    const [events, connections, metas] = await Promise.all([
+      ctx.db
+        .select()
+        .from(metaWebhookEvent)
+        .where(eq(metaWebhookEvent.businessId, businessId))
+        .orderBy(desc(metaWebhookEvent.receivedAt))
+        .limit(300),
+      ctx.db
+        .select()
+        .from(metaConnection)
+        .where(eq(metaConnection.businessId, businessId))
+        .orderBy(desc(metaConnection.connectedAt)),
+      ctx.db
+        .select({
+          threadId: conversationMeta.threadId,
+          status: conversationMeta.status,
+          handlingMode: conversationMeta.handlingMode,
+        })
+        .from(conversationMeta)
+        .where(eq(conversationMeta.businessId, businessId)),
+    ]);
+
+    const data = buildInboxData({ events, connections });
+    const metaByThread = new Map(metas.map((m) => [m.threadId, m]));
+
+    const active = data.threads.filter((t) => (metaByThread.get(t.id)?.status ?? "open") !== "archived");
+    const ai = active.filter((t) => (metaByThread.get(t.id)?.handlingMode ?? "ai") === "ai").length;
+
+    return { ai, human: active.length - ai, total: active.length };
   }),
 } satisfies TRPCRouterRecord;

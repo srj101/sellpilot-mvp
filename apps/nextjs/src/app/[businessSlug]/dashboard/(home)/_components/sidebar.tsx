@@ -156,9 +156,8 @@ const NAV_GROUPS: NavGroup[] = [
  * link that then throws FORBIDDEN when they click it, rather than a security hole.
  */
 const NAV_PERMISSIONS: Record<string, string | string[]> = {
-  // Overview blends orders/revenue, product/customer counts, and analytics — gated on
-  // dashboard.getOverview's permissionAnyProcedure(orders|products|customers|analytics :view).
-  "/dashboard": ["orders:view", "products:view", "customers:view", "analytics:view"],
+  // Overview is gated on its own dedicated overview:view permission (dashboard.getOverview).
+  "/dashboard": "overview:view",
   "/dashboard/inbox": "inbox:view",
   "/dashboard/support": "inbox:view", // support-client.tsx calls inbox.getInboxData/setStatus
   "/dashboard/products": "products:view",

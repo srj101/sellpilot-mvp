@@ -53,6 +53,16 @@ export function GatewaySettings() {
     }),
   );
 
+  const refresh = useMutation(
+    trpc.payments.refreshGatewayStatus.mutationOptions({
+      onSuccess: () => {
+        toast.success("Gateway status refreshed.");
+        void qc.invalidateQueries({ queryKey: trpc.payments.getGatewayStatus.queryKey() });
+      },
+      onError: (err) => toast.error(err.message),
+    }),
+  );
+
   if (!permissionsPending && (!isOwner || isError)) return null;
 
   return (
@@ -94,9 +104,18 @@ export function GatewaySettings() {
                 placeholder={data?.hasPassword ? "•••••••• (unchanged)" : "Enter store password"}
               />
             </div>
-            <div className="sm:col-span-2">
+            <div className="flex items-center gap-2 sm:col-span-2">
               <Button type="submit" size="sm" disabled={update.isPending || !storeId.trim()}>
                 {update.isPending ? "Saving..." : "Save"}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={!data?.hasPassword || update.isPending || refresh.isPending}
+                onClick={() => refresh.mutate()}
+              >
+                {refresh.isPending ? "Testing..." : "Test Connection"}
               </Button>
             </div>
           </form>

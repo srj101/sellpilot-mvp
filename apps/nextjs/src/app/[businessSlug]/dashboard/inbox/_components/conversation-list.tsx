@@ -61,7 +61,7 @@ export function ConversationList({
             const isUnread = latestMessage?.direction === "inbound" && !latestMessage.isRead;
             const unreadCount = thread.messages.filter((m) => m.direction === "inbound" && !m.isRead).length;
             const selected = thread.id === selectedThreadId;
-            const aiHandled = latestMessage?.direction === "outbound" && latestMessage.sentBy === "ai";
+            const aiHandled = thread.handlingMode === "ai";
 
             return (
               <Link

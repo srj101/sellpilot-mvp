@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useBusinessSlug } from "~/hooks/use-business-slug";
-import { TrendingUp, ArrowUpRight, Plus, CheckCircle2, XCircle, ShoppingCart, DollarSign, Users, ShoppingBag, MessageCircle } from "lucide-react";
+import { TrendingUp, ArrowUpRight, Plus, CheckCircle2, XCircle, ShoppingCart, DollarSign, Users, ShoppingBag, MessageCircle, Sparkles } from "lucide-react";
 
 import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
@@ -49,6 +49,7 @@ export function DashboardClient({ userName }: DashboardClientProps) {
   const trpc = useTRPC();
   const [now] = useState(() => Date.now());
   const { data, isPending } = useQuery(trpc.dashboard.getOverview.queryOptions());
+  const { data: liveConvos, isPending: liveConvosPending } = useQuery(trpc.dashboard.getLiveConversations.queryOptions());
   const orders: SerializedOrder[] = data?.orders ?? [];
   const sessions: { id: string; createdAt: string | Date }[] = data?.sessions ?? [];
   const customerCount = data?.customerCount ?? 0;
@@ -609,6 +610,66 @@ export function DashboardClient({ userName }: DashboardClientProps) {
                 </div>
               ) : (
                 <p className="py-8 text-center text-sm text-muted-foreground">No sales yet</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Live Conversations (FR-DSH-03) */}
+          <Card className="card-hover gap-0 py-0">
+            <CardHeader className="border-b py-4">
+              <CardTitle>Live Conversations</CardTitle>
+              <CardDescription>Active now, by handling mode</CardDescription>
+              <CardAction>
+                <Link href={`/${businessSlug}/dashboard/inbox`}>
+                  <Button variant="ghost" size="sm" className="text-xs">
+                    Go to Inbox <ArrowUpRight className="ml-1 h-3 w-3" />
+                  </Button>
+                </Link>
+              </CardAction>
+            </CardHeader>
+            <CardContent className="py-5">
+              {liveConvosPending ? (
+                <div className="space-y-4">
+                  {Array.from({ length: 2 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <Skeleton className="h-7 w-7 shrink-0 rounded-full" />
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <Skeleton className="h-3.5 w-24" />
+                          <Skeleton className="h-3.5 w-8" />
+                        </div>
+                        <Skeleton className="h-1 w-full" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : liveConvos && liveConvos.total > 0 ? (
+                <div className="space-y-4">
+                  {[
+                    { label: "AI-handled", count: liveConvos.ai, icon: Sparkles, dot: "bg-violet-500", text: "text-violet-500", bg: "bg-violet-500/10" },
+                    { label: "Human-handled", count: liveConvos.human, icon: Users, dot: "bg-amber-500", text: "text-amber-500", bg: "bg-amber-500/10" },
+                  ].map((row) => {
+                    const pct = Math.max((row.count / liveConvos.total) * 100, row.count > 0 ? 6 : 0);
+                    return (
+                      <div key={row.label} className="flex items-center gap-3">
+                        <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full", row.bg, row.text)}>
+                          <row.icon className="h-3.5 w-3.5" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="truncate text-xs font-medium text-foreground">{row.label}</p>
+                            <p className="shrink-0 text-xs font-bold tabular-nums text-foreground">{row.count}</p>
+                          </div>
+                          <div className="mt-1 h-1 overflow-hidden rounded-full bg-muted">
+                            <div className={cn("h-full rounded-full transition-all duration-700", row.dot)} style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="py-8 text-center text-sm text-muted-foreground">No active conversations</p>
               )}
             </CardContent>
           </Card>

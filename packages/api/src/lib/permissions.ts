@@ -3,6 +3,7 @@ import type { db as Db } from "@acme/db/client";
 import { role } from "@acme/db/schema";
 
 export const RESOURCES = [
+  "overview",
   "orders",
   "products",
   "customers",
@@ -44,6 +45,7 @@ export const DEFAULT_ROLES = [
       ...perms(["orders", "products", "customers", "invoices", "users"], ACTIONS),
       ...perms(["inbox", "analytics", "agent", "offers", "settings", "activity"], ACTIONS),
       ...perms(["payments"], ["view", "edit"]),
+      "overview:view",
       "integrations:view",
     ],
   },
@@ -55,6 +57,7 @@ export const DEFAULT_ROLES = [
       ...perms(["orders", "products", "customers", "invoices"], ["view", "create", "edit"]),
       ...perms(["inbox", "offers"], ["view", "create", "edit"]),
       ...perms(["payments"], ["view", "edit"]),
+      "overview:view",
       "users:view",
       "analytics:view",
       "agent:view",
@@ -66,7 +69,7 @@ export const DEFAULT_ROLES = [
     key: "viewer",
     description: "Read-only access across the store.",
     permissions: perms(
-      ["orders", "products", "customers", "invoices", "users", "inbox", "analytics", "agent", "offers", "integrations", "settings", "payments"],
+      ["overview", "orders", "products", "customers", "invoices", "users", "inbox", "analytics", "agent", "offers", "integrations", "settings", "payments"],
       ["view"],
     ),
   },

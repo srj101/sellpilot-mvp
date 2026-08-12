@@ -17,6 +17,7 @@ import {
   FileText,
   Inbox as InboxIcon,
   BarChart2,
+  LayoutDashboard,
   Sparkles,
   Gift,
   Plug,
@@ -39,6 +40,7 @@ import { usePermissions } from "~/hooks/use-permissions";
 /* ─── Constants & Icon Mapping ───────────────────────────────────────── */
 
 const RESOURCES = [
+  { key: "overview",     label: "Overview",     icon: LayoutDashboard },
   { key: "orders",       label: "Orders",       icon: ShoppingCart },
   { key: "payments",     label: "Payments",     icon: Wallet },
   { key: "products",     label: "Products",     icon: Package },
@@ -77,8 +79,10 @@ const ACTIONS = [
  * - activity: read-only log, view only.
  * - payments: view + refund(edit) only — no create/delete (transactions aren't created or
  *   deleted by hand, they come from checkout). Gateway credential setup stays owner-only.
+ * - overview: the Overview dashboard is read-only — view only, no create/edit/delete.
  */
 const RESOURCE_ACTIONS: Record<(typeof RESOURCES)[number]["key"], readonly (typeof ACTIONS)[number]["key"][]> = {
+  overview: ["view"],
   orders: ["view", "create", "edit", "delete"],
   payments: ["view", "edit"],
   products: ["view", "create", "edit", "delete"],
