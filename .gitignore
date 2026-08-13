@@ -59,3 +59,7 @@ dist/
 .github
 .kimchi
 .claude
+
+# Local planning/reference docs — not meant to be committed
+docs/PAYMENTS_REQUIREMENTS.md
+docs/PAYMENTS_BUILD_PLAN.md
