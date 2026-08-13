@@ -226,6 +226,12 @@ export const checkoutRouter = {
           status: "success",
           amount: orderRow.total,
           deliveryCharge: orderRow.shippingCost,
+          // SSLCommerz's refund API keys off `bank_tran_id`, NOT the val_id we store as
+          // `reference` — and it can't be recovered from the val_id after the fact. Capturing
+          // it here is what makes this payment refundable later; without it the Payments
+          // page's Refund action can only ever update our own ledger (see
+          // docs/PAYMENTS_REQUIREMENTS.md G6/G7).
+          providerPayload: result.raw,
         });
         await enqueueOrderStatusNotify(orderRow.businessId, orderRow.id);
 

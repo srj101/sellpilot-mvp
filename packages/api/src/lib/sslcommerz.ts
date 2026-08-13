@@ -229,6 +229,21 @@ export interface ValidatePaymentResult {
    * present — not guaranteed on every response/method, callers should fall back
    * gracefully (e.g. to "0000") rather than treat this as always available. */
   last4?: string;
+  /**
+   * SSLCommerz's own bank transaction id — the REQUIRED key for its refund API
+   * (`merchantTransIDvalidationAPI.php` takes `bank_tran_id`, not `val_id`). Persist this
+   * on the transaction row at payment time: without it a payment can never be refunded
+   * through the API, and it cannot be recovered later from the val_id alone.
+   */
+  bankTranId?: string;
+  /**
+   * Curated subset of the validator response kept for reconciliation and dispute handling
+   * (→ `transaction.provider_payload`). Deliberately an allow-list rather than the whole
+   * body: SSLCommerz only ever returns a MASKED card_no, but an allow-list means a future
+   * change to their response shape can't silently start persisting something sensitive
+   * (SRS §5.3 — never store raw card numbers or CVC).
+   */
+  raw?: Record<string, unknown>;
 }
 
 /**
@@ -268,6 +283,17 @@ export async function validatePayment(valId: string, credentials: SslcommerzCred
     card_type?: string;
     card_issuer?: string;
     card_no?: string;
+    bank_tran_id?: string;
+    val_id?: string;
+    tran_date?: string;
+    card_brand?: string;
+    card_issuer_country?: string;
+    currency?: string;
+    /** What actually settles to the merchant after gateway fees — needed to reconcile
+     * our ledger against SSLCommerz's settlement reports (SRS §5.8). */
+    store_amount?: string;
+    risk_level?: string;
+    risk_title?: string;
   };
   const valid = data.status === "VALID" || data.status === "VALIDATED";
   // Best-effort — SSLCommerz's validator returns a masked card_no (e.g.
@@ -281,5 +307,19 @@ export async function validatePayment(valId: string, credentials: SslcommerzCred
     amount: data.amount ? Number(data.amount) : undefined,
     method: normalizeMethod(data.card_type ?? data.card_issuer),
     last4,
+    bankTranId: data.bank_tran_id,
+    raw: {
+      bank_tran_id: data.bank_tran_id,
+      val_id: data.val_id,
+      tran_date: data.tran_date,
+      card_type: data.card_type,
+      card_issuer: data.card_issuer,
+      card_brand: data.card_brand,
+      card_issuer_country: data.card_issuer_country,
+      currency: data.currency,
+      store_amount: data.store_amount,
+      risk_level: data.risk_level,
+      risk_title: data.risk_title,
+    },
   };
 }

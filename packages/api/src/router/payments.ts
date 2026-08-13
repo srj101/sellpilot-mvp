@@ -234,6 +234,18 @@ export const paymentsRouter = {
     }),
 
   /** Refund a transaction — partial refunds allowed, never more than was actually charged. */
+  /**
+   * ⚠️ LEDGER-ONLY — this does NOT move money at the gateway. It records that a refund
+   * happened out-of-band (e.g. issued from the SSLCommerz merchant portal). An owner who
+   * assumes this refunds the customer will leave them unpaid.
+   *
+   * SSLCommerz does publish a refund API (`merchantTransIDvalidationAPI.php`, keyed on
+   * `bank_tran_id` — now captured into `transaction.provider_payload` at payment time).
+   * Wiring it up is tracked as G6 in docs/PAYMENTS_REQUIREMENTS.md and is deliberately not
+   * done here: its refunds settle asynchronously (`processing` → `refunded`), so it needs a
+   * status-poll job and a "refund pending" state rather than this immediate flip — and it
+   * must be verified against the sandbox before it touches real money.
+   */
   refund: permissionProcedure("payments", "edit")
     .input(z.object({ id: z.string(), amount: z.number().positive() }))
     .mutation(async ({ ctx, input }) => {
