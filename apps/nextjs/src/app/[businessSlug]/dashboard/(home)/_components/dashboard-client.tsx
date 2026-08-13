@@ -13,6 +13,7 @@ import { Skeleton } from "@acme/ui/skeleton";
 import { cn } from "@acme/ui";
 
 import { useTRPC } from "~/trpc/react";
+import { isForbiddenError, PermissionDeniedCard } from "~/app/[businessSlug]/dashboard/_components/permission-denied-card";
 import type { ActivityEvent, DashboardClientProps, SerializedOrder } from "./dashboard-types";
 import { DAY, avatarColor, formatCurrency, initials, trendPct, trendPctDay, STATUS_BADGE } from "./dashboard-utils";
 import {
@@ -48,8 +49,17 @@ export function DashboardClient({ userName }: DashboardClientProps) {
   const businessSlug = useBusinessSlug();
   const trpc = useTRPC();
   const [now] = useState(() => Date.now());
-  const { data, isPending } = useQuery(trpc.dashboard.getOverview.queryOptions());
-  const { data: liveConvos, isPending: liveConvosPending } = useQuery(trpc.dashboard.getLiveConversations.queryOptions());
+  const { data, isPending, error } = useQuery(trpc.dashboard.getOverview.queryOptions());
+  const { data: liveConvos, isPending: liveConvosPending, error: liveConvosError } = useQuery(trpc.dashboard.getLiveConversations.queryOptions());
+
+  if (isForbiddenError(error) || isForbiddenError(liveConvosError)) {
+    return (
+      <PermissionDeniedCard
+        businessSlug={businessSlug}
+        message={(isForbiddenError(error) ? error : liveConvosError)?.message}
+      />
+    );
+  }
   const orders: SerializedOrder[] = data?.orders ?? [];
   const sessions: { id: string; createdAt: string | Date }[] = data?.sessions ?? [];
   const customerCount = data?.customerCount ?? 0;
