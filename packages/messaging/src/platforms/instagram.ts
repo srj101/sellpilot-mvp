@@ -2,6 +2,8 @@
  * Instagram Platform Provider
  */
 
+import { env } from "@acme/env";
+
 import { MetaBasePlatformProvider } from "./meta-base";
 import type {
   PlatformType,
@@ -128,7 +130,7 @@ export class InstagramPlatformProvider extends MetaBasePlatformProvider {
       const blob = new Blob([new Uint8Array(buffer)], { type: contentType });
       formData.append("filedata", blob, "image.jpg");
 
-      const url = `https://graph.facebook.com/${process.env.FACEBOOK_GRAPH_VERSION ?? "v25.0"}/${pageId}/messages?access_token=${connection.accessToken}`;
+      const url = `https://graph.facebook.com/${env.FACEBOOK_GRAPH_VERSION}/${pageId}/messages?access_token=${connection.accessToken}`;
       const res = await fetch(url, {
         method: "POST",
         headers: { Authorization: `Bearer ${connection.accessToken}` },

@@ -5,6 +5,7 @@ import { z } from "zod/v4";
 import { and, eq, ilike, isNotNull } from "@acme/db";
 import { businessMember, business, businessProfile, subscription, role } from "@acme/db/schema";
 import { sendEmail } from "@acme/auth/email";
+import { env } from "@acme/env";
 
 import { priceForCycle, PLAN_KEYS, BILLING_CYCLES, PLAN_CATALOG, EXTRA_CONVERSATIONS_MAX_MULTIPLIER, computeExtraConversationsCost } from "../lib/plans";
 import { DEFAULT_ROLES } from "../lib/permissions";
@@ -447,7 +448,7 @@ export const businessRouter = {
       message: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const salesEmail = process.env.SALES_EMAIL ?? "sales@sellpilot.ai";
+      const salesEmail = env.SALES_EMAIL;
       const lines = [
         `Name: ${input.fullName}`,
         `Email: ${input.email}`,

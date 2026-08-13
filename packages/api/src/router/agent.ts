@@ -17,6 +17,8 @@ import {
   productVariant,
   shippingRate,
 } from "@acme/db/schema";
+import { env } from "@acme/env";
+
 import { getMultiProductCartLimit } from "../lib/plan-limits";
 import { enqueueActivityLog } from "../lib/activity-queue";
 import { permissionProcedure } from "../trpc";
@@ -159,7 +161,7 @@ const generateOrderNumber = () => `SP-${Date.now()}`;
 /** Builds the public checkout link sent to the customer, e.g. https://app.sellpilot.ai/pay/{token} */
 function buildPaymentLink() {
   const token = crypto.randomUUID();
-  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+  const appUrl = env.APP_URL;
   return { paymentToken: token, paymentUrl: `${appUrl}/pay/${token}` };
 }
 

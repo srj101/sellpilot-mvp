@@ -13,6 +13,8 @@
  *   queue.process("job-name", async (job) => { ... });
  */
 
+import { env } from "@acme/env";
+
 import type {
   QueueProvider,
   QueueConfig,
@@ -45,9 +47,7 @@ export function createQueue(config?: Partial<QueueConfig>): QueueProvider {
     return queueInstance;
   }
 
-  const provider = (config?.provider ??
-    process.env.QUEUE_PROVIDER ??
-    "memory") as QueueProviderType;
+  const provider = (config?.provider ?? env.QUEUE_PROVIDER) as QueueProviderType;
 
   const fullConfig: QueueConfig = {
     provider,

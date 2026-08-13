@@ -13,15 +13,11 @@
  * - WhatsApp Cloud API: https://developers.facebook.com/docs/whatsapp/cloud-api
  */
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing required environment variable: ${name}`);
-  return value;
-}
+import { env } from "@acme/env";
 
-const FB_VERSION = process.env.FACEBOOK_GRAPH_VERSION ?? "v25.0";
-const APP_ID = requireEnv("FACEBOOK_APP_ID");
-const APP_SECRET = requireEnv("FACEBOOK_APP_SECRET");
+const FB_VERSION = env.FACEBOOK_GRAPH_VERSION;
+const APP_ID = env.FACEBOOK_APP_ID;
+const APP_SECRET = env.FACEBOOK_APP_SECRET;
 
 // ---------------------------------------------------------------------------
 // Generic fetch wrapper

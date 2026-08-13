@@ -14,6 +14,7 @@ import type { Auth, Session } from "@acme/auth";
 import { and, eq } from "@acme/db";
 import { db } from "@acme/db/client";
 import { businessMember, business } from "@acme/db/schema";
+import { env } from "@acme/env";
 
 import type { Action, Resource } from "./lib/permissions";
 import { resolvePermissions } from "./lib/permissions";
@@ -254,7 +255,7 @@ export const ownerOnlyProcedure = businessScopedProcedure.use(({ ctx, next }) =>
  * context and allowed through (log-only mode) so legacy members who'd be locked out
  * (e.g. a NULL customRoleKey) surface in the logs before enforcement flips on.
  */
-const RBAC_ENFORCE = process.env.RBAC_ENFORCE === "true";
+const RBAC_ENFORCE = env.RBAC_ENFORCE;
 
 export const permissionProcedure = (resource: Resource, action: Action) =>
   businessScopedProcedure.use(async ({ ctx, next, path }) => {

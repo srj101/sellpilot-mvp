@@ -1,23 +1,25 @@
 import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
+import { env } from "@acme/env";
+
 export const s3Client = new S3Client({
-  region: process.env.AWS_REGION ?? "us-east-1",
+  region: env.AWS_REGION,
   credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? "mock-key",
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? "mock-secret",
+    accessKeyId: env.AWS_ACCESS_KEY_ID ?? "mock-key",
+    secretAccessKey: env.AWS_SECRET_ACCESS_KEY ?? "mock-secret",
   },
-  ...(process.env.AWS_ENDPOINT_URL ? {
-    endpoint: process.env.AWS_ENDPOINT_URL,
+  ...(env.AWS_ENDPOINT_URL ? {
+    endpoint: env.AWS_ENDPOINT_URL,
     forcePathStyle: true,
   } : {}),
 });
 
-export const BUCKET_NAME = process.env.AWS_S3_BUCKET ?? "sellpilot-media";
+export const BUCKET_NAME = env.AWS_S3_BUCKET;
 
 export async function getPresignedUploadUrl(key: string, contentType: string): Promise<string> {
   // Ensure the bucket exists locally in development (LocalStack)
-  if (process.env.AWS_ENDPOINT_URL) {
+  if (env.AWS_ENDPOINT_URL) {
     const { CreateBucketCommand, HeadBucketCommand } = await import("@aws-sdk/client-s3");
     try {
       await s3Client.send(new HeadBucketCommand({ Bucket: BUCKET_NAME }));
@@ -60,10 +62,10 @@ export async function deleteS3Object(key: string): Promise<void> {
 }
 
 export function getPublicUrl(key: string): string {
-  if (process.env.AWS_ENDPOINT_URL) {
-    return `${process.env.AWS_ENDPOINT_URL}/${BUCKET_NAME}/${key}`;
+  if (env.AWS_ENDPOINT_URL) {
+    return `${env.AWS_ENDPOINT_URL}/${BUCKET_NAME}/${key}`;
   }
-  return `https://${BUCKET_NAME}.s3.${process.env.AWS_REGION ?? "us-east-1"}.amazonaws.com/${key}`;
+  return `https://${BUCKET_NAME}.s3.${env.AWS_REGION}.amazonaws.com/${key}`;
 }
 
 /**

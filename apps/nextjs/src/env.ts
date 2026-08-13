@@ -3,9 +3,14 @@ import { vercel } from "@t3-oss/env-nextjs/presets-zod";
 import { z } from "zod/v4";
 
 import { authEnv } from "@acme/auth/env";
+import { env as sharedEnv } from "@acme/env";
 
 export const env = createEnv({
-  extends: [authEnv(), vercel()],
+  // authEnv (AUTH_SECRET/GOOGLE_*/FACEBOOK_APP_ID+SECRET for better-auth) and
+  // sharedEnv (@acme/env — everything packages/api, messaging, db, ai-agent,
+  // queue, and apps/worker also read) are the single source of truth for
+  // every var they cover; don't re-declare those below.
+  extends: [authEnv(), sharedEnv, vercel()],
   shared: {
     NODE_ENV: z
       .enum(["development", "production", "test"])
@@ -17,39 +22,14 @@ export const env = createEnv({
    */
   server: {
     POSTGRES_URL: z.url(),
-    APP_URL: z.string().url().default("http://localhost:3000"),
-    SSLCOMMERZ_STORE_ID: z.string().optional(),
-    SSLCOMMERZ_STORE_PASSWORD: z.string().optional(),
-    SSLCOMMERZ_IS_SANDBOX: z.coerce.boolean().default(true),
-    GOOGLE_CLIENT_ID: z.string(),
-    GOOGLE_CLIENT_SECRET: z.string(),
-    FACEBOOK_CLIENT_ID: z.string(),
-    FACEBOOK_CLIENT_SECRET: z.string(),
-    FACEBOOK_APP_ID: z.string(),
-    // Also used to verify the X-Hub-Signature-256 header on incoming Meta
-    // webhooks — Meta always signs webhooks with the same App Secret used
-    // for OAuth/Graph API calls, so this must never be a different value.
-    FACEBOOK_APP_SECRET: z.string(),
     META_WEBHOOK_VERIFY_TOKEN: z.string(),
     META_CHANNEL_REDIRECT_URI: z.string().optional(),
-    WHATSAPP_REDIRECT_URI: z.string().optional(),
-    FACEBOOK_GRAPH_VERSION: z.string().default("v25.0"),
     BETTER_AUTH_URL: z.string().optional(),
     CLOUDFLARE_ACCOUNT_ID: z.string().optional(),
     CLOUDFLARE_API_TOKEN: z.string().optional(),
     CLOUDFLARE_AGENT_MODEL: z.string().default("@cf/zai-org/glm-5.2"),
     AGENT_SERVICE_URL: z.string().default("http://localhost:8787"),
-    /** Image/text embeddings for image search — see packages/api/src/lib/embeddings.ts.
-     * Optional: without it, image indexing/search just degrades (no-ops), same as the old
-     * ChromaDB-offline behavior. URL/model are overridable so a future NVIDIA model
-     * deprecation/rename (as already happened once to nvclip) is a config change. */
-    NVIDIA_API_KEY: z.string().optional(),
-    NVIDIA_EMBEDDINGS_URL: z.string().default("https://integrate.api.nvidia.com/v1/embeddings"),
-    NVIDIA_EMBED_MODEL: z.string().default("nvidia/llama-nemotron-embed-vl-1b-v2"),
-    REDIS_URL: z.string().default("redis://localhost:6379"),
-    OPENAI_API_KEY: z.string().optional(),
-    OPENAI_BASE_URL: z.string().url().optional(),
-    OPENAI_MODEL: z.string(),
+    CRON_SECRET: z.string().optional(),
   },
 
   /**

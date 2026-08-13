@@ -4,6 +4,9 @@
  */
 
 import { createHmac, timingSafeEqual } from "node:crypto";
+
+import { env } from "@acme/env";
+
 import { BasePlatformProvider } from "./base";
 import type {
   PlatformConnection,
@@ -11,7 +14,7 @@ import type {
   WebhookVerification,
 } from "../types";
 
-const FB_VERSION = process.env.FACEBOOK_GRAPH_VERSION ?? "v25.0";
+const FB_VERSION = env.FACEBOOK_GRAPH_VERSION;
 const GRAPH_API_BASE = `https://graph.facebook.com/${FB_VERSION}`;
 
 export abstract class MetaBasePlatformProvider extends BasePlatformProvider {

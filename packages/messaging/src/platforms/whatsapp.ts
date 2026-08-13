@@ -2,6 +2,8 @@
  * WhatsApp Cloud API Platform Provider
  */
 
+import { env } from "@acme/env";
+
 import { MetaBasePlatformProvider } from "./meta-base";
 import type {
   PlatformType,
@@ -96,7 +98,7 @@ export class WhatsAppPlatformProvider extends MetaBasePlatformProvider {
       const blob = new Blob([new Uint8Array(buffer)], { type: contentType });
       uploadForm.append("file", blob, "image.jpg");
 
-      const FB_VERSION = process.env.FACEBOOK_GRAPH_VERSION ?? "v25.0";
+      const FB_VERSION = env.FACEBOOK_GRAPH_VERSION;
       const uploadRes = await fetch(
         `https://graph.facebook.com/${FB_VERSION}/${connection.accountId}/media`,
         {

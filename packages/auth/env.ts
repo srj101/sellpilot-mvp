@@ -11,8 +11,11 @@ export function authEnv() {
       NODE_ENV: z.enum(["development", "production"]).optional(),
       GOOGLE_CLIENT_ID: z.string(),
       GOOGLE_CLIENT_SECRET: z.string(),
-      FACEBOOK_APP_ID: z.string(),
-      FACEBOOK_APP_SECRET: z.string(),
+      // A separate Facebook App from FACEBOOK_APP_ID/SECRET (@acme/env) — that
+      // one is the messaging/Graph-API app (Page connect, webhook signatures);
+      // this one is dedicated to "Sign in with Facebook" on the login page.
+      FACEBOOK_CLIENT_ID: z.string(),
+      FACEBOOK_CLIENT_SECRET: z.string(),
     },
     runtimeEnv: process.env,
     skipValidation:

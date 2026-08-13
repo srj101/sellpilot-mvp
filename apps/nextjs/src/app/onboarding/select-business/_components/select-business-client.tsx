@@ -316,7 +316,7 @@ export function SelectBusinessClient() {
     setActive.mutate(
       { businessId },
       {
-        onSuccess: () => { window.location.href = `/${slug}/dashboard`; },
+        onSuccess: () => { window.location.href = `/${slug}/dashboard/loading`; },
         onError: (e) => {
           setEnteringBusinessId(null);
           toast.error(e.message);

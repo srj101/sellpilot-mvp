@@ -12,6 +12,9 @@ import {
   GetQueueAttributesCommand,
   CreateQueueCommand,
 } from "@aws-sdk/client-sqs";
+
+import { env } from "@acme/env";
+
 import type {
   QueueProvider,
   Job,
@@ -46,13 +49,11 @@ export class SQSQueueProvider implements QueueProvider {
 
   constructor(config: QueueConfig) {
     const sqs = config.sqs ?? {
-      region: process.env.AWS_REGION ?? "us-east-1",
-      queueUrlPrefix:
-        process.env.SQS_QUEUE_URL_PREFIX ??
-        "http://localhost:4566/000000000000",
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-      endpoint: process.env.AWS_ENDPOINT_URL,
+      region: env.AWS_REGION,
+      queueUrlPrefix: env.SQS_QUEUE_URL_PREFIX ?? "http://localhost:4566/000000000000",
+      accessKeyId: env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+      endpoint: env.AWS_ENDPOINT_URL,
     };
 
     this.queueUrlPrefix = sqs.queueUrlPrefix;

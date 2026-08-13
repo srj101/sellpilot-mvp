@@ -211,7 +211,7 @@ export function FloatingHeader({
             </DropdownMenuLabel>
             <DropdownMenuSeparator className="bg-haze-divider/40" />
             <DropdownMenuItem asChild className="rounded-md focus:bg-muted">
-              <Link href={`/${businessSlug}/dashboard/settings`}>Profile settings</Link>
+              <Link href={`/${businessSlug}/dashboard/settings?tab=profile`}>Profile settings</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild className="rounded-md focus:bg-muted">
               <Link href="/onboarding/select-business">

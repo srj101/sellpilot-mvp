@@ -50,7 +50,7 @@ export async function GET(req: Request) {
   cookieStore.set("meta_channel_state", state, { maxAge: 600, httpOnly: true, path: "/" });
 
   const redirectUri = env.META_CHANNEL_REDIRECT_URI ?? `${url.protocol}//${url.host}/api/meta/callback`;
-  const fbVersion = process.env.FACEBOOK_GRAPH_VERSION ?? "v25.0";
+  const fbVersion = env.FACEBOOK_GRAPH_VERSION;
 
   const authUrl = new URL(`https://www.facebook.com/${fbVersion}/dialog/oauth`);
   authUrl.searchParams.set("client_id", env.FACEBOOK_APP_ID);

@@ -16,12 +16,14 @@ import { computeExtraConversationsCost, computeOverageAmount, CYCLE_META, PLAN_C
 import { CARD_AND_BANK_GATEWAYS, initiatePayment, resolvePlatformCredentials } from "@acme/api/sslcommerz";
 import { sendEmail } from "@acme/auth/email";
 
+import { env } from "../env.js";
+
 const DAY_MS = 86_400_000;
 const REMINDER_INTERVAL_DAYS = 3;
 const MAX_REMINDERS = 3;
 
 function appUrl() {
-  return process.env.APP_URL ?? "http://localhost:3000";
+  return env.APP_URL;
 }
 
 function invoiceNumber(periodStart: Date): string {

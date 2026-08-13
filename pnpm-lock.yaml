@@ -110,6 +110,9 @@ importers:
       '@acme/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@acme/env':
+        specifier: workspace:*
+        version: link:../../packages/env
       '@acme/messaging':
         specifier: workspace:*
         version: link:../../packages/messaging
@@ -243,12 +246,21 @@ importers:
       '@acme/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@acme/env':
+        specifier: workspace:*
+        version: link:../../packages/env
       '@acme/messaging':
         specifier: workspace:*
         version: link:../../packages/messaging
       '@acme/queue':
         specifier: workspace:*
         version: link:../../packages/queue
+      '@t3-oss/env-core':
+        specifier: ^0.13.8
+        version: 0.13.8(arktype@2.1.20)(typescript@5.9.3)(valibot@1.0.0-beta.15(typescript@5.9.3))(zod@4.1.12)
+      zod:
+        specifier: 'catalog:'
+        version: 4.1.12
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -265,6 +277,9 @@ importers:
 
   packages/ai-agent:
     dependencies:
+      '@acme/env':
+        specifier: workspace:*
+        version: link:../env
       '@langchain/core':
         specifier: ^1.2.3
         version: 1.2.3(@opentelemetry/api@1.9.0)(openai@6.45.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.6)(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))(zod@4.1.12))(ws@8.21.1(bufferutil@4.0.8)(utf-8-validate@6.0.4))
@@ -293,6 +308,9 @@ importers:
       '@acme/db':
         specifier: workspace:*
         version: link:../db
+      '@acme/env':
+        specifier: workspace:*
+        version: link:../env
       '@acme/queue':
         specifier: workspace:*
         version: link:../queue
@@ -342,6 +360,9 @@ importers:
       '@acme/db':
         specifier: workspace:*
         version: link:../db
+      '@acme/env':
+        specifier: workspace:*
+        version: link:../env
       '@aws-sdk/client-sesv2':
         specifier: ^3.600.0
         version: 3.1093.0
@@ -382,6 +403,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@acme/env':
+        specifier: workspace:*
+        version: link:../env
       '@acme/queue':
         specifier: workspace:*
         version: link:../queue
@@ -420,7 +444,42 @@ importers:
         specifier: 'catalog:'
         version: 5.9.3
 
+  packages/env:
+    dependencies:
+      '@t3-oss/env-core':
+        specifier: ^0.13.8
+        version: 0.13.8(arktype@2.1.20)(typescript@5.9.3)(valibot@1.0.0-beta.15(typescript@5.9.3))(zod@4.1.12)
+      zod:
+        specifier: 'catalog:'
+        version: 4.1.12
+    devDependencies:
+      '@acme/eslint-config':
+        specifier: workspace:*
+        version: link:../../tooling/eslint
+      '@acme/prettier-config':
+        specifier: workspace:*
+        version: link:../../tooling/prettier
+      '@acme/tsconfig':
+        specifier: workspace:*
+        version: link:../../tooling/typescript
+      '@types/node':
+        specifier: 'catalog:'
+        version: 22.18.12
+      eslint:
+        specifier: 'catalog:'
+        version: 9.38.0(jiti@2.6.1)
+      prettier:
+        specifier: 'catalog:'
+        version: 3.6.2
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
   packages/messaging:
+    dependencies:
+      '@acme/env':
+        specifier: workspace:*
+        version: link:../env
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -431,6 +490,9 @@ importers:
 
   packages/queue:
     dependencies:
+      '@acme/env':
+        specifier: workspace:*
+        version: link:../env
       '@aws-sdk/client-sqs':
         specifier: ^3.600.0
         version: 3.1090.0

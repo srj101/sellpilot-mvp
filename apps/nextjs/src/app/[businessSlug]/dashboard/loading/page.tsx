@@ -14,18 +14,20 @@ export default function LoadingPage() {
   const businessSlug = match ? match[1] : "";
   const basePath = businessSlug ? `/${businessSlug}` : "";
 
-  // Define priority: first matching permission wins
-  const priority: [string, string][] = [
-    ["overview:view", "/dashboard"],
-    ["orders:view", "/dashboard/orders"],
-    ["products:view", "/dashboard/products"],
-    ["customers:view", "/dashboard/customers"],
-    ["analytics:view", "/dashboard/analytics"],
-    ["inbox:view", "/dashboard/inbox"],
-    ["support:view", "/dashboard/support"], // same as inbox:view
-    ["roles:view", "/dashboard/roles"],
-    ["activity:view", "/dashboard/activity"],
-    ["settings:view", "/dashboard/settings"],
+  // Define priority: first matching permission wins. Resource/action are kept as
+  // separate tuple slots (not a "resource:action" string) so this doesn't need a
+  // runtime split() that TS can't prove always returns two parts.
+  const priority: [string, string, string][] = [
+    ["overview", "view", "/dashboard"],
+    ["orders", "view", "/dashboard/orders"],
+    ["products", "view", "/dashboard/products"],
+    ["customers", "view", "/dashboard/customers"],
+    ["analytics", "view", "/dashboard/analytics"],
+    ["inbox", "view", "/dashboard/inbox"],
+    ["support", "view", "/dashboard/support"], // same as inbox:view
+    ["roles", "view", "/dashboard/roles"],
+    ["activity", "view", "/dashboard/activity"],
+    ["settings", "view", "/dashboard/settings"],
     // Add more as needed
   ];
 
@@ -36,8 +38,8 @@ export default function LoadingPage() {
     }
 
     // Find the first permission we have
-    for (const [perm, targetPath] of priority) {
-      if (can(perm.split(":")[0], perm.split(":")[1])) {
+    for (const [resource, action, targetPath] of priority) {
+      if (can(resource, action)) {
         const fullPath = `${basePath}${targetPath}`;
         router.replace(fullPath);
         return;

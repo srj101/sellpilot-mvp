@@ -88,7 +88,7 @@ export async function GET(req: Request) {
     cookieStore.set("meta_temp_user_token", longToken.access_token, {
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: env.NODE_ENV === "production",
       maxAge: 10 * 60, // 10 minutes
       path: "/",
     });

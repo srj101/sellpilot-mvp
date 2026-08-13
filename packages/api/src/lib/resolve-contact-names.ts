@@ -1,10 +1,12 @@
+import { env } from "@acme/env";
+
 import type { MetaConnectionRow, MetaWebhookEventRow } from "./meta-inbox";
 
 // Simple in-memory cache for resolved contact names to avoid calling Graph API on every page load
 const contactNameCache = new Map<string, { name: string; expiresAt: number }>();
 const CACHE_TTL = 1000 * 60 * 60; // 1 hour cache TTL
 
-const FB_VERSION = process.env.FACEBOOK_GRAPH_VERSION ?? "v25.0";
+const FB_VERSION = env.FACEBOOK_GRAPH_VERSION;
 
 // Call Graph API safely without throwing errors to avoid console pollution in Next.js Server Components
 async function safeGraphGet(psid: string, accessToken: string): Promise<string | null> {

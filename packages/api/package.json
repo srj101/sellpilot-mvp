@@ -60,6 +60,7 @@
   "dependencies": {
     "@acme/auth": "workspace:*",
     "@acme/db": "workspace:*",
+    "@acme/env": "workspace:*",
     "@acme/queue": "workspace:*",
     "@acme/validators": "workspace:*",
     "@aws-sdk/client-s3": "^3.1094.0",

@@ -70,6 +70,15 @@ export function initAuth<
         enabled: true,
       },
     },
+    account: {
+      accountLinking: {
+        enabled: true,
+        // Google and Facebook both only report verified emails, so it's safe to
+        // treat "signed in with a different provider, same email" as the same
+        // person rather than refusing with account_not_linked.
+        trustedProviders: ["google", "facebook"],
+      },
+    },
     session: {
       additionalFields: {
         activeBusinessId: { type: "string", required: false },
@@ -93,7 +102,7 @@ export function initAuth<
         clientSecret: options.facebookClientSecret,
       },
     },
-    trustedOrigins: ["expo://", "http://localhost:3000"],
+    trustedOrigins: ["expo://", "http://localhost:3000", "https://tunnel.sellpilot-mvp.online"],
     onAPIError: {
       onError(error, ctx) {
         console.error("BETTER AUTH API ERROR", error, ctx);

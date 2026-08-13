@@ -3,12 +3,14 @@ import { db } from "@acme/db/client";
 import { product, productVariant, productImageEmbedding } from "@acme/db/schema";
 import { queueProductImageIndexing } from "@acme/api/queue";
 
+import { env } from "~/env";
+
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   // Optional security check
   const authHeader = req.headers.get("authorization");
-  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (env.CRON_SECRET && authHeader !== `Bearer ${env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

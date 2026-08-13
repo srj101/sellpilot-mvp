@@ -1,5 +1,6 @@
 import { and, desc, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
 
+import { env } from "@acme/env";
 import { createQueue, publishNotificationEvent } from "@acme/queue";
 
 const activityQueue = createQueue();
@@ -336,7 +337,7 @@ function generateOrderNumber() {
 /** Builds the public checkout link sent to the customer, e.g. https://app.sellpilot.ai/pay/{token} */
 function buildPaymentLink() {
   const token = crypto.randomUUID();
-  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+  const appUrl = env.APP_URL;
   return { paymentToken: token, paymentUrl: `${appUrl}/pay/${token}` };
 }
 
@@ -1261,9 +1262,9 @@ export async function generateAndSaveConversationSummary(
       .join("\n")
       .slice(0, 8000);
 
-    const apiKey = process.env.OPENAI_API_KEY ?? "";
-    const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
-    const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+    const apiKey = env.OPENAI_API_KEY ?? "";
+    const baseUrl = env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
+    const model = env.OPENAI_MODEL;
 
     const res = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",

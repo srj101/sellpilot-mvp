@@ -3,8 +3,10 @@ import { db } from "@acme/db/client";
 import { business, businessMember, businessProfile, notificationPreference, order, orderItem, subscription, user } from "@acme/db/schema";
 import { sendEmail } from "@acme/auth/email";
 
+import { env } from "../env.js";
+
 function appUrl(): string {
-  return process.env.APP_URL ?? "http://localhost:3000";
+  return env.APP_URL;
 }
 
 interface AIInsightResult {
@@ -28,7 +30,7 @@ async function generateAiExecutiveInsights(
     topProducts: string[];
   },
 ): Promise<AIInsightResult> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = env.OPENAI_API_KEY;
   if (!apiKey) {
     // Fallback if no OpenAI API key configured
     return {
@@ -41,8 +43,8 @@ async function generateAiExecutiveInsights(
     };
   }
 
-  const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
-  const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+  const baseUrl = env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
+  const model = env.OPENAI_MODEL;
 
   const systemPrompt = `You are SellPilot's Executive AI Copilot. You analyze e-commerce store metrics and generate concise, professional, motivating executive insights and 3 actionable growth recommendations for store owners. Return valid JSON only with keys "summary" (string) and "recommendations" (array of 3 short strings).`;
 

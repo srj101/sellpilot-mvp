@@ -16,8 +16,11 @@
     "@acme/api": "workspace:*",
     "@acme/auth": "workspace:*",
     "@acme/db": "workspace:*",
+    "@acme/env": "workspace:*",
     "@acme/messaging": "workspace:*",
-    "@acme/queue": "workspace:*"
+    "@acme/queue": "workspace:*",
+    "@t3-oss/env-core": "^0.13.8",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -5,6 +5,7 @@ import { z } from "zod/v4";
 import { desc, eq, and } from "@acme/db";
 import { role, businessMember, businessInvitation, user, business } from "@acme/db/schema";
 import { sendEmail } from "@acme/auth/email";
+import { env } from "@acme/env";
 
 import { DEFAULT_ROLES, resolvePermissions } from "../lib/permissions";
 import { enqueueActivityLog } from "../lib/activity-queue";
@@ -12,7 +13,7 @@ import { assertPlanLimit } from "../lib/plan-limits";
 import { businessProcedure, protectedProcedure, permissionProcedure, publicProcedure, businessScopedProcedure } from "../trpc";
 
 function appUrl(): string {
-  return process.env.APP_URL ?? "http://localhost:3000";
+  return env.APP_URL;
 }
 
 export const rolesRouter = {

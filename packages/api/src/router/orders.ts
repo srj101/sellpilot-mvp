@@ -7,6 +7,7 @@ import type { db as Db } from "@acme/db/client";
 import { metaConnection, metaWebhookEvent, order, orderItem, orderStatusHistory, transaction } from "@acme/db/schema";
 import { getNotificationPreference, resolveNotificationRecipient } from "@acme/db/helpers/notification-preferences";
 import { sendEmail } from "@acme/auth/email";
+import { env } from "@acme/env";
 
 import { recordOrderStatusChange } from "../lib/order-audit";
 import { enqueueActivityLog } from "../lib/activity-queue";
@@ -236,7 +237,7 @@ export const ordersRouter = {
         if (emailEnabled) {
           const recipientEmail = await resolveNotificationRecipient(ctx.businessId);
           if (recipientEmail) {
-            const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+            const appUrl = env.APP_URL;
             const orderUrl = `${appUrl}/${ctx.businessId}/dashboard/orders`;
             await sendEmail({
               to: recipientEmail,
@@ -255,7 +256,7 @@ export const ordersRouter = {
             const recipientEmail = await resolveNotificationRecipient(ctx.businessId);
             if (recipientEmail) {
               const alerts = result.lowStockAlerts.map((a) => `${a.name} (${a.remaining} left, threshold: ${a.threshold})`).join(", ");
-              const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+              const appUrl = env.APP_URL;
               await sendEmail({
                 to: recipientEmail,
                 subject: `⚠️ Low stock alert — ${result.lowStockAlerts.length} product(s) running low`,

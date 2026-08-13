@@ -1,5 +1,8 @@
 import { Queue, Worker } from "bullmq";
 
+import { env } from "@acme/env";
+import { resolveRedisConnection } from "@acme/queue";
+
 import { addProductImageToVectorDb } from "./vector-search";
 
 export interface ProductImageJobData {
@@ -15,8 +18,15 @@ const globalForQueue = globalThis as unknown as {
   productImageWorker: Worker<ProductImageJobData> | undefined;
 };
 
+// Same discrete host/port/password/db/tls resolution packages/queue's
+// RedisQueueProvider uses, so both queues always agree on which Redis to hit.
+const redisConn = resolveRedisConnection();
 const CONNECTION_OPTS = {
-  url: process.env.REDIS_URL ?? "redis://localhost:6379",
+  host: redisConn.host,
+  port: redisConn.port,
+  password: redisConn.password,
+  db: redisConn.db,
+  ...(redisConn.tls ? { tls: {} } : {}),
 };
 
 export const productImageQueue =
@@ -37,7 +47,7 @@ export const productImageQueue =
     },
   });
 
-if (process.env.NODE_ENV !== "production") {
+if (env.NODE_ENV !== "production") {
   globalForQueue.productImageQueue = productImageQueue;
 }
 
@@ -73,7 +83,7 @@ export const productImageWorker =
     }
   );
 
-if (process.env.NODE_ENV !== "production") {
+if (env.NODE_ENV !== "production") {
   globalForQueue.productImageWorker = productImageWorker;
 }
 

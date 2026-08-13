@@ -19,6 +19,7 @@
 import { eq } from "@acme/db";
 import type { db as Db } from "@acme/db/client";
 import { platformSettings } from "@acme/db/schema";
+import { env } from "@acme/env";
 
 export interface SslcommerzCredentials {
   storeId: string;
@@ -26,7 +27,7 @@ export interface SslcommerzCredentials {
 }
 
 function isSandbox() {
-  return process.env.SSLCOMMERZ_IS_SANDBOX !== "false";
+  return env.SSLCOMMERZ_IS_SANDBOX;
 }
 
 function baseUrl() {
@@ -47,8 +48,8 @@ export function hasCredentials(
 export async function resolvePlatformCredentials(db: typeof Db): Promise<SslcommerzCredentials> {
   const [row] = await db.select().from(platformSettings).limit(1);
   const creds = {
-    storeId: row?.sslcommerzStoreId ?? process.env.SSLCOMMERZ_STORE_ID ?? undefined,
-    storePassword: row?.sslcommerzStorePassword ?? process.env.SSLCOMMERZ_STORE_PASSWORD ?? undefined,
+    storeId: row?.sslcommerzStoreId ?? env.SSLCOMMERZ_STORE_ID,
+    storePassword: row?.sslcommerzStorePassword ?? env.SSLCOMMERZ_STORE_PASSWORD,
   };
   if (!hasCredentials(creds)) {
     throw new Error("SellPilot's payment gateway isn't configured yet — contact support.");
@@ -160,7 +161,7 @@ export async function probeActiveGateways(
   businessId: string,
 ): Promise<GatewayProbeResult> {
   const { storeId, storePassword } = credentials;
-  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+  const appUrl = env.APP_URL;
   const base = `${appUrl}/api/payments/sslcommerz`;
 
   const body = new URLSearchParams({

@@ -6,6 +6,7 @@ import { desc, eq, and, gte, createNotification } from "@acme/db";
 import type { db as Db } from "@acme/db/client";
 import { businessProfile, order, orderItem, pageView, transaction } from "@acme/db/schema";
 import { getNotificationPreference } from "@acme/db/helpers/notification-preferences";
+import { env } from "@acme/env";
 
 import { enqueueOrderStatusNotify } from "../lib/notify-queue";
 import { getPlanFeatureEnabled } from "../lib/plan-limits";
@@ -167,7 +168,7 @@ export const checkoutRouter = {
         return { ok: false as const, reason: "Online payment isn't set up for this store yet — please choose Cash on Delivery." };
       }
 
-      const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+      const appUrl = env.APP_URL;
       const base = `${appUrl}/api/payments/sslcommerz`;
       const result = await initiatePayment({
         credentials,

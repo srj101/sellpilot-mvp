@@ -21,17 +21,19 @@
  * to duplicate that handling here.
  */
 
+import { env } from "@acme/env";
+
 // Configurable via env so a future NVIDIA model deprecation/rename (like the one that
 // retired the original hosted nvclip endpoint) is a config change, not a code deploy.
-const NVIDIA_EMBEDDINGS_URL = process.env.NVIDIA_EMBEDDINGS_URL ?? "https://integrate.api.nvidia.com/v1/embeddings";
-const EMBED_MODEL = process.env.NVIDIA_EMBED_MODEL ?? "nvidia/llama-nemotron-embed-vl-1b-v2";
+const NVIDIA_EMBEDDINGS_URL = env.NVIDIA_EMBEDDINGS_URL;
+const EMBED_MODEL = env.NVIDIA_EMBED_MODEL;
 
 interface NvidiaEmbeddingResponse {
   data: { embedding: number[] }[];
 }
 
 function getApiKey(): string {
-  const key = process.env.NVIDIA_API_KEY;
+  const key = env.NVIDIA_API_KEY;
   if (!key) {
     throw new Error("NVIDIA_API_KEY is not set — image/text embeddings are unavailable.");
   }

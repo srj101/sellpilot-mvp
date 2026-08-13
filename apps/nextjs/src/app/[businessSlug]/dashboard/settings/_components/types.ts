@@ -63,6 +63,16 @@ export interface SettingsClientProps {
   user: SettingsUser;
 }
 
-export type SectionId = "business" | "profile" | "notifications" | "ai-agent" | "shipping" | "faqs" | "policies";
+export const SECTION_IDS = [
+  "business",
+  "profile",
+  "notifications",
+  "ai-agent",
+  "shipping",
+  "faqs",
+  "policies",
+] as const;
+
+export type SectionId = (typeof SECTION_IDS)[number];
 
 export type NotifPrefs = Record<string, { emailEnabled: boolean; inAppEnabled: boolean }>;

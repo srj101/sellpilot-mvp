@@ -5,21 +5,23 @@
  */
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 
+import { env } from "@acme/env";
+
 const client = new SESv2Client({
-  region: process.env.AWS_REGION ?? "us-east-1",
-  ...(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+  region: env.AWS_REGION,
+  ...(env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
     ? {
         credentials: {
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+          accessKeyId: env.AWS_ACCESS_KEY_ID,
+          secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
         },
       }
     : {}),
-  ...(process.env.AWS_ENDPOINT_URL ? { endpoint: process.env.AWS_ENDPOINT_URL } : {}),
+  ...(env.AWS_ENDPOINT_URL ? { endpoint: env.AWS_ENDPOINT_URL } : {}),
 });
 
 export async function sendEmail(params: { to: string; subject: string; html: string; text: string }): Promise<void> {
-  const fromEmail = process.env.AWS_SES_FROM_EMAIL ?? "no-reply@sellpilot.ai";
+  const fromEmail = env.AWS_SES_FROM_EMAIL;
 
   try {
     await client.send(

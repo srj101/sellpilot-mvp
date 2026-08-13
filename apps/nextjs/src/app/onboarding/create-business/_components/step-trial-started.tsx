@@ -33,9 +33,9 @@ export function StepTrialStarted({
   const displayFeatures =
     plan && extraConversations > 0 && baseConversations !== null
       ? [
-          `${(baseConversations + extraConversations).toLocaleString()} AI conversations / month (${baseConversations.toLocaleString()} base + ${extraConversations.toLocaleString()} extra)`,
-          ...plan.features.filter((feature) => !feature.includes("AI conversations / month")),
-        ]
+        `${(baseConversations + extraConversations).toLocaleString()} AI conversations / month (${baseConversations.toLocaleString()} base + ${extraConversations.toLocaleString()} extra)`,
+        ...plan.features.filter((feature) => !feature.includes("AI conversations / month")),
+      ]
       : (plan?.features ?? []);
   const [dateStr, setDateStr] = useState("");
   const [navigating, setNavigating] = useState(false);
@@ -57,10 +57,10 @@ export function StepTrialStarted({
     const date = trialEndsAt
       ? new Date(trialEndsAt)
       : (() => {
-          const fallback = new Date();
-          fallback.setDate(fallback.getDate() + 14);
-          return fallback;
-        })();
+        const fallback = new Date();
+        fallback.setDate(fallback.getDate() + 14);
+        return fallback;
+      })();
     setDateStr(date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }));
   }, [trialEndsAt]);
 
@@ -79,7 +79,7 @@ export function StepTrialStarted({
           </div>
 
           <h1 className="mb-2 text-2xl font-bold tracking-tight">Your 14-day free trial is active!</h1>
-          
+
           <div className="mb-8 rounded-full bg-muted px-4 py-1.5 text-sm font-medium text-muted-foreground">
             Trial ends on {dateStr || "..."}
           </div>
@@ -107,10 +107,6 @@ export function StepTrialStarted({
                       {feature}
                     </li>
                   ))}
-                  <li className="flex items-center gap-2">
-                    <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                    No payment method required yet
-                  </li>
                 </ul>
               </>
             )}

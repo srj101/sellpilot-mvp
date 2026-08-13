@@ -13,8 +13,10 @@ import { createNotification } from "@acme/db/helpers/aiHelpers";
 import { getNotificationPreference } from "@acme/db/helpers/notification-preferences";
 import { sendEmail } from "@acme/auth/email";
 
+import { env } from "../env.js";
+
 function appUrl(): string {
-  return process.env.APP_URL ?? "http://localhost:3000";
+  return env.APP_URL;
 }
 
 async function notifyUsageThreshold(businessId: string, pct: 80 | 100, planName: string): Promise<void> {

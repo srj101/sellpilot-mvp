@@ -8,6 +8,8 @@
  */
 import { Redis } from "ioredis";
 
+import { env } from "@acme/env";
+
 const CHANNEL = "thread-cancel";
 
 export interface RedisConnectionOptions {
@@ -25,10 +27,11 @@ export function resolveRedisConnection(
 ): RedisConnectionOptions {
   return (
     override ?? {
-      host: process.env.REDIS_HOST ?? "localhost",
-      port: parseInt(process.env.REDIS_PORT ?? "6379"),
-      password: process.env.REDIS_PASSWORD,
-      db: parseInt(process.env.REDIS_DB ?? "0"),
+      host: env.REDIS_HOST,
+      port: env.REDIS_PORT,
+      password: env.REDIS_PASSWORD,
+      db: env.REDIS_DB,
+      tls: env.REDIS_TLS,
     }
   );
 }

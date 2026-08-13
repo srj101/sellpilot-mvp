@@ -18,6 +18,7 @@ import { getNotificationPreference, resolveNotificationRecipient } from "@acme/d
 import { sendEmail } from "@acme/auth/email";
 
 import { loadConfig } from "./config.js";
+import { env } from "./env.js";
 import {
   handleDMReply,
   handleCommentReply,
@@ -109,7 +110,7 @@ async function initializeAIHelpers() {
               if (emailEnabled) {
                 const recipientEmail = await resolveNotificationRecipient(params.businessId);
                 if (recipientEmail) {
-                  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+                  const appUrl = env.APP_URL;
                   await sendEmail({
                     to: recipientEmail,
                     subject: `New order #${result.orderNumber} — ৳${result.total.toLocaleString()}`,
@@ -125,7 +126,7 @@ async function initializeAIHelpers() {
                   const recipientEmail = await resolveNotificationRecipient(params.businessId);
                   if (recipientEmail) {
                     const alerts = result.lowStockAlerts.map((a) => `${a.name} (${a.remaining} left, threshold: ${a.threshold})`).join(", ");
-                    const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+                    const appUrl = env.APP_URL;
                     await sendEmail({
                       to: recipientEmail,
                       subject: `⚠️ Low stock alert — ${result.lowStockAlerts.length} product(s) running low`,
@@ -162,7 +163,7 @@ async function initializeAIHelpers() {
             if (emailEnabled) {
               const recipientEmail = await resolveNotificationRecipient(businessId);
               if (recipientEmail) {
-                const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+                const appUrl = env.APP_URL;
                 await sendEmail({
                   to: recipientEmail,
                   subject: "🙋 Conversation escalated to you",
@@ -370,7 +371,7 @@ async function startHealthCheck() {
     }
   });
 
-  const port = parseInt(process.env.WORKER_HEALTH_PORT ?? "3001");
+  const port = env.WORKER_HEALTH_PORT ?? 3001;
   server.listen(port, () => {
     console.log(`[Worker] Health check listening on port ${port}`);
   });
@@ -383,7 +384,7 @@ async function main() {
     registerHandlers();
     scheduleBillingJobs();
 
-    if (process.env.WORKER_HEALTH_PORT) {
+    if (env.WORKER_HEALTH_PORT) {
       await startHealthCheck();
     }
 

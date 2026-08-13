@@ -25,9 +25,9 @@ export default async function DashboardRedirectPage() {
   }
 
   if (myStores.length === 1) {
-    redirect(`/${myStores[0]!.slug}/dashboard`);
+    redirect(`/${myStores[0]!.slug}/dashboard/loading`);
   }
 
   const active = myStores.find((s) => s.isActive);
-  redirect(active ? `/${active.slug}/dashboard` : "/onboarding/select-business");
+  redirect(active ? `/${active.slug}/dashboard/loading` : "/onboarding/select-business");
 }

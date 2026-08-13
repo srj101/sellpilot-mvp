@@ -24,6 +24,8 @@ export * from "./prompts";
 export * from "./tools/index";
 export { SalesAgentGraph, SimpleChatAgent } from "./graph";
 
+import { env } from "@acme/env";
+
 import type { AgentConfig, AgentInput, AgentOutput, PlanKey } from "./types";
 import { SalesAgentGraph, SimpleChatAgent } from "./graph";
 import {
@@ -92,12 +94,12 @@ export function createSalesAgent(options: AgentOptions = {}): {
   runStream?: (input: AgentInput) => AsyncGenerator<AgentOutput & { delta?: string }, void, unknown>;
 } {
   const config: AgentConfig = {
-    apiKey: options.apiKey ?? process.env.OPENAI_API_KEY ?? "",
-    baseUrl: options.baseUrl ?? process.env.OPENAI_BASE_URL,
-    model: options.model ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+    apiKey: options.apiKey ?? env.OPENAI_API_KEY ?? "",
+    baseUrl: options.baseUrl ?? env.OPENAI_BASE_URL,
+    model: options.model ?? env.OPENAI_MODEL,
     temperature: options.temperature ?? 0.7,
     maxTokens: options.maxTokens ?? 800,
-    debug: options.debug ?? process.env.NODE_ENV !== "production",
+    debug: options.debug ?? env.NODE_ENV !== "production",
     planKey: options.planKey,
   };
 

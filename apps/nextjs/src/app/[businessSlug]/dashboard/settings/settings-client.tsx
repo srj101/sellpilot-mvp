@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { toast } from "@acme/ui/toast";
@@ -22,7 +22,12 @@ import { PersonalProfileSection } from "./_components/personal-profile-section";
 import { PoliciesSection } from "./_components/policies-section";
 import { SettingsNav } from "./_components/settings-nav";
 import { ShippingSection } from "./_components/shipping-section";
+import { SECTION_IDS } from "./_components/types";
 import type { FAQ, NotifPrefs, Policy, SectionId, SettingsClientProps, ShippingRate } from "./_components/types";
+
+function isSectionId(value: string | null): value is SectionId {
+  return !!value && (SECTION_IDS as readonly string[]).includes(value);
+}
 
 export function SettingsClient({
   storeProfile,
@@ -33,10 +38,24 @@ export function SettingsClient({
   user,
 }: SettingsClientProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const trpc = useTRPC();
   const [saving, setSaving] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [activeSection, setActiveSection] = useState<SectionId>("business");
+
+  // URL-driven so links (the header's "Profile settings" item, bookmarks, back/forward)
+  // can deep-link straight to a tab instead of always landing on "business".
+  const tabParam = searchParams.get("tab");
+  const activeSection: SectionId = isSectionId(tabParam) ? tabParam : "business";
+  const setActiveSection = useCallback(
+    (id: SectionId) => {
+      const params = new URLSearchParams(searchParams);
+      params.set("tab", id);
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
 
   // Owner-only gating for create/delete actions (same source as the sidebar).
   const { data: myPermissions } = useQuery(trpc.roles.getMyPermissions.queryOptions());

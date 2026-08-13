@@ -6,6 +6,7 @@
  * and a 3-tool, few-turn Q&A loop doesn't need that machinery.
  */
 import type { db as Db } from "@acme/db/client";
+import { env } from "@acme/env";
 
 import { getChannelBreakdown, getSalesSummary, getTopProducts } from "./copilot-data";
 
@@ -107,14 +108,14 @@ interface OpenAIChatResponse {
 }
 
 function getConfig() {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not set — the AI Copilot is unavailable.");
   }
   return {
     apiKey,
-    baseUrl: process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
-    model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+    baseUrl: env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
+    model: env.OPENAI_MODEL,
   };
 }
 

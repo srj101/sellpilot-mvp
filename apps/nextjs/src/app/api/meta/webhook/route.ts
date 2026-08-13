@@ -43,7 +43,7 @@ const queue = createQueue();
 console.log("[Webhook] Route module loaded", {
   hasFacebookAppSecret: !!env.FACEBOOK_APP_SECRET,
   hasWebhookVerifyToken: !!env.META_WEBHOOK_VERIFY_TOKEN,
-  queueProvider: process.env.QUEUE_PROVIDER ?? "memory",
+  queueProvider: env.QUEUE_PROVIDER,
 });
 
 // ============================================

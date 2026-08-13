@@ -5,6 +5,7 @@ import { z } from "zod/v4";
 import { and, count, desc, eq } from "@acme/db";
 import type { db as Db } from "@acme/db/client";
 import { business, businessMember, order, paymentMethod, product, saasInvoice, subscription } from "@acme/db/schema";
+import { env } from "@acme/env";
 
 import type { BillingCycle, PlanKey } from "../lib/plans";
 import { BILLING_CYCLES, CYCLE_META, EXTRA_CONVERSATIONS_MAX_MULTIPLIER, PLAN_CATALOG, PLAN_KEYS, computeExtraConversationsCost, priceForCycle } from "../lib/plans";
@@ -54,7 +55,7 @@ function invoiceNumber(): string {
 }
 
 function appUrl(): string {
-  return process.env.APP_URL ?? "http://localhost:3000";
+  return env.APP_URL;
 }
 
 async function getSubscriptionRow(db: typeof Db, businessId: string) {

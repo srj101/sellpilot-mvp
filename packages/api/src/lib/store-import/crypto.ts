@@ -1,4 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+
+import { env } from "@acme/env";
+
 import type { ProviderCredentials } from "./types";
 
 /**
@@ -13,7 +16,7 @@ import type { ProviderCredentials } from "./types";
  * missing we refuse to encrypt (fail closed) rather than silently persist plaintext.
  */
 function getKey(): Buffer {
-  const secret = process.env.STORE_CONNECTION_ENCRYPTION_KEY;
+  const secret = env.STORE_CONNECTION_ENCRYPTION_KEY;
   if (!secret) {
     throw new Error(
       "STORE_CONNECTION_ENCRYPTION_KEY is not set — refusing to store store-connection credentials in plaintext.",
