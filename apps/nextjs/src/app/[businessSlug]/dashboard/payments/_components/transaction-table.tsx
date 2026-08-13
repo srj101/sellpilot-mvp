@@ -1,6 +1,6 @@
 "use client";
 
-import { RotateCcw } from "lucide-react";
+import { RefreshCcw, RotateCcw } from "lucide-react";
 
 import { Button } from "@acme/ui/button";
 import { Skeleton } from "@acme/ui/skeleton";
@@ -19,6 +19,9 @@ export interface TransactionRow {
   orderNumber: string | null;
   customerName: string | null;
   customerPhone: string | null;
+  /** False for COD (no gateway leg) and for payments taken before the gateway refund key
+   * was captured — those can only be refunded from the SSLCommerz portal. */
+  canApiRefund: boolean;
 }
 
 const METHOD_LABEL: Record<string, string> = {
@@ -34,6 +37,12 @@ const STATUS_STYLE: Record<string, string> = {
   pending: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
   failed: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
   refunded: "bg-muted text-muted-foreground",
+  refund_pending: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+};
+
+/** `refund_pending` would otherwise render as "Refund_pending" under `capitalize`. */
+const STATUS_LABEL: Record<string, string> = {
+  refund_pending: "Refund pending",
 };
 
 function formatCurrency(val: number) {
@@ -48,11 +57,15 @@ interface TransactionTableProps {
   rows: TransactionRow[];
   isLoading: boolean;
   onRefund: (row: TransactionRow) => void;
+  /** Asks the gateway whether an in-flight refund has settled — SSLCommerz sends no
+   * callback for refunds, so a `refund_pending` row can only be resolved by asking. */
+  onSyncRefund: (row: TransactionRow) => void;
   refundingId: string | null;
+  syncingId: string | null;
   canRefund: boolean;
 }
 
-export function TransactionTable({ rows, isLoading, onRefund, refundingId, canRefund }: TransactionTableProps) {
+export function TransactionTable({ rows, isLoading, onRefund, onSyncRefund, refundingId, syncingId, canRefund }: TransactionTableProps) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -95,8 +108,14 @@ export function TransactionTable({ rows, isLoading, onRefund, refundingId, canRe
                 </td>
                 <td className="py-3 text-muted-foreground">{METHOD_LABEL[r.method] ?? r.method}</td>
                 <td className="py-3">
-                  <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize", STATUS_STYLE[r.status] ?? "bg-muted")}>
-                    {r.status}
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                      STATUS_LABEL[r.status] ? "" : "capitalize",
+                      STATUS_STYLE[r.status] ?? "bg-muted",
+                    )}
+                  >
+                    {STATUS_LABEL[r.status] ?? r.status}
                   </span>
                 </td>
                 <td className="py-3 text-right font-bold text-foreground">
@@ -111,11 +130,23 @@ export function TransactionTable({ rows, isLoading, onRefund, refundingId, canRe
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 text-muted-foreground hover:text-rose-500"
-                      title="Refund"
+                      title={r.canApiRefund ? "Refund" : "Record a refund made outside SellPilot"}
                       disabled={refundingId === r.id}
                       onClick={() => onRefund(r)}
                     >
                       <RotateCcw className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  {r.status === "refund_pending" && canRefund && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                      title="Check whether this refund has settled"
+                      disabled={syncingId === r.id}
+                      onClick={() => onSyncRefund(r)}
+                    >
+                      <RefreshCcw className={cn("h-3.5 w-3.5", syncingId === r.id && "animate-spin")} />
                     </Button>
                   )}
                 </td>

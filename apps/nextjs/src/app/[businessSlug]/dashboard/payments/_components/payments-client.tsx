@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownRight, ArrowUpRight, Banknote, Package, RefreshCcw, Search, Undo2 } from "lucide-react";
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, Banknote, Package, RefreshCcw, Search, Undo2 } from "lucide-react";
 
 import { Card, CardContent } from "@acme/ui/card";
 import { Input } from "@acme/ui/input";
@@ -85,11 +85,12 @@ const STATUS_OPTIONS = [
   { value: "success", label: "Success" },
   { value: "pending", label: "Pending" },
   { value: "failed", label: "Failed" },
+  { value: "refund_pending", label: "Refund pending" },
   { value: "refunded", label: "Refunded" },
 ];
 
 type MethodFilter = "" | "bkash" | "nagad" | "card" | "internetbank" | "cod";
-type StatusFilter = "" | "success" | "pending" | "failed" | "refunded";
+type StatusFilter = "" | "success" | "pending" | "failed" | "refunded" | "refund_pending";
 
 export function PaymentsClient() {
   const trpc = useTRPC();
@@ -100,8 +101,12 @@ export function PaymentsClient() {
   const [method, setMethod] = useState<MethodFilter>("");
   const [status, setStatus] = useState<StatusFilter>("");
   const [refundingId, setRefundingId] = useState<string | null>(null);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
   const [refundTarget, setRefundTarget] = useState<TransactionRow | null>(null);
   const [refundAmount, setRefundAmount] = useState("");
+  /** Refunds move real money, so the amount step and the irreversible confirmation are
+   * deliberately separate — no single click can send money back to a customer. */
+  const [refundStep, setRefundStep] = useState<"amount" | "confirm">("amount");
 
   const { data: summary, isPending: summaryPending } = useQuery(trpc.payments.getSummary.queryOptions({ range: "30d" }));
   const { data: rows, isLoading } = useQuery(
@@ -113,32 +118,76 @@ export function PaymentsClient() {
     }),
   );
 
+  function invalidatePayments() {
+    void qc.invalidateQueries({ queryKey: trpc.payments.list.queryKey() });
+    void qc.invalidateQueries({ queryKey: trpc.payments.getSummary.queryKey() });
+  }
+
   const refund = useMutation(
     trpc.payments.refund.mutationOptions({
-      onSuccess: () => {
-        toast.success("Refund recorded.");
-        void qc.invalidateQueries({ queryKey: trpc.payments.list.queryKey() });
-        void qc.invalidateQueries({ queryKey: trpc.payments.getSummary.queryKey() });
+      onSuccess: (res) => {
+        // "processing" is the normal outcome for a gateway refund — the bank settles it
+        // afterwards. Saying "refunded" here would tell the owner the customer has their
+        // money back when they may not yet.
+        if (res.settlement === "processing") {
+          toast.success("Refund sent to the gateway. It settles in a few working days.");
+        } else if (res.settlement === "recorded") {
+          toast.success("Refund recorded. Return the cash to the customer directly.");
+        } else {
+          toast.success("Refund completed.");
+        }
+        setRefundTarget(null);
+        invalidatePayments();
       },
       onError: (err) => toast.error(err.message),
       onSettled: () => setRefundingId(null),
     }),
   );
 
+  const syncRefund = useMutation(
+    trpc.payments.syncRefundStatus.mutationOptions({
+      onSuccess: (res) => {
+        if (!res.changed) toast.info("Still processing at the gateway.");
+        else if (res.status === "refunded") toast.success("Refund has settled.");
+        else if (res.status === "success") toast.warning("The gateway did not complete this refund — it has been reversed.");
+        else toast.success("Refund status updated.");
+        invalidatePayments();
+      },
+      onError: (err) => toast.error(err.message),
+      onSettled: () => setSyncingId(null),
+    }),
+  );
+
   function handleRefund(row: TransactionRow) {
     setRefundTarget(row);
     setRefundAmount(String(row.amount - row.refundedAmount));
+    setRefundStep("amount");
   }
 
-  function handleConfirmRefund() {
-    if (!refundTarget) return;
-    const amount = Number(refundAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
+  function handleSyncRefund(row: TransactionRow) {
+    setSyncingId(row.id);
+    syncRefund.mutate({ id: row.id });
+  }
+
+  const refundAmountValue = Number(refundAmount);
+  const refundAmountValid =
+    refundTarget !== null &&
+    Number.isFinite(refundAmountValue) &&
+    refundAmountValue > 0 &&
+    refundAmountValue <= refundTarget.amount - refundTarget.refundedAmount;
+
+  function handleContinueToConfirm() {
+    if (!refundAmountValid) {
       toast.error("Enter a valid refund amount.");
       return;
     }
+    setRefundStep("confirm");
+  }
+
+  function handleConfirmRefund() {
+    if (!refundTarget || !refundAmountValid) return;
     setRefundingId(refundTarget.id);
-    refund.mutate({ id: refundTarget.id, amount });
+    refund.mutate({ id: refundTarget.id, amount: refundAmountValue });
   }
 
   return (
@@ -226,43 +275,127 @@ export function PaymentsClient() {
             </button>
           </div>
 
-          <TransactionTable rows={rows?.items ?? []} isLoading={isLoading} onRefund={handleRefund} refundingId={refundingId} canRefund={canRefund} />
+          <TransactionTable
+            rows={rows?.items ?? []}
+            isLoading={isLoading}
+            onRefund={handleRefund}
+            onSyncRefund={handleSyncRefund}
+            refundingId={refundingId}
+            syncingId={syncingId}
+            canRefund={canRefund}
+          />
         </CardContent>
       </Card>
 
-      <Dialog open={refundTarget !== null} onOpenChange={(open) => !open && setRefundTarget(null)}>
+      <Dialog
+        open={refundTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && refundingId === null) setRefundTarget(null);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Refund payment</DialogTitle>
-            <DialogDescription>
-              {refundTarget && (
-                <>
-                  Refund how much of {formatCurrency(refundTarget.amount - refundTarget.refundedAmount)} for{" "}
-                  <span className="font-mono">{refundTarget.reference.slice(0, 12)}</span>?
-                </>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Input
-              type="number"
-              min={1}
-              step="any"
-              value={refundAmount}
-              onChange={(e) => setRefundAmount(e.target.value)}
-              placeholder="Refund amount"
-              autoFocus
-            />
-            <p className="text-xs text-muted-foreground">Partial refunds are allowed, up to the amount charged.</p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRefundTarget(null)} disabled={refundingId !== null}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleConfirmRefund} disabled={refundingId !== null}>
-              {refundingId ? "Refunding…" : "Confirm Refund"}
-            </Button>
-          </DialogFooter>
+          {refundStep === "amount" ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Refund payment</DialogTitle>
+                <DialogDescription>
+                  {refundTarget && (
+                    <>
+                      Refund how much of {formatCurrency(refundTarget.amount - refundTarget.refundedAmount)} for{" "}
+                      <span className="font-mono">{refundTarget.reference.slice(0, 12)}</span>?
+                    </>
+                  )}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                <Input
+                  type="number"
+                  min={1}
+                  step="any"
+                  value={refundAmount}
+                  onChange={(e) => setRefundAmount(e.target.value)}
+                  placeholder="Refund amount"
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">Partial refunds are allowed, up to the amount charged.</p>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setRefundTarget(null)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleContinueToConfirm} disabled={!refundAmountValid}>
+                  Continue
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-rose-500" />
+                  {refundTarget?.canApiRefund ? "Send this money back?" : "Record this refund?"}
+                </DialogTitle>
+                <DialogDescription>This cannot be undone from SellPilot.</DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-3">
+                <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 text-sm">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-muted-foreground">Refund amount</span>
+                    <span className="text-lg font-bold text-foreground">{formatCurrency(refundAmountValue)}</span>
+                  </div>
+                  {refundTarget && (
+                    <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                      <div className="flex justify-between gap-3">
+                        <span>To</span>
+                        <span className="text-foreground">{refundTarget.customerName ?? "Customer"}</span>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <span>Transaction</span>
+                        <span className="font-mono text-foreground">{refundTarget.reference.slice(0, 12)}</span>
+                      </div>
+                      {refundAmountValue < refundTarget.amount - refundTarget.refundedAmount && (
+                        <div className="flex justify-between gap-3">
+                          <span>Remaining after this</span>
+                          <span className="text-foreground">
+                            {formatCurrency(refundTarget.amount - refundTarget.refundedAmount - refundAmountValue)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {refundTarget?.canApiRefund ? (
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    This sends a <strong className="text-foreground">real refund</strong> to the payment gateway and the
+                    money leaves your account. Gateway refunds are not instant — the status stays{" "}
+                    <strong className="text-foreground">Refund pending</strong> until the customer&apos;s bank settles it,
+                    usually within a few working days.
+                  </p>
+                ) : (
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {refundTarget?.method === "cod"
+                      ? "This was a cash-on-delivery order, so no gateway is involved. This only records the refund in your ledger — you still need to return the cash to the customer yourself."
+                      : "This payment has no gateway refund reference, so SellPilot cannot refund it automatically. This only records the refund in your ledger — issue the actual refund from your SSLCommerz merchant portal."}
+                  </p>
+                )}
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setRefundStep("amount")} disabled={refundingId !== null}>
+                  Back
+                </Button>
+                <Button variant="destructive" onClick={handleConfirmRefund} disabled={refundingId !== null}>
+                  {refundingId
+                    ? "Processing…"
+                    : refundTarget?.canApiRefund
+                      ? `Yes, refund ${formatCurrency(refundAmountValue)}`
+                      : `Yes, record ${formatCurrency(refundAmountValue)}`}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -323,3 +323,138 @@ export async function validatePayment(valId: string, credentials: SslcommerzCred
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Refunds
+// ---------------------------------------------------------------------------
+
+/**
+ * SSLCommerz refunds are ASYNCHRONOUS. Initiating one does not mean the customer has their
+ * money — the issuing bank settles it afterwards, which is why `refunded` is a separate
+ * state from `processing` and why callers must poll `queryRefundStatus` rather than
+ * assuming success. Reporting a refund as complete on initiation would tell an owner the
+ * customer was paid back when they may not have been.
+ */
+export type RefundStatus = "processing" | "refunded" | "failed";
+
+export type InitiateRefundResult =
+  | { ok: true; status: RefundStatus; refundRefId?: string; raw: Record<string, unknown> }
+  | { ok: false; reason: string; raw?: Record<string, unknown> };
+
+export interface InitiateRefundInput {
+  credentials: SslcommerzCredentials;
+  /** From the ORIGINAL payment's validator response — NOT the val_id. Captured into
+   * transaction.provider_payload at payment time; unrecoverable afterwards. */
+  bankTranId: string;
+  /** Whole taka */
+  amount: number;
+  /** Our own unique id for this refund attempt, so retries are distinguishable */
+  refundTransId: string;
+  remarks: string;
+}
+
+/**
+ * Normalizes SSLCommerz's refund status vocabulary. Deliberately conservative: anything not
+ * explicitly a terminal success/failure is treated as still `processing`, so an unexpected
+ * or newly-added status value can never be misread as "the customer got their money".
+ */
+function normalizeRefundStatus(raw: string | undefined): RefundStatus {
+  const v = (raw ?? "").toLowerCase();
+  if (v === "refunded") return "refunded";
+  if (v === "failed" || v === "cancelled" || v === "canceled") return "failed";
+  return "processing";
+}
+
+interface SslcommerzRefundResponse {
+  APIConnect?: string;
+  status?: string;
+  errorReason?: string;
+  refund_ref_id?: string;
+  bank_tran_id?: string;
+  trans_id?: string;
+  refund_amount?: string;
+  initiated_on?: string;
+  refunded_on?: string;
+}
+
+/** Shared shape for both refund calls — the endpoint is the same, only the params differ. */
+async function callRefundApi(
+  params: URLSearchParams,
+): Promise<{ ok: true; data: SslcommerzRefundResponse } | { ok: false; reason: string }> {
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl()}/validator/api/merchantTransIDvalidationAPI.php?${params.toString()}`);
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : "Network error reaching SSLCommerz." };
+  }
+  if (!res.ok) return { ok: false, reason: `SSLCommerz refund request failed (HTTP ${res.status}).` };
+
+  let data: SslcommerzRefundResponse;
+  try {
+    data = (await res.json()) as SslcommerzRefundResponse;
+  } catch {
+    return { ok: false, reason: "SSLCommerz returned a non-JSON refund response." };
+  }
+
+  // APIConnect reports whether the API call itself was accepted (auth/connectivity), which is
+  // separate from whether the refund succeeded. A failure here means the request never
+  // reached the refund engine, so the caller must not touch the ledger.
+  if (data.APIConnect && !["DONE", "SUCCESS"].includes(data.APIConnect.toUpperCase())) {
+    return { ok: false, reason: data.errorReason ?? `SSLCommerz rejected the request (${data.APIConnect}).` };
+  }
+  return { ok: true, data };
+}
+
+/**
+ * Initiates a real refund. Money moves. Only call after an explicit owner confirmation.
+ *
+ * On any non-success the ledger must be left untouched — a recorded refund that the gateway
+ * never accepted is worse than no refund at all, because it silently tells the owner the
+ * customer was paid.
+ */
+export async function initiateRefund(input: InitiateRefundInput): Promise<InitiateRefundResult> {
+  const params = new URLSearchParams({
+    bank_tran_id: input.bankTranId,
+    refund_amount: input.amount.toString(),
+    refund_remarks: input.remarks,
+    refund_trans_id: input.refundTransId,
+    store_id: input.credentials.storeId,
+    store_passwd: input.credentials.storePassword,
+    format: "json",
+  });
+
+  const result = await callRefundApi(params);
+  if (!result.ok) return { ok: false, reason: result.reason };
+
+  const { data } = result;
+  const status = (data.status ?? "").toLowerCase();
+  if (status === "failed") {
+    return { ok: false, reason: data.errorReason ?? "SSLCommerz declined the refund.", raw: { ...data } };
+  }
+
+  return {
+    ok: true,
+    // "success" here means ACCEPTED for processing, not settled — see the type's doc comment.
+    status: status === "refunded" ? "refunded" : "processing",
+    refundRefId: data.refund_ref_id,
+    raw: { ...data },
+  };
+}
+
+/** Resolves an in-flight refund. Safe to call repeatedly. */
+export async function queryRefundStatus(
+  refundRefId: string,
+  credentials: SslcommerzCredentials,
+): Promise<{ ok: true; status: RefundStatus; raw: Record<string, unknown> } | { ok: false; reason: string }> {
+  const params = new URLSearchParams({
+    refund_ref_id: refundRefId,
+    store_id: credentials.storeId,
+    store_passwd: credentials.storePassword,
+    format: "json",
+  });
+
+  const result = await callRefundApi(params);
+  if (!result.ok) return { ok: false, reason: result.reason };
+
+  return { ok: true, status: normalizeRefundStatus(result.data.status), raw: { ...result.data } };
+}

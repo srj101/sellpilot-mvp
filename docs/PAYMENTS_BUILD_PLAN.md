@@ -259,21 +259,36 @@ SSLCommerz's response shape cannot silently start persisting something sensitive
 
 > Transactions predating this change have no `bank_tran_id` and remain portal-only refunds.
 
-### Phase 6b — Real refunds · **M** · 🔒 *blocked on sandbox + client confirmation* — closes **G6**
-`payments.refund` still only updates the local ledger; no money moves. It is now annotated as such
-in the code so nobody mistakes it for a working refund. To finish:
+### Phase 6b — Real refunds · **M** · ✅ **BUILT** · ⚠️ *unverified against sandbox* — closes **G6**
+`payments.refund` now issues real refunds instead of only writing the ledger.
 
-- Call SSLCommerz's refund endpoint (`bank_tran_id`, `refund_trans_id`, `refund_amount`,
-  `refund_remarks`) via the provider interface's optional `refund` capability.
-- Add a `refund_pending` status and a poll job for the async `processing` → `refunded` transition;
-  the UI must stop flipping straight to Refunded.
-- Providers without an API refund keep the manual-record path via the capability flag.
+Implemented:
+- `initiateRefund` / `queryRefundStatus` in `sslcommerz.ts` against
+  `merchantTransIDvalidationAPI.php`, keyed on the `bank_tran_id` captured in Phase 6a.
+- **Ledger is written only after the gateway accepts.** A declined refund leaves the row untouched,
+  because a recorded refund the gateway rejected is worse than none — it tells the owner the
+  customer was paid.
+- New `refund_pending` status for the async settlement window. `queryRefundStatus` is deliberately
+  conservative: any unrecognised status stays `processing`, so an unexpected value can never be
+  misread as "the customer got their money".
+- `payments.syncRefundStatus` resolves in-flight refunds, and **reverses the reserved amount** if
+  the gateway ultimately failed the refund, so the ledger cannot permanently understate what is
+  still refundable.
+- Refund attempts are appended to `provider_payload.refunds` rather than overwritten, keeping
+  partial-refund history and failed attempts auditable.
+- **Two-step UI confirmation** — amount, then an explicit warning naming the exact amount,
+  customer, and irreversibility. No single click can send money.
+- COD and pre-Phase-6a payments degrade to ledger-only, each with a warning explaining that the
+  actual refund must happen by hand or in the SSLCommerz portal.
 
-**Deliberately not built blind.** This moves real customer money, so it needs the refund endpoint
-confirmed enabled on the account (§6.3) and a sandbox run before it ships.
+> 🚨 **Before this touches production money:** the refund response field names
+> (`refund_ref_id`, `APIConnect`, `status` vocabulary) were inferred from documentation summaries
+> rather than an official field spec. Run a sandbox refund end-to-end and correct the parsing if
+> it differs. The conservative status mapping means a mismatch fails safe (stuck `processing`)
+> rather than falsely reporting success — but it must still be verified.
 
-**Done when:** a sandbox refund moves real money and the ledger mirrors the gateway's authoritative
-status through the full `processing` → `refunded` transition.
+**Remaining:** a periodic worker sweep over `refund_pending` rows. Today resolution is
+owner-triggered from the Payments table, which is functional but manual.
 
 ### Phase 7 — Webhook hardening · **M** · depends on 3–4
 Idempotency via `payment_webhook_event`, signature verification enforced on every provider
