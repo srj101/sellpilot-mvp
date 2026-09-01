@@ -15,6 +15,10 @@
 # earlier per-service split (web could send to SQS but not receive; worker could)
 # required per-service overrides, which is exactly what this removes.
 #
+# TLS is NOT handled here. Locally you use http://localhost:3000; on the server
+# Coolify's own proxy terminates HTTPS and routes to the web container. Running a
+# second proxy in this file would fight Coolify for ports 80/443.
+#
 # Two things live outside the stack, in both environments:
 #   * Postgres — Neon. packages/db/src/client.ts uses @vercel/postgres, which
 #     speaks Neon's WebSocket protocol and cannot reach a plain postgres
@@ -63,8 +67,9 @@ services:
     # there is exactly one configuration to reason about. NODE_ENV and PORT come
     # from the Dockerfile; REDIS_HOST works in both places via the hosts alias
     # documented in docs/DOCKER.md.
-    # Loopback only. On a public VPS "3000:3000" would serve the app directly on
-    # http://<server-ip>:3000, bypassing TLS entirely — Caddy is the only door.
+    # Loopback only. Locally this is how you reach the app; on the server
+    # Coolify's proxy routes to the container over the docker network, so the
+    # app is never published to a public interface either way.
     ports:
       - "127.0.0.1:3000:3000"
     # Node's default heap is close to this; the cap turns a runaway page render
@@ -123,33 +128,8 @@ services:
       start_period: 5s
     networks: [sellpilot]
 
-  # ---------------------------------------------------------------------
-  # Caddy — TLS termination. The only container bound to public interfaces.
-  # ---------------------------------------------------------------------
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    <<: *logging
-    # One non-secret value, still sourced from .env — the proxy has no business
-    # holding the application's credentials, so it gets no env_file.
-    environment:
-      APP_DOMAIN: ${APP_DOMAIN:-localhost}
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
-    depends_on:
-      - web
-    networks: [sellpilot]
-
 volumes:
   redis-data:
-  caddy-data:
-  caddy-config:
 
 networks:
   sellpilot:
