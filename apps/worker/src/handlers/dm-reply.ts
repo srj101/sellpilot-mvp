@@ -28,11 +28,20 @@ import { CircuitBreaker } from "../middleware/circuit-breaker.js";
 
 /**
  * Transcribe audio via any OpenAI-compatible /v1/audio/transcriptions endpoint. Provider
- * is a pure config swap (TRANSCRIPTION_BASE_URL/API_KEY/MODEL) — self-hosted Whisper
- * (scripts/dev.sh's local-whisper container) for now, OpenAI's real API or anything else
- * OpenAI-compatible in production — the request shape never changes.
+ * is a pure config swap (TRANSCRIPTION_BASE_URL/API_KEY/MODEL) and defaults to OpenAI's
+ * hosted API, so local and production transcribe through the same service — the request
+ * shape never changes.
  */
 async function transcribeAudio(audioUrl: string, transcription: { baseUrl: string; apiKey: string; model: string }): Promise<string> {
+  // Without this the request goes out with `Authorization: Bearer ` and comes back
+  // as an opaque 401, which reads like a transcription failure rather than a
+  // missing key. Fail with the actual cause instead.
+  if (!transcription.apiKey) {
+    throw new Error(
+      "No transcription API key: set OPENAI_API_KEY, or TRANSCRIPTION_API_KEY if transcription uses a different provider."
+    );
+  }
+
   const response = await fetch(audioUrl);
   if (!response.ok) throw new Error(`Failed to fetch audio: ${response.status}`);
   const audioBuffer = await response.arrayBuffer();

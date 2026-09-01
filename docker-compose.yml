@@ -1,0 +1,156 @@
+# SellPilot — the stack, used unchanged in local and production.
+#
+#   docker compose up -d --build
+#
+# There is deliberately no dev variant, no profiles, no override file and no
+# `environment:` block anywhere below. .env is the ONLY configuration, and it is
+# read identically by these containers and by `pnpm dev` running on the host.
+# One file, one set of values, both ways of running.
+#
+# That works because REDIS_HOST=redis resolves in both places: inside the compose
+# network by service name, and on the host via a one-line /etc/hosts alias
+# (see docs/DOCKER.md). Without that alias the host cannot resolve `redis`.
+#
+# Trade-off worth knowing: a single config means a single AWS credential. The
+# earlier per-service split (web could send to SQS but not receive; worker could)
+# required per-service overrides, which is exactly what this removes.
+#
+# Two things live outside the stack, in both environments:
+#   * Postgres — Neon. packages/db/src/client.ts uses @vercel/postgres, which
+#     speaks Neon's WebSocket protocol and cannot reach a plain postgres
+#     container. Use a Neon branch for local so the schema matches exactly.
+#   * SQS + S3 + SES — real AWS. See docs/SQS_SETUP.md.
+#
+# Secrets come from .env at run time; .dockerignore keeps it out of every image.
+
+name: sellpilot
+
+x-app-env: &app-env
+  env_file:
+    - .env
+
+# Without this, container logs grow until the disk fills. The worker logs every
+# job it handles, so on a small VPS that is weeks, not years.
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  # ---------------------------------------------------------------------
+  # Next.js web app — dashboard, tRPC, Meta webhooks, /pay checkout
+  # ---------------------------------------------------------------------
+  web:
+    <<: [*app-env, *logging]
+    build:
+      context: .
+      dockerfile: apps/nextjs/Dockerfile
+      args:
+        # NEXT_PUBLIC_* is compiled into the browser bundle, so it must be set at
+        # build time. Setting it only under `environment:` leaves the client with
+        # undefined values. Change one and you must rebuild, not just restart.
+        NEXT_PUBLIC_FACEBOOK_APP_ID: ${NEXT_PUBLIC_FACEBOOK_APP_ID:-}
+        NEXT_PUBLIC_FACEBOOK_CONFIG_ID: ${NEXT_PUBLIC_FACEBOOK_CONFIG_ID:-}
+        NEXT_PUBLIC_WHATSAPP_CONFIG_ID: ${NEXT_PUBLIC_WHATSAPP_CONFIG_ID:-}
+        NEXT_PUBLIC_WHATSAPP_REDIRECT_URI: ${NEXT_PUBLIC_WHATSAPP_REDIRECT_URI:-}
+    image: sellpilot/web:latest
+    restart: unless-stopped
+    init: true
+    # No `environment:` block on purpose. .env is the single source of truth and
+    # is read identically by this container and by `pnpm dev` on the host, so
+    # there is exactly one configuration to reason about. NODE_ENV and PORT come
+    # from the Dockerfile; REDIS_HOST works in both places via the hosts alias
+    # documented in docs/DOCKER.md.
+    # Loopback only. On a public VPS "3000:3000" would serve the app directly on
+    # http://<server-ip>:3000, bypassing TLS entirely — Caddy is the only door.
+    ports:
+      - "127.0.0.1:3000:3000"
+    # Node's default heap is close to this; the cap turns a runaway page render
+    # into one restarted container instead of an OOM that takes the box down.
+    mem_limit: 1g
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [sellpilot]
+
+  # ---------------------------------------------------------------------
+  # Background worker — AI replies, notifications, billing sweeps
+  # ---------------------------------------------------------------------
+  worker:
+    <<: [*app-env, *logging]
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    image: sellpilot/worker:latest
+    restart: unless-stopped
+    init: true
+    # No `environment:` block — see the web service above. WORKER_HEALTH_PORT
+    # comes from .env, which is why the health server starts here too.
+    ports:
+      # Loopback only — a monitoring endpoint, not a public one.
+      - "127.0.0.1:3001:3001"
+    # Highest of the three: it holds LangChain, the AWS SDK and per-job state.
+    mem_limit: 2g
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [sellpilot]
+
+  # ---------------------------------------------------------------------
+  # Redis — required even though the job queue is SQS:
+  # packages/api/src/lib/queue.ts runs the product-images indexing queue on
+  # BullMQ directly, outside the @acme/queue abstraction.
+  # ---------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Image indexing is real work; append-only persistence rather than the
+    # default snapshot-only config so a restart doesn't drop the backlog.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    mem_limit: 512m
+    <<: *logging
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks: [sellpilot]
+
+  # ---------------------------------------------------------------------
+  # Caddy — TLS termination. The only container bound to public interfaces.
+  # ---------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    <<: *logging
+    # One non-secret value, still sourced from .env — the proxy has no business
+    # holding the application's credentials, so it gets no env_file.
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+    networks: [sellpilot]
+
+volumes:
+  redis-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  sellpilot:
+    driver: bridge

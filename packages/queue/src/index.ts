@@ -4,7 +4,6 @@
  * Supports multiple queue backends via environment variable:
  * - QUEUE_PROVIDER=memory (default, for local dev)
  * - QUEUE_PROVIDER=redis (BullMQ, for production)
- * - QUEUE_PROVIDER=sqs (AWS SQS, for AWS deployments)
  *
  * Usage:
  *   import { createQueue } from "@acme/queue";
@@ -27,7 +26,6 @@ import type {
 
 import { MemoryQueueProvider } from "./providers/memory";
 import { RedisQueueProvider } from "./providers/redis";
-import { SQSQueueProvider } from "./providers/sqs";
 
 export * from "./types";
 export * from "./providers/index";
@@ -52,7 +50,6 @@ export function createQueue(config?: Partial<QueueConfig>): QueueProvider {
   const fullConfig: QueueConfig = {
     provider,
     redis: config?.redis,
-    sqs: config?.sqs,
     defaultJobOptions: config?.defaultJobOptions ?? {
       attempts: 3,
       backoff: { type: "exponential", delay: 1000 },
@@ -67,9 +64,6 @@ export function createQueue(config?: Partial<QueueConfig>): QueueProvider {
       break;
     case "redis":
       queueInstance = new RedisQueueProvider(fullConfig);
-      break;
-    case "sqs":
-      queueInstance = new SQSQueueProvider(fullConfig);
       break;
     default:
       throw new Error(`Unknown queue provider: ${provider}`);

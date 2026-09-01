@@ -63,3 +63,8 @@ dist/
 # Local planning/reference docs — not meant to be committed
 docs/PAYMENTS_REQUIREMENTS.md
 docs/PAYMENTS_BUILD_PLAN.md
+# turbo prune output (generated during Docker builds)
+out/
+
+# Timestamped .env backups (contain secrets)
+.env.backup-*

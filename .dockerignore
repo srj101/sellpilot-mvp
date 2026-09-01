@@ -1,0 +1,40 @@
+# Build context exclusions. Keep this aggressive: the context is the whole
+# monorepo, and node_modules alone is ~1.5GB of symlinks that pnpm recreates
+# inside the image anyway.
+
+**/node_modules
+**/.next
+**/.turbo
+**/.cache
+**/dist
+**/out
+**/build
+**/.output
+**/.nitro
+
+.git
+.github
+.vscode
+.claude
+.kimchi
+.expo
+
+# Secrets never belong in an image layer — compose injects them at runtime
+# via env_file instead (see docker-compose.yml).
+.env
+.env.*
+!.env.example
+!.env.docker.example
+
+dump.rdb
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Docs / local tooling that no build stage reads
+docs
+README.md
+LICENSE
+
+# turbo prune output — regenerated inside the build
+out

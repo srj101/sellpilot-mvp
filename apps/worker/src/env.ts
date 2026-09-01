@@ -22,14 +22,17 @@ export const env = createEnv({
     // opts out of it entirely rather than falling back to a port.
     WORKER_HEALTH_PORT: z.coerce.number().optional(),
 
-    // Voice transcription — separate from the chat model so the provider can be
-    // swapped (self-hosted Whisper now, OpenAI or anything else later) via env
-    // vars only. Defaults point at the local self-hosted whisper-server
-    // container from scripts/dev.sh.
+    // Voice transcription. Kept separate from the chat model so the provider is a
+    // pure config swap — any OpenAI-compatible /v1/audio/transcriptions endpoint
+    // works without a code change. Defaults to OpenAI's hosted API so local and
+    // production transcribe through the same service.
     TRANSCRIPTION_BASE_URL: z
       .string()
-      .default("http://localhost:9000/v1/audio/transcriptions"),
-    TRANSCRIPTION_API_KEY: z.string().default("local-dev-whisper-key"),
+      .default("https://api.openai.com/v1/audio/transcriptions"),
+    // Optional on purpose: unset falls back to OPENAI_API_KEY (see config.ts),
+    // since the default endpoint is OpenAI's. Set it only when transcription
+    // runs somewhere other than the chat provider.
+    TRANSCRIPTION_API_KEY: z.string().optional(),
     TRANSCRIPTION_MODEL: z.string().default("whisper-1"),
   },
   runtimeEnv: process.env,

@@ -5,7 +5,7 @@ import { env } from "./env";
 
 export interface WorkerConfig {
   // Queue
-  queueProvider: "memory" | "redis" | "sqs";
+  queueProvider: "memory" | "redis";
   redisHost: string;
   redisPort: number;
   redisPassword?: string;
@@ -16,8 +16,7 @@ export interface WorkerConfig {
   openaiModel: string;
 
   // Voice transcription — separate from the chat model above so the provider can be
-  // swapped (self-hosted Whisper now, OpenAI or anything else later) via env vars only.
-  // Defaults point at the local self-hosted whisper-server container from scripts/dev.sh.
+  // swapped via env vars only. Defaults to OpenAI's hosted transcription API.
   transcriptionBaseUrl: string;
   transcriptionApiKey: string;
   transcriptionModel: string;
@@ -51,7 +50,9 @@ export function loadConfig(): WorkerConfig {
 
     // Voice transcription
     transcriptionBaseUrl: env.TRANSCRIPTION_BASE_URL,
-    transcriptionApiKey: env.TRANSCRIPTION_API_KEY,
+    // The default endpoint is OpenAI's, so the OpenAI key is the right credential
+    // unless transcription has been pointed somewhere else explicitly.
+    transcriptionApiKey: env.TRANSCRIPTION_API_KEY ?? env.OPENAI_API_KEY ?? "",
     transcriptionModel: env.TRANSCRIPTION_MODEL,
 
     // Meta

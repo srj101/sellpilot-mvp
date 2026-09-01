@@ -21,7 +21,6 @@
   },
   "dependencies": {
     "@acme/env": "workspace:*",
-    "@aws-sdk/client-sqs": "^3.600.0",
     "bullmq": "^5.79.3",
     "ioredis": "^5.4.1"
   },

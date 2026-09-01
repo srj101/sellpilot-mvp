@@ -5,33 +5,24 @@ import { env } from "@acme/env";
 
 export const s3Client = new S3Client({
   region: env.AWS_REGION,
-  credentials: {
-    accessKeyId: env.AWS_ACCESS_KEY_ID ?? "mock-key",
-    secretAccessKey: env.AWS_SECRET_ACCESS_KEY ?? "mock-secret",
-  },
-  ...(env.AWS_ENDPOINT_URL ? {
-    endpoint: env.AWS_ENDPOINT_URL,
-    forcePathStyle: true,
-  } : {}),
+  // Credentials are only set explicitly when both are present. Unset falls through
+  // to the SDK's default chain (task role, instance profile), which is how this
+  // should run on ECS/EC2. The previous "mock-key" fallback was LocalStack-era
+  // scaffolding that turned a missing credential into an opaque SignatureDoesNotMatch
+  // instead of letting the role be discovered.
+  ...(env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
+    ? {
+        credentials: {
+          accessKeyId: env.AWS_ACCESS_KEY_ID,
+          secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+        },
+      }
+    : {}),
 });
 
 export const BUCKET_NAME = env.AWS_S3_BUCKET;
 
 export async function getPresignedUploadUrl(key: string, contentType: string): Promise<string> {
-  // Ensure the bucket exists locally in development (LocalStack)
-  if (env.AWS_ENDPOINT_URL) {
-    const { CreateBucketCommand, HeadBucketCommand } = await import("@aws-sdk/client-s3");
-    try {
-      await s3Client.send(new HeadBucketCommand({ Bucket: BUCKET_NAME }));
-    } catch (e: any) {
-      try {
-        await s3Client.send(new CreateBucketCommand({ Bucket: BUCKET_NAME }));
-      } catch (err) {
-        console.error("[S3] Failed to auto-create bucket", err);
-      }
-    }
-  }
-
   const command = new PutObjectCommand({
     Bucket: BUCKET_NAME,
     Key: key,
@@ -62,9 +53,6 @@ export async function deleteS3Object(key: string): Promise<void> {
 }
 
 export function getPublicUrl(key: string): string {
-  if (env.AWS_ENDPOINT_URL) {
-    return `${env.AWS_ENDPOINT_URL}/${BUCKET_NAME}/${key}`;
-  }
   return `https://${BUCKET_NAME}.s3.${env.AWS_REGION}.amazonaws.com/${key}`;
 }
 

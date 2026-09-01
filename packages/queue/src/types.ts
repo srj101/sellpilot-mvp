@@ -3,7 +3,7 @@
  * Provides a unified interface for different queue providers
  */
 
-export type QueueProviderType = "memory" | "redis" | "sqs";
+export type QueueProviderType = "memory" | "redis";
 
 export interface JobOptions {
   /** Delay before processing in milliseconds */
@@ -106,15 +106,6 @@ export interface QueueConfig {
     password?: string;
     tls?: boolean;
     db?: number;
-  };
-
-  /** AWS SQS configuration */
-  sqs?: {
-    region: string;
-    queueUrlPrefix: string;
-    accessKeyId?: string;
-    secretAccessKey?: string;
-    endpoint?: string; // For LocalStack
   };
 
   /** Default job options */

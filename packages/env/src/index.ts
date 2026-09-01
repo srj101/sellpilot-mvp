@@ -46,13 +46,10 @@ export const env = createEnv({
     AWS_REGION: z.string().default("us-east-1"),
     AWS_ACCESS_KEY_ID: z.string().optional(),
     AWS_SECRET_ACCESS_KEY: z.string().optional(),
-    // For LocalStack (local AWS emulation) only — unset in real AWS.
-    AWS_ENDPOINT_URL: z.string().optional(),
     AWS_S3_BUCKET: z.string().default("sellpilot-media"),
-    AWS_SES_FROM_EMAIL: z.string().default("no-reply@sellpilot.ai"),
-    SQS_QUEUE_URL_PREFIX: z.string().optional(),
+    AWS_SES_FROM_EMAIL: z.string().default("no-reply@sellpilot-mvp.online"),
 
-    QUEUE_PROVIDER: z.enum(["memory", "redis", "sqs"]).default("memory"),
+    QUEUE_PROVIDER: z.enum(["memory", "redis"]).default("memory"),
 
     // Single source of truth for every Redis client in the repo (packages/queue's
     // BullMQ provider + pub/sub broadcast, and packages/api's image-indexing queue).
@@ -75,7 +72,7 @@ export const env = createEnv({
     // AES-256 key source for encrypting store-connection credentials at rest.
     STORE_CONNECTION_ENCRYPTION_KEY: z.string().optional(),
 
-    SALES_EMAIL: z.string().default("sales@sellpilot.ai"),
+    SALES_EMAIL: z.string().default("sales@sellpilot-mvp.online"),
 
     RBAC_ENFORCE: z
       .string()

@@ -25,10 +25,6 @@ export const env = createEnv({
     META_WEBHOOK_VERIFY_TOKEN: z.string(),
     META_CHANNEL_REDIRECT_URI: z.string().optional(),
     BETTER_AUTH_URL: z.string().optional(),
-    CLOUDFLARE_ACCOUNT_ID: z.string().optional(),
-    CLOUDFLARE_API_TOKEN: z.string().optional(),
-    CLOUDFLARE_AGENT_MODEL: z.string().default("@cf/zai-org/glm-5.2"),
-    AGENT_SERVICE_URL: z.string().default("http://localhost:8787"),
     CRON_SECRET: z.string().optional(),
   },
 

@@ -1,7 +1,8 @@
 /**
- * AWS SES email sending — mirrors packages/queue/src/providers/sqs.ts's LocalStack
- * pattern: an AWS_ENDPOINT_URL override routes to LocalStack in dev (email is captured,
- * not delivered), and is unset in production for real AWS SES. Swap env vars only.
+ * AWS SES email sending. Real SES in every environment — there is no local capture
+ * mode, so anything sent from a dev machine is really delivered. The from-address
+ * (AWS_SES_FROM_EMAIL) must be a verified SES identity in AWS_REGION or every send
+ * fails, and a brand-new SES account is sandboxed to verified recipients only.
  */
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 
@@ -17,7 +18,6 @@ const client = new SESv2Client({
         },
       }
     : {}),
-  ...(env.AWS_ENDPOINT_URL ? { endpoint: env.AWS_ENDPOINT_URL } : {}),
 });
 
 export async function sendEmail(params: { to: string; subject: string; html: string; text: string }): Promise<void> {

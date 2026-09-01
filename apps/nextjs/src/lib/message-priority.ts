@@ -7,9 +7,8 @@
  * "respond faster under load" feature. A keyword/length heuristic instead.
  *
  * BullMQ's JobOptions.priority (lower = higher priority) is only honored by the Redis
- * provider — this is a no-op under the memory/SQS providers, which have no priority
- * concept. Acceptable: Redis is the realistic production target (see the launch cost
- * plan's recommended stack).
+ * provider — a no-op under the memory provider, which has no priority concept. Redis is
+ * the production target, so in practice this always applies.
  */
 
 export type MessagePriority = "quick" | "standard";
