@@ -16,6 +16,8 @@ import Papa from "papaparse";
 
 import { cn } from "@acme/ui";
 import { useTRPC } from "~/trpc/react";
+import type { BulkRow } from "~/lib/product-csv";
+import { parseProductCsvRows } from "~/lib/product-csv";
 import { OnboardingShell } from "./onboarding-shell";
 
 interface DraftProduct {
@@ -30,24 +32,6 @@ interface DraftProduct {
   rating?: number;
   description: string;
   image: string | null;
-}
-
-interface BulkRow {
-  title: string;
-  category?: string;
-  gender?: string;
-  price: number;
-  discountPercent?: number;
-  stockQty: number;
-  description?: string;
-  rating?: number;
-  imageUrl?: string;
-}
-
-const GENDER_VALUES = new Set(["men", "women", "unisex", "kids"]);
-function normalizeGender(raw: string | undefined) {
-  const v = raw?.trim().toLowerCase();
-  return v && GENDER_VALUES.has(v) ? v : undefined;
 }
 
 const EMPTY_DRAFT: DraftProduct = {
@@ -203,17 +187,11 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
   const [importSummary, setImportSummary] = useState<{ imported: number; skipped: number } | null>(null);
   const [csvRows, setCsvRows] = useState<BulkRow[]>([]);
   const [csvSkipped, setCsvSkipped] = useState(0);
+  const [csvAdjusted, setCsvAdjusted] = useState(0);
   const [csvFileName, setCsvFileName] = useState<string | null>(null);
   const [csvError, setCsvError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-
-  function pick(row: Record<string, string>, ...keys: string[]) {
-    for (const k of keys) {
-      if (row[k] !== undefined && row[k] !== "") return row[k];
-    }
-    return undefined;
-  }
 
   function parseCsv(file: File) {
     setCsvError(null);
@@ -222,30 +200,7 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
-        const rows: BulkRow[] = [];
-        let skipped = 0;
-        for (const row of results.data) {
-          const title = pick(row, "title", "Title", "name", "Name")?.trim();
-          const priceRaw = pick(row, "price", "Price");
-          const price = Number(priceRaw);
-          if (!title || !priceRaw || Number.isNaN(price) || price <= 0) {
-            skipped++;
-            continue;
-          }
-          const discountRaw = pick(row, "discountPercent", "Discount%", "discount");
-          const ratingRaw = pick(row, "rating", "Rating");
-          rows.push({
-            title,
-            category: pick(row, "category", "Category"),
-            gender: normalizeGender(pick(row, "gender", "Gender")),
-            price,
-            discountPercent: discountRaw ? Number(discountRaw) : undefined,
-            stockQty: Number(pick(row, "stockQty", "Stock Qty", "stock") ?? 0) || 0,
-            description: pick(row, "description", "Description"),
-            rating: ratingRaw ? Number(ratingRaw) : undefined,
-            imageUrl: pick(row, "imageUrl", "Image", "image"),
-          });
-        }
+        const { rows, skipped, adjusted } = parseProductCsvRows(results.data);
 
         if (rows.length > 500) {
           setCsvError(
@@ -253,6 +208,7 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
           );
           setCsvRows([]);
           setCsvSkipped(0);
+          setCsvAdjusted(0);
           return;
         }
         if (rows.length === 0) {
@@ -260,6 +216,7 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
         }
         setCsvRows(rows);
         setCsvSkipped(skipped);
+        setCsvAdjusted(adjusted);
       },
       error: (err) => setCsvError(err.message),
     });
@@ -596,6 +553,7 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
                   <p className="text-sm text-muted-foreground">
                     {csvRows.length} valid row{csvRows.length > 1 ? "s" : ""}
                     {csvSkipped > 0 ? ` — ${csvSkipped} skipped (missing title/price)` : ""}
+                    {csvAdjusted > 0 ? ` — ${csvAdjusted} adjusted to fit (ratings and prices rounded to whole numbers)` : ""}
                   </p>
                   {usage && csvRows.length > usage.remaining && (
                     <p className="flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400">

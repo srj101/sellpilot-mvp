@@ -43,6 +43,37 @@ const ProductInput = z.object({
   lowStockThreshold: z.number().min(0).optional(),
 });
 
+/**
+ * Numeric coercion for bulk imports.
+ *
+ * These exist because the import path is fed by spreadsheets, and a spreadsheet's idea of
+ * a number rarely matches a column's. The client parser (apps/nextjs/src/lib/product-csv.ts)
+ * already normalizes what it can, but this is the enforcement point every caller passes
+ * through — including the onboarding step and anything sending a stale payload — so it
+ * rounds to fit rather than failing a 500-row import over a decimal point.
+ */
+function roundedInt(opts: { min: number; max?: number }) {
+  return z
+    .number()
+    .transform((value) => {
+      const rounded = Math.round(value);
+      const floored = Math.max(opts.min, rounded);
+      return opts.max === undefined ? floored : Math.min(opts.max, floored);
+    })
+    .pipe(z.number().int());
+}
+
+/** 1-5 stars, or absent. A value rounding below 1 is treated as unrated. */
+function ratingInt() {
+  return z
+    .number()
+    .transform((value) => {
+      const rounded = Math.round(value);
+      return rounded < 1 ? undefined : Math.min(5, rounded);
+    })
+    .optional();
+}
+
 export const productsRouter = {
   /** Powers the "X of Y products, Z remaining" banner shown above both the manual add
    * form and the CSV bulk importer, before either one hits assertPlanLimit at save time. */
@@ -389,11 +420,17 @@ export const productsRouter = {
         title: z.string().min(1),
         category: z.string().optional(),
         gender: z.enum(["men", "women", "unisex", "kids"]).optional(),
-        price: z.number().positive(),
+        // Rounded, not rejected: `price` lands in an integer column, so a fractional value
+        // used to pass validation here and then fail at the database instead.
+        price: roundedInt({ min: 1 }),
         discountPercent: z.number().min(0).max(100).optional(),
-        stockQty: z.number().int().min(0),
+        stockQty: roundedInt({ min: 0 }).default(0),
         description: z.string().optional(),
-        rating: z.number().int().min(1).max(5).optional(),
+        // Fractional ratings (4.5) are what every storefront export contains. Rejecting
+        // them failed the entire import with "expected int, received number" — a message
+        // that tells a merchant nothing about which column to fix. Rounded and clamped to
+        // 1-5; anything rounding below 1 means unrated rather than a fabricated one star.
+        rating: ratingInt(),
         imageUrl: z.string().optional(),
       })).min(1).max(500),
     }))
