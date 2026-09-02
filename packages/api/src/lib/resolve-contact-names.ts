@@ -20,12 +20,6 @@ const contactCache = new Map<string, { contact: ResolvedContact; expiresAt: numb
 // for, so N conversations cost one request rather than N.
 const pageLoadedAt = new Map<string, number>();
 
-// When the per-contact profile lookup was last attempted, keyed the same way as
-// contactCache. Without this the lookup would repeat on every inbox load forever: it never
-// yields an avatar while the app lacks the capability, so a "do we have an avatar yet?"
-// check alone can never be satisfied.
-const directAttemptedAt = new Map<string, number>();
-
 // The User Profile capability error is a property of the app, not of any one contact.
 // Logged once per process instead of once per customer.
 let profileCapabilityWarned = false;
@@ -170,42 +164,32 @@ async function getContact(
   const cacheKey = `${platform}:${psid}`;
   const now = Date.now();
 
-  // An entry is complete once it has an avatar, or once the direct lookup has been tried
-  // recently and we know none is coming.
-  const triedDirect = (directAttemptedAt.get(cacheKey) ?? 0) > now - CACHE_TTL;
-
   const cached = contactCache.get(cacheKey);
-  if (cached && cached.expiresAt > now && (cached.contact.avatarUrl || triedDirect)) {
+  if (cached && cached.expiresAt > now) {
     return cached.contact;
   }
 
   // One request covers every contact on the page.
   await loadPageContacts(platform, accessToken, accountId);
 
-  const fromConversations = contactCache.get(cacheKey);
-  if (
-    fromConversations &&
-    fromConversations.expiresAt > now &&
-    (fromConversations.contact.avatarUrl || triedDirect)
-  ) {
-    return fromConversations.contact;
-  }
-
-  // Try for a picture (and a name, if the conversations edge missed this contact).
-  directAttemptedAt.set(cacheKey, now);
-  const direct = await fetchContactDirect(psid, platform, accessToken);
-  const merged: ResolvedContact = {
-    name: direct?.name ?? fromConversations?.contact.name ?? null,
-    avatarUrl: direct?.avatarUrl ?? null,
-  };
-
-  if (!merged.name && !merged.avatarUrl) {
-    return null;
-  }
-
-  contactCache.set(cacheKey, { contact: merged, expiresAt: now + CACHE_TTL });
-  return merged;
+  return contactCache.get(cacheKey)?.contact ?? null;
 }
+
+/**
+ * Why the per-contact profile lookup is not called from the request path.
+ *
+ * It cannot succeed without the User Profile capability, and the live logs made the cost
+ * of trying obvious: the module-level caches above do not survive between requests in this
+ * Next.js runtime, so the "attempt it once an hour" guard never held. Every inbox poll
+ * re-issued one guaranteed-400 request per contact, and inbox.getInboxData took 2.3s.
+ *
+ * Names come from the conversations edge, which is one request per page and does work.
+ * Profile pictures need App Review — request advanced access for pages_messaging, then
+ * call fetchContactDirect from getContact again and avatars will populate. The plumbing
+ * (ResolvedContact.avatarUrl, InboxThread.contactAvatarUrl, ContactAvatar) is already in
+ * place and simply renders initials while avatarUrl stays null.
+ */
+export const PROFILE_PICTURES_REQUIRE_APP_REVIEW = true;
 
 /**
  * Name-only lookup used by the worker to greet a customer by their real first name
