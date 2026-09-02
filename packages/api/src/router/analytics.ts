@@ -2,7 +2,7 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
-import { and, eq, gte, inArray, sql } from "@acme/db";
+import { and, eq, gte, inArray, ne, sql } from "@acme/db";
 import { agentSession, customKpi, customer, metaWebhookEvent, order, orderItem, pageView, product } from "@acme/db/schema";
 
 import { permissionProcedure } from "../trpc";
@@ -418,9 +418,26 @@ export const analyticsRouter = {
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const [revRow] = await ctx.db
-      .select({ total: sql<number>`coalesce(sum(total_amount), 0)`, count: sql<number>`count(*)` })
+      .select({
+        // Interpolated as a column reference, not spelled out in the raw string. This read
+        // `sum(total_amount)`, a column that does not exist — the order table's money
+        // column is `total` — so every load of this panel threw 42703 and the whole Custom
+        // KPI card failed. A hand-written identifier inside sql`` gets no type checking and
+        // no snake_case mapping; ${order.total} gets both.
+        total: sql<number>`coalesce(sum(${order.total}), 0)`,
+        count: sql<number>`count(*)`,
+      })
       .from(order)
-      .where(and(eq(order.businessId, ctx.businessId), gte(order.createdAt, sevenDaysAgo)));
+      .where(
+        and(
+          eq(order.businessId, ctx.businessId),
+          gte(order.createdAt, sevenDaysAgo),
+          // Same eligibility rule the revenue cards above use (isRevenueEligible), so a
+          // KPI's progress bar can't disagree with the revenue figure on the same screen.
+          ne(order.status, "cancelled"),
+          ne(order.status, "returned"),
+        ),
+      );
 
     const currentWeeklyRevenue = Number(revRow?.total ?? 0);
     const currentWeeklyOrders = Number(revRow?.count ?? 0);
