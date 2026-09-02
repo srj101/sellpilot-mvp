@@ -20,11 +20,10 @@ import { InboxTabsBar } from "./_components/inbox-tabs-bar";
 import { HighTrafficBanner } from "./_components/high-traffic-banner";
 import { MobileConversationSheet } from "./_components/mobile-conversation-sheet";
 import {
-  avatarColor,
   channelIcon,
+  ContactAvatar,
   formatDetailedTime,
   formatRelativeTimeLong,
-  initials,
 } from "./_components/inbox-utils";
 
 interface InboxSearchParams {
@@ -160,14 +159,11 @@ export default async function InboxPage(props: {
                   threads={data.threads}
                   selectedThreadId={selectedThread?.id ?? null}
                 />
-                <span
-                  className={cn(
-                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white md:h-9 md:w-9",
-                    avatarColor(selectedThread.contactLabel),
-                  )}
-                >
-                  {initials(selectedThread.contactLabel)}
-                </span>
+                <ContactAvatar
+                  name={selectedThread.contactLabel}
+                  avatarUrl={selectedThread.contactAvatarUrl}
+                  className="h-8 w-8 md:h-9 md:w-9"
+                />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-foreground">{selectedThread.contactLabel}</p>
                   <p className="flex items-center gap-1 truncate text-[11px] text-muted-foreground md:text-xs">

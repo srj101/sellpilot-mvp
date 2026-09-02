@@ -10,7 +10,7 @@ import { Badge } from "@acme/ui/badge";
 import { Input } from "@acme/ui/input";
 import { cn } from "@acme/ui";
 
-import { avatarColor, channelIcon, formatRelativeTimeShort, initials, platformBadgeColor, TAG_COLOR_CLASSES } from "./inbox-utils";
+import { channelIcon, ContactAvatar, formatRelativeTimeShort, platformBadgeColor, TAG_COLOR_CLASSES } from "./inbox-utils";
 import { useBusinessSlug } from "~/hooks/use-business-slug";
 
 export function ConversationList({
@@ -73,14 +73,11 @@ export function ConversationList({
                 )}
               >
                 <div className="relative shrink-0">
-                  <span
-                    className={cn(
-                      "flex h-10 w-10 items-center justify-center rounded-full text-xs font-semibold text-white",
-                      avatarColor(thread.contactLabel),
-                    )}
-                  >
-                    {initials(thread.contactLabel)}
-                  </span>
+                  <ContactAvatar
+                    name={thread.contactLabel}
+                    avatarUrl={thread.contactAvatarUrl}
+                    className="h-10 w-10"
+                  />
                   <span
                     className={cn(
                       "absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border-2 border-background p-0.5",

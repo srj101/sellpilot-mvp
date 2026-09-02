@@ -1,3 +1,5 @@
+import { cn } from "@acme/ui";
+
 import {
   FacebookIcon,
   InstagramIcon,
@@ -51,6 +53,47 @@ export function avatarColor(seed: string) {
 export function initials(name: string) {
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
+}
+
+/**
+ * Contact avatar: the customer's Meta profile picture when we have one, coloured
+ * initials when we don't.
+ *
+ * The initials are always rendered *underneath* the image rather than swapped out for it.
+ * Meta's profile_pic URLs are signed and expire, so a stale one fails to load — and a
+ * broken `alt=""` image collapses to nothing, revealing the initials behind it. That gives
+ * a graceful fallback with no onError handler, which matters because this renders inside a
+ * server component as well as a client one.
+ */
+export function ContactAvatar({
+  name,
+  avatarUrl,
+  className,
+}: {
+  name: string;
+  avatarUrl?: string | null;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "relative flex shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-semibold text-white",
+        avatarColor(name),
+        className,
+      )}
+    >
+      <span aria-hidden={avatarUrl ? "true" : undefined}>{initials(name)}</span>
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : null}
+    </span>
+  );
 }
 
 /** Compact form for list rows: "5m", "2h", "3d". */

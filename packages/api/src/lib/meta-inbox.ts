@@ -1,6 +1,7 @@
 import type { metaConnection, metaWebhookEvent } from "@acme/db/schema";
 
 import type { MetaInboxPlatform } from "./meta";
+import type { ResolvedContact } from "./resolve-contact-names";
 
 export type MetaWebhookEventRow = typeof metaWebhookEvent.$inferSelect;
 export type MetaConnectionRow = typeof metaConnection.$inferSelect;
@@ -31,6 +32,10 @@ export interface InboxThread {
   accountLabel: string;
   contactId: string;
   contactLabel: string;
+  /** Signed Meta CDN URL, or null when the lookup failed or the platform has no
+   * profile pictures (WhatsApp). Expires — resolved fresh on each inbox load, never
+   * persisted. The UI falls back to coloured initials. */
+  contactAvatarUrl: string | null;
   replyTargetId: string;
   lastMessageAt: Date;
   preview: string;
@@ -64,7 +69,7 @@ export interface InboxActivityItem {
 export interface BuildInboxDataInput {
   events: MetaWebhookEventRow[];
   connections: MetaConnectionRow[];
-  resolvedNames?: Record<string, string>;
+  resolvedNames?: Record<string, ResolvedContact>;
 }
 
 export interface BuildInboxDataResult {
@@ -292,11 +297,47 @@ function extractThreadKey(
   return null;
 }
 
+/** The customer's platform-scoped id for this event — the sender on an inbound message,
+ * the recipient on an outbound one. Shared by the label and avatar lookups so the two can
+ * never disagree about whose conversation this is. */
+function extractContactPsid(
+  event: MetaWebhookEventRow,
+  rawPayload: Record<string, unknown>,
+): string | null {
+  const direction = asString(rawPayload.direction);
+  const isOutbound = direction === "outbound" || event.eventType === "outbound";
+  const payload = extractPageOrInstagramEntry(rawPayload);
+  const sender = asRecord(payload.sender);
+
+  // asString yields undefined and sourceId is nullable; normalise both to null so the
+  // caller has one absent-value to check.
+  return isOutbound
+    ? (asString(rawPayload.recipientId) ?? event.sourceId ?? null)
+    : (asString(sender.id) ?? null);
+}
+
+/** WhatsApp has no equivalent — the Cloud API exposes no profile picture — so those
+ * threads keep the initials avatar. */
+function extractContactAvatarUrl(
+  event: MetaWebhookEventRow,
+  rawPayload: Record<string, unknown>,
+  resolvedNames?: Record<string, ResolvedContact>,
+): string | null {
+  if (!resolvedNames || event.platform === "whatsapp") {
+    return null;
+  }
+  const psid = extractContactPsid(event, rawPayload);
+  if (!psid) {
+    return null;
+  }
+  return resolvedNames[`${event.platform}:${psid}`]?.avatarUrl ?? null;
+}
+
 function extractContactLabel(
   event: MetaWebhookEventRow,
   rawPayload: Record<string, unknown>,
   connection?: MetaConnectionRow,
-  resolvedNames?: Record<string, string>,
+  resolvedNames?: Record<string, ResolvedContact>,
 ) {
   const directLabel = asString(rawPayload.contactLabel);
   if (directLabel) {
@@ -333,7 +374,7 @@ function extractContactLabel(
 
   if (customerId) {
     if (resolvedNames) {
-      const resolved = resolvedNames[`${event.platform}:${customerId}`];
+      const resolved = resolvedNames[`${event.platform}:${customerId}`]?.name;
       if (resolved) {
         return resolved;
       }
@@ -450,6 +491,7 @@ export function buildInboxData({
       );
       const replyTargetId = extractReplyTargetId(event, rawPayload) ?? "";
       const contactLabel = extractContactLabel(event, rawPayload, connection, resolvedNames);
+      const contactAvatarUrl = extractContactAvatarUrl(event, rawPayload, resolvedNames);
       const messageText = extractMessageText(event, rawPayload);
       const direction =
         asString(rawPayload.direction) === "outbound" ? "outbound" : "inbound";
@@ -517,6 +559,7 @@ export function buildInboxData({
         accountLabel,
         contactId: replyTargetId || threadKey,
         contactLabel,
+        contactAvatarUrl,
         replyTargetId,
         lastMessageAt: timestamp,
         preview: message.text,
