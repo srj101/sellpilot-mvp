@@ -12,6 +12,11 @@ export interface ResolvedContact {
 
 const CACHE_TTL = 1000 * 60 * 60; // 1 hour
 
+// Shortest gap between forced refreshes of a page's conversation list. Without a floor,
+// a contact Meta genuinely doesn't list (an orphaned thread, say) would re-fetch the list
+// on every single inbox load.
+const FORCED_REFRESH_FLOOR = 1000 * 30;
+
 // Keyed by `platform:psid`. Negative results are cached too, so a contact Meta refuses to
 // resolve doesn't trigger a fresh request on every inbox load.
 const contactCache = new Map<string, { contact: ResolvedContact; expiresAt: number }>();
@@ -45,10 +50,15 @@ async function loadPageContacts(
   platform: MetaPlatform,
   accessToken: string,
   accountId: string,
+  force = false,
 ): Promise<void> {
   const cacheKey = `${platform}:${accountId}`;
-  const loadedAt = pageLoadedAt.get(cacheKey);
-  if (loadedAt && loadedAt > Date.now() - CACHE_TTL) {
+  const loadedAt = pageLoadedAt.get(cacheKey) ?? 0;
+
+  // A forced refresh still respects a short floor, so a burst of messages from an
+  // unknown contact can't turn into a burst of identical Graph requests.
+  const minAge = force ? FORCED_REFRESH_FLOOR : CACHE_TTL;
+  if (loadedAt > Date.now() - minAge) {
     return;
   }
 
@@ -171,6 +181,16 @@ async function getContact(
 
   // One request covers every contact on the page.
   await loadPageContacts(platform, accessToken, accountId);
+
+  const hit = contactCache.get(cacheKey);
+  if (hit) {
+    return hit.contact;
+  }
+
+  // Not in the list. The usual reason is that the list was fetched before this person
+  // first messaged — the cache is up to an hour old, and a brand new customer would stay
+  // labelled "Contact 2835…4561" for that whole hour. Refresh once and look again.
+  await loadPageContacts(platform, accessToken, accountId, true);
 
   return contactCache.get(cacheKey)?.contact ?? null;
 }
