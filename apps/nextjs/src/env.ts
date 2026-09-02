@@ -35,6 +35,7 @@ export const env = createEnv({
   client: {
     NEXT_PUBLIC_FACEBOOK_APP_ID: z.string().optional(),
     NEXT_PUBLIC_FACEBOOK_CONFIG_ID: z.string().optional(),
+    NEXT_PUBLIC_INSTAGRAM_CONFIG_ID: z.string().optional(),
     NEXT_PUBLIC_WHATSAPP_CONFIG_ID: z.string().optional(),
     NEXT_PUBLIC_WHATSAPP_REDIRECT_URI: z.string().optional(),
   },
@@ -45,6 +46,7 @@ export const env = createEnv({
     NODE_ENV: process.env.NODE_ENV,
     NEXT_PUBLIC_FACEBOOK_APP_ID: process.env.NEXT_PUBLIC_FACEBOOK_APP_ID,
     NEXT_PUBLIC_FACEBOOK_CONFIG_ID: process.env.NEXT_PUBLIC_FACEBOOK_CONFIG_ID,
+    NEXT_PUBLIC_INSTAGRAM_CONFIG_ID: process.env.NEXT_PUBLIC_INSTAGRAM_CONFIG_ID,
     NEXT_PUBLIC_WHATSAPP_CONFIG_ID: process.env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID,
     NEXT_PUBLIC_WHATSAPP_REDIRECT_URI:
       process.env.NEXT_PUBLIC_WHATSAPP_REDIRECT_URI,

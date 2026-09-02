@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { env } from "~/env";
+import { metaLoginConfigId, type MetaChannel } from "~/lib/meta-login-config";
 import crypto from "crypto";
 
 import { eq } from "@acme/db";
@@ -58,22 +59,13 @@ export async function GET(req: Request) {
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("state", state);
 
-  if (channel === "whatsapp") {
-    const configId = env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID;
-    if (configId) authUrl.searchParams.set("config_id", configId);
-  } else {
-    const configId = env.NEXT_PUBLIC_FACEBOOK_CONFIG_ID;
-    if (configId) authUrl.searchParams.set("config_id", configId);
-  }
+  // One Configuration per channel — see metaLoginConfigId for why they cannot be shared.
+  const configId = metaLoginConfigId(channel as MetaChannel);
+  if (configId) authUrl.searchParams.set("config_id", configId);
 
-  const scopes = [
-    "pages_show_list",
-    "pages_messaging",
-    "pages_manage_metadata",
-    "instagram_basic",
-    "instagram_manage_messages",
-  ];
-  authUrl.searchParams.set("scope", scopes.join(","));
+  // No `scope` param on purpose. Facebook Login for Business takes its permissions from
+  // the Configuration; sending a scope list alongside config_id contradicts it and is
+  // rejected as "Invalid Scopes" for anything not already implicitly granted.
 
   redirect(authUrl.toString());
 }

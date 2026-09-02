@@ -10,6 +10,7 @@ import { business, businessMember, metaConnection } from "@acme/db/schema";
 
 import { getSession } from "~/auth/server";
 import { env } from "~/env";
+import { metaLoginConfigId } from "~/lib/meta-login-config";
 import {
   exchangeForLongLivedToken,
   subscribeInstagramWebhooks,
@@ -372,25 +373,10 @@ export async function connectChannel(formData: FormData) {
     url.searchParams.set("auth_type", "reauthenticate");
   }
 
-  if (channel === "whatsapp") {
-    const configId = env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID;
-    if (configId) {
-      url.searchParams.set("config_id", configId);
-    }
-  } else {
-    // This app uses "Facebook Login for Business", which resolves permissions
-    // via a Configuration rather than a raw `scope` param — a bare `scope`
-    // list is rejected with "Invalid Scopes" for any permission not already
-    // implicitly granted. The Configuration (created in the Meta dashboard
-    // under Facebook Login for Business > Configurations) must include:
-    // pages_show_list, pages_read_engagement, pages_manage_metadata,
-    // pages_messaging, instagram_basic, instagram_manage_messages,
-    // pages_manage_posts, pages_manage_engagement, instagram_manage_comments,
-    // instagram_content_publish.
-    const configId = env.NEXT_PUBLIC_FACEBOOK_CONFIG_ID;
-    if (configId) {
-      url.searchParams.set("config_id", configId);
-    }
+  // One Configuration per channel — see metaLoginConfigId for why they cannot be shared.
+  const configId = metaLoginConfigId(channel);
+  if (configId) {
+    url.searchParams.set("config_id", configId);
   }
 
   redirect(url.toString());
