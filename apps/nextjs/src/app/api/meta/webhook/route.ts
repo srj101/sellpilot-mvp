@@ -15,7 +15,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { and, desc, eq, inArray, or } from "@acme/db";
+import { and, asc, desc, eq, inArray, or } from "@acme/db";
 import { db } from "@acme/db/client";
 import { metaConnection, metaContact, metaWebhookEvent } from "@acme/db/schema";
 
@@ -179,11 +179,20 @@ export async function POST(req: NextRequest) {
       threadId: event.message?.threadId ?? null,
       rawPayload: event.rawPayload,
       headers,
-      status: connection ? "queued" : "orphaned",
+      status: !connection
+        ? "orphaned"
+        : connection.status === "paused"
+          ? "paused"
+          : "queued",
     });
 
-    // Queue jobs for processing
-    if (connection?.businessId && event.message) {
+    // Queue jobs for processing.
+    //
+    // A paused connection still gets its events stored above — the merchant disconnected
+    // the channel, they didn't ask to stop seeing what customers sent — but nothing is
+    // enqueued, so no auto-reply goes out. That is the whole of what "paused" means on
+    // the inbound side.
+    if (connection?.businessId && event.message && connection.status !== "paused") {
       if (isInboundMessage(event)) {
         jobsToEnqueue.push({ type: "dm", event, connection });
       } else if (isInboundComment(event)) {
@@ -457,13 +466,17 @@ async function resolveMetaConnection(
       break;
   }
 
-  // Fallback to most recent connection for the platform
+  // Fallback to most recent connection for the platform.
+  //
+  // Prefer an active row: with several connections on one platform, matching a paused one
+  // here would silently swallow a live channel's messages. (This fallback is still not
+  // scoped by business — a known cross-tenant issue tracked separately.)
   if (rows.length === 0) {
     rows = await db
       .select()
       .from(metaConnection)
       .where(eq(metaConnection.platform, platform))
-      .orderBy(desc(metaConnection.connectedAt))
+      .orderBy(asc(metaConnection.status), desc(metaConnection.connectedAt))
       .limit(1);
   }
 

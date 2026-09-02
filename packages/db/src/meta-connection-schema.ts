@@ -68,6 +68,24 @@ export const metaConnection = pgTable(
     /** Extra platform-specific data (phone_number_id, profile_picture_url, etc.) */
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
 
+    /**
+     * "active" | "paused".
+     *
+     * Paused is what the UI calls "Disconnected": the merchant has stopped the channel,
+     * but nothing has been torn down. The row, its tokens, its conversation history and —
+     * importantly — its Meta webhook subscription all stay exactly as they were, so
+     * Reconnect is a single UPDATE with no Graph round-trip and no re-authentication.
+     *
+     * What pausing changes is outbound only: messages keep arriving and keep landing in
+     * the inbox, but nothing replies to them (see the webhook route's enqueue guard, the
+     * worker's connection lookups, and inbox.sendReply). Deleting the row remains a
+     * separate, explicit "Remove permanently" action.
+     */
+    status: text("status").notNull().default("active"),
+
+    /** When the merchant paused this channel. Null while active. */
+    pausedAt: timestamp("paused_at"),
+
     /** Webhook subscription lifecycle state for the connected account */
     webhookSubscriptionStatus: text("webhook_subscription_status")
       .notNull()
@@ -87,6 +105,8 @@ export const metaConnection = pgTable(
   },
   (table) => [
     index("meta_connection_org_id_idx").on(table.businessId),
+    // Every outbound path filters by (businessId, platform, status) to skip paused rows.
+    index("meta_connection_status_idx").on(table.businessId, table.status),
     index("meta_connection_platform_idx").on(table.businessId, table.platform),
     index("meta_connection_platform_account_id_idx").on(
       table.platformAccountId,

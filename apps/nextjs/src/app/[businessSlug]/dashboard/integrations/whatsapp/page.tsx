@@ -30,6 +30,8 @@ export default async function WhatsAppIntegrationPage({
       externalId: c.platformAccountId,
       webhookStatus: c.webhookSubscriptionStatus,
       connectedAt: c.connectedAt,
+      status: c.status,
+      pausedAt: c.pausedAt,
     }));
 
   return (

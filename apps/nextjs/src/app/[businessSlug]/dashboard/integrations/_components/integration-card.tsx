@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight, BadgeCheck, Lock } from "lucide-react";
+import { ArrowUpRight, BadgeCheck, Lock, PauseCircle } from "lucide-react";
 
 import {
   FacebookIcon,
@@ -30,6 +30,8 @@ export interface IntegrationCardProps {
   name: string;
   description: string;
   connected: boolean;
+  /** Has connections, but every one of them is paused — see meta_connection.status. */
+  paused?: boolean;
   account?: string | null;
   businessSlug: string;
   isOwner: boolean;
@@ -43,6 +45,7 @@ export function IntegrationCard({
   name,
   description,
   connected,
+  paused = false,
   account,
   businessSlug,
   isOwner,
@@ -57,7 +60,11 @@ export function IntegrationCard({
   const cardBody = (
     <>
       {/* Brand gradient background */}
-      <div className={`absolute inset-0 bg-gradient-to-br ${gradient} ${locked ? "grayscale" : ""}`} />
+      <div
+        className={`absolute inset-0 bg-gradient-to-br ${gradient} ${
+          locked ? "grayscale" : paused ? "grayscale-[0.7]" : ""
+        }`}
+      />
 
       {/* Watermark icon */}
       <Icon className="absolute -top-4 -right-4 h-24 w-24 rotate-12 text-white/10" />
@@ -81,6 +88,8 @@ export function IntegrationCard({
           <span className="text-sm font-semibold tracking-tight">{name}</span>
           {connected ? (
             <BadgeCheck className="h-3.5 w-3.5 fill-white/20 text-white" />
+          ) : paused ? (
+            <PauseCircle className="h-3.5 w-3.5 text-white/80" />
           ) : null}
         </div>
 
@@ -90,7 +99,13 @@ export function IntegrationCard({
 
         <div className="mt-0.5 flex items-center justify-between gap-2">
           <span className="truncate text-[11px] font-medium text-white/65">
-            {locked ? "Requires a higher plan" : connected ? (account ?? "Connected") : "Not connected"}
+            {locked
+              ? "Requires a higher plan"
+              : connected
+                ? (account ?? "Connected")
+                : paused
+                  ? "Paused — reconnect to resume"
+                  : "Not connected"}
           </span>
           {locked ? (
             <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-black shadow transition-transform duration-200 group-hover:scale-105">

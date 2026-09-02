@@ -50,6 +50,8 @@ export default async function InstagramIntegrationPage(props: {
       externalId: c.platformAccountId,
       webhookStatus: c.webhookSubscriptionStatus,
       connectedAt: c.connectedAt,
+      status: c.status,
+      pausedAt: c.pausedAt,
     }));
   const connectedIds = new Set(
     pages.map((p) => p.externalId).filter((id): id is string => !!id),

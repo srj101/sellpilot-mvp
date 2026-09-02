@@ -209,7 +209,14 @@ async function sendFollowUp(session: typeof agentSession.$inferSelect, planKey: 
   const [conn] = await db
     .select()
     .from(metaConnection)
-    .where(and(eq(metaConnection.businessId, session.businessId), eq(metaConnection.platform, platform)))
+    // Paused channels send nothing outbound — see meta_connection.status.
+    .where(
+      and(
+        eq(metaConnection.businessId, session.businessId),
+        eq(metaConnection.platform, platform),
+        eq(metaConnection.status, "active"),
+      ),
+    )
     .limit(1);
   if (!conn?.accessToken) return { success: false, items: [] };
 

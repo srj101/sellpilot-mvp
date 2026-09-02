@@ -43,7 +43,14 @@ async function sendReviewRequest(ord: typeof order.$inferSelect): Promise<boolea
   const [conn] = await db
     .select()
     .from(metaConnection)
-    .where(and(eq(metaConnection.businessId, ord.businessId), eq(metaConnection.platform, platform)))
+    // Paused channels send nothing outbound — see meta_connection.status.
+    .where(
+      and(
+        eq(metaConnection.businessId, ord.businessId),
+        eq(metaConnection.platform, platform),
+        eq(metaConnection.status, "active"),
+      ),
+    )
     .limit(1);
   if (!conn?.accessToken) return false;
 

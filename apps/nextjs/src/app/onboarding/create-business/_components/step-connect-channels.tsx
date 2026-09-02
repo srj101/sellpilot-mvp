@@ -140,6 +140,8 @@ export function StepConnectChannels({ businessSlug, onNext }: { businessSlug: st
       externalId: c.platformAccountId,
       webhookStatus: c.webhookSubscriptionStatus,
       connectedAt: c.connectedAt,
+      status: c.status,
+      pausedAt: c.pausedAt,
     }));
   const fbConnectedIds = new Set(fbPages.map((p) => p.externalId).filter((id): id is string => !!id));
   const fbAvailable = availablePages.filter(
@@ -154,6 +156,8 @@ export function StepConnectChannels({ businessSlug, onNext }: { businessSlug: st
       externalId: c.platformAccountId,
       webhookStatus: c.webhookSubscriptionStatus,
       connectedAt: c.connectedAt,
+      status: c.status,
+      pausedAt: c.pausedAt,
     }));
   const igConnectedIds = new Set(igPages.map((p) => p.externalId).filter((id): id is string => !!id));
   const igAvailable = availablePages.filter(
@@ -168,6 +172,8 @@ export function StepConnectChannels({ businessSlug, onNext }: { businessSlug: st
       externalId: c.platformAccountId,
       webhookStatus: c.webhookSubscriptionStatus,
       connectedAt: c.connectedAt,
+      status: c.status,
+      pausedAt: c.pausedAt,
     }));
   const waConnectedIds = new Set(waPages.map((p) => p.externalId).filter((id): id is string => !!id));
   const waAvailable = availablePages.filter(

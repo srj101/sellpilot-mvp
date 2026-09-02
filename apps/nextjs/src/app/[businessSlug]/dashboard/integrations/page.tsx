@@ -34,39 +34,43 @@ export default async function IntegrationsPage({
   const currentMember = membersData.members.find((m) => m.userId === currentUserId);
   const isOwner = currentMember?.role === "owner";
 
-  const fbConnection = connections.find(
-    (c) => c.platform === "facebook_page",
-  );
-  const igConnection = connections.find((c) => c.platform === "instagram");
-  const waConnection = connections.find((c) => c.platform === "whatsapp");
+  /**
+   * A channel is Connected if it has at least one active connection, Paused if it has
+   * connections but every one of them is paused, and Not connected otherwise. Preferring
+   * an active row matters once a merchant has several Pages: one paused Page must not make
+   * the whole channel read as disconnected.
+   */
+  function channelState(platform: string, label: (name: string | null) => string) {
+    const forPlatform = connections.filter((c) => c.platform === platform);
+    const active = forPlatform.find((c) => c.status !== "paused");
+    const chosen = active ?? forPlatform[0];
+    return {
+      connected: !!active,
+      paused: !active && forPlatform.length > 0,
+      account: chosen ? label(chosen.platformAccountName) : null,
+    };
+  }
 
   const APPS = [
     {
       id: "facebook",
       name: "Facebook",
       description: "Enable auto-reply for Facebook messages and comments.",
-      connected: !!fbConnection,
-      account: fbConnection
-        ? `Connected as ${fbConnection.platformAccountName}`
-        : null,
+      ...channelState("facebook_page", (name) => `Connected as ${name}`),
       locked: !allowedChannels.has("messenger"),
     },
     {
       id: "instagram",
       name: "Instagram",
       description: "Enable auto-reply for Instagram DMs and story replies.",
-      connected: !!igConnection,
-      account: igConnection ? `@${igConnection.platformAccountName}` : null,
+      ...channelState("instagram", (name) => `@${name}`),
       locked: !allowedChannels.has("instagram"),
     },
     {
       id: "whatsapp",
       name: "WhatsApp",
       description: "Enable auto-reply for WhatsApp Business messages.",
-      connected: !!waConnection,
-      account: waConnection
-        ? `Connected: ${waConnection.platformAccountName}`
-        : null,
+      ...channelState("whatsapp", (name) => `Connected: ${name}`),
       locked: !allowedChannels.has("whatsapp"),
     },
   ];

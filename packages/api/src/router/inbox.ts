@@ -151,6 +151,17 @@ export const inboxRouter = {
         return { ok: false as const, reason: "No connection found for this channel." };
       }
 
+      // A staff member cannot hand-send on a disconnected channel either. "Disconnect"
+      // has to mean the customer hears nothing from this business until it is reconnected
+      // — an AI-only pause that still let humans reply would make the button a lie.
+      if (connection.status === "paused") {
+        return {
+          ok: false as const,
+          reason:
+            "This channel is disconnected. Reconnect it from Integrations to send messages again.",
+        };
+      }
+
       const accessToken =
         connection.accessToken ?? connection.facebookPageAccessToken ?? connection.whatsappAccessToken;
       if (!accessToken) {

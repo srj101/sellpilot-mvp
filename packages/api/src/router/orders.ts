@@ -55,7 +55,15 @@ async function sendThreadMessage(
     const [connection] = await db
       .select()
       .from(metaConnection)
-      .where(and(eq(metaConnection.businessId, businessId), eq(metaConnection.platform, platform)))
+      // Paused channels send nothing outbound — see meta_connection.status. This function
+      // is already best-effort, so a paused channel simply means no system message.
+      .where(
+        and(
+          eq(metaConnection.businessId, businessId),
+          eq(metaConnection.platform, platform),
+          eq(metaConnection.status, "active"),
+        ),
+      )
       .limit(1);
     if (!connection) return;
 

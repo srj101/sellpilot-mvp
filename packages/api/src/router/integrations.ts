@@ -145,6 +145,13 @@ async function persistWhatsAppSignup(
   return { ok: true as const };
 }
 
+/** metaConnection.platform uses Meta's vocabulary; the plan catalog uses the product's. */
+const PLATFORM_TO_CHANNEL: Record<string, "messenger" | "instagram" | "whatsapp"> = {
+  facebook_page: "messenger",
+  instagram: "instagram",
+  whatsapp: "whatsapp",
+};
+
 export const integrationsRouter = {
   /** Which channels the current plan allows — the Integrations page uses this to show a
    * locked/upgrade state instead of a dead Connect button (billing plan channel gating). */
@@ -161,6 +168,8 @@ export const integrationsRouter = {
         platformAccountName: metaConnection.platformAccountName,
         webhookSubscriptionStatus: metaConnection.webhookSubscriptionStatus,
         connectedAt: metaConnection.connectedAt,
+        status: metaConnection.status,
+        pausedAt: metaConnection.pausedAt,
       })
       .from(metaConnection)
       .where(eq(metaConnection.businessId, ctx.businessId));
@@ -192,7 +201,109 @@ export const integrationsRouter = {
       return { takenIds };
     }),
 
-  disconnectChannel: ownerOnlyProcedure
+  /**
+   * "Disconnect" in the UI. Stops the channel without dismantling it: the row, its
+   * tokens and its Meta webhook subscription are all left in place, so the customer's
+   * message history stays readable and resuming costs one UPDATE instead of a fresh
+   * OAuth round-trip.
+   *
+   * Deliberately makes no Graph API call. Unsubscribing on pause would mean re-subscribing
+   * on resume — two network calls that can fail independently, leaving a channel that
+   * looks connected but receives nothing. Meta keeps delivering; we simply stop replying.
+   */
+  pauseChannel: ownerOnlyProcedure
+    .input(z.object({ connectionId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const [updated] = await ctx.db
+        .update(metaConnection)
+        .set({ status: "paused", pausedAt: new Date(), updatedAt: new Date() })
+        .where(
+          and(
+            eq(metaConnection.id, input.connectionId),
+            eq(metaConnection.businessId, ctx.businessId),
+          ),
+        )
+        .returning({ id: metaConnection.id, platform: metaConnection.platform });
+
+      if (!updated) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Connection not found.",
+        });
+      }
+
+      await enqueueActivityLog({
+        businessId: ctx.businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Staff Member",
+        actorType: "staff",
+        action: "integration.pause",
+        entityType: "integration",
+        entityId: input.connectionId,
+        summary: `${ctx.session.user.name ?? "Staff"} disconnected ${updated.platform}`,
+      });
+
+      return { ok: true };
+    }),
+
+  /** "Reconnect" in the UI — resume exactly where the channel was paused. */
+  resumeChannel: ownerOnlyProcedure
+    .input(z.object({ connectionId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const [existing] = await ctx.db
+        .select({ platform: metaConnection.platform })
+        .from(metaConnection)
+        .where(
+          and(
+            eq(metaConnection.id, input.connectionId),
+            eq(metaConnection.businessId, ctx.businessId),
+          ),
+        )
+        .limit(1);
+
+      if (!existing) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Connection not found." });
+      }
+
+      // Re-gated on resume, not just on connect: a business can pause Instagram, downgrade
+      // to a plan that doesn't include it, and then click Reconnect. Without this check
+      // that path silently restores a channel the plan no longer covers.
+      await assertChannelAllowed(ctx, PLATFORM_TO_CHANNEL[existing.platform] ?? "messenger");
+
+      await ctx.db
+        .update(metaConnection)
+        .set({ status: "active", pausedAt: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(metaConnection.id, input.connectionId),
+            eq(metaConnection.businessId, ctx.businessId),
+          ),
+        );
+
+      await enqueueActivityLog({
+        businessId: ctx.businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Staff Member",
+        actorType: "staff",
+        action: "integration.resume",
+        entityType: "integration",
+        entityId: input.connectionId,
+        summary: `${ctx.session.user.name ?? "Staff"} reconnected ${existing.platform}`,
+      });
+
+      return { ok: true };
+    }),
+
+  /**
+   * "Remove permanently" — the hard delete that pauseChannel used to be.
+   *
+   * Note this still leaves the Meta-side subscription in place and does not revoke the
+   * token; that teardown is tracked separately. What it does do is drop the row, which
+   * nulls meta_connection_id on this channel's webhook events (onDelete: "set null") and
+   * makes the history unattributable. That is why it is offered only from the paused
+   * state, behind its own confirmation.
+   */
+  removeChannel: ownerOnlyProcedure
     .input(z.object({ connectionId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const deleted = await ctx.db
@@ -217,10 +328,10 @@ export const integrationsRouter = {
         actorUserId: ctx.session.user.id,
         actorName: ctx.session.user.name ?? "Staff Member",
         actorType: "staff",
-        action: "integration.disconnect",
+        action: "integration.remove",
         entityType: "integration",
         entityId: input.connectionId,
-        summary: `${ctx.session.user.name ?? "Staff"} disconnected integration channel`,
+        summary: `${ctx.session.user.name ?? "Staff"} permanently removed an integration channel`,
       });
 
       return { ok: true };

@@ -70,7 +70,15 @@ export async function handleOrderStatusNotify(job: Job<OrderStatusNotifyJob>): P
     const [conn] = await db
       .select()
       .from(metaConnection)
-      .where(and(eq(metaConnection.businessId, businessId), eq(metaConnection.platform, platform)))
+      // status: a paused channel is one the merchant disconnected — it must not send
+      // proactive notifications, only keep receiving.
+      .where(
+        and(
+          eq(metaConnection.businessId, businessId),
+          eq(metaConnection.platform, platform),
+          eq(metaConnection.status, "active"),
+        ),
+      )
       .limit(1);
     if (!conn?.accessToken) {
       console.warn(`[OrderStatusNotify] No active ${platform} connection for business ${businessId}`);
