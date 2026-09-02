@@ -101,7 +101,7 @@ export function ConnectedPagesList({
               isPaused ? "bg-muted/40 border-dashed" : "bg-secondary/30"
             }`}
           >
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <p
@@ -131,73 +131,74 @@ export function ConnectedPagesList({
                   </span>
                   <span>Connected {new Date(page.connectedAt).toLocaleDateString()}</span>
                 </div>
-
-                {isPaused ? (
-                  <p className="text-muted-foreground mt-1.5 text-xs">
-                    Messages still arrive and stay in your inbox, but nothing is replied to.
-                    Reconnect to pick up exactly where you left off — no re-authentication
-                    needed.
-                  </p>
-                ) : page.webhookStatus !== "subscribed" ? (
-                  <p className="text-destructive mt-1.5 text-xs">
-                    Auto-reply isn't active for this page yet — missing permissions. Remove
-                    and reconnect it once app permissions are fixed.
-                  </p>
-                ) : null}
               </div>
 
-              <div className="flex shrink-0 items-center gap-2">
-                {isPaused ? (
-                  <>
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={isBusy}
-                      onClick={() =>
-                        void run(page.id, () =>
-                          resumeChannel.mutateAsync({ connectionId: page.id }),
-                        )
-                      }
-                    >
-                      {isBusy ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <PlugZap className="h-4 w-4" />
-                      )}
-                      Reconnect
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      disabled={isBusy}
-                      onClick={() => setConfirmingId(isConfirming ? null : page.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Remove permanently
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={isBusy}
-                    onClick={() =>
-                      void run(page.id, () => pauseChannel.mutateAsync({ connectionId: page.id }))
-                    }
-                  >
-                    {isBusy ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <PowerOff className="h-4 w-4" />
-                    )}
-                    Disconnect
-                  </Button>
-                )}
-              </div>
+              {/* Only the single Disconnect button sits inline. The paused pair is far too
+                  wide for this card — side by side they crushed the details column into a
+                  one-word-per-line strip — so they get their own full-width row below. */}
+              {!isPaused ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  disabled={isBusy}
+                  onClick={() =>
+                    void run(page.id, () => pauseChannel.mutateAsync({ connectionId: page.id }))
+                  }
+                >
+                  {isBusy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <PowerOff className="h-4 w-4" />
+                  )}
+                  Disconnect
+                </Button>
+              ) : null}
             </div>
+
+            {isPaused ? (
+              <p className="text-muted-foreground text-xs">
+                Messages still arrive and stay in your inbox, but nothing is replied to.
+                Reconnect to resume — no re-authentication needed.
+              </p>
+            ) : page.webhookStatus !== "subscribed" ? (
+              <p className="text-destructive text-xs">
+                Auto-reply isn't active for this page yet — missing permissions. Remove and
+                reconnect it once app permissions are fixed.
+              </p>
+            ) : null}
+
+            {isPaused ? (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isBusy}
+                  onClick={() =>
+                    void run(page.id, () => resumeChannel.mutateAsync({ connectionId: page.id }))
+                  }
+                >
+                  {isBusy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <PlugZap className="h-4 w-4" />
+                  )}
+                  Reconnect
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  disabled={isBusy}
+                  onClick={() => setConfirmingId(isConfirming ? null : page.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Remove permanently
+                </Button>
+              </div>
+            ) : null}
 
             {isConfirming ? (
               <div className="border-destructive/20 bg-destructive/5 flex flex-col gap-2 rounded-lg border p-3">
