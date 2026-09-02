@@ -32,7 +32,13 @@ import { runConversationFollowUp } from "./handlers/conversation-followup.js";
 import { runReviewRequestSweep } from "./handlers/review-request.js";
 import { handleOrderStatusNotify } from "./handlers/order-status-notify.js";
 import { handleActivityLog } from "./handlers/activity-log.js";
-import type { ActivityLogJob } from "@acme/queue";
+import {
+  handleContactAvatarFetch,
+  handleContactNameSync,
+  runContactRefreshSweep,
+  setContactSyncEnqueuers,
+} from "./handlers/contact-sync.js";
+import type { ActivityLogJob, ContactAvatarFetchJob, ContactNameSyncJob } from "@acme/queue";
 
 const DAY_MS = 86_400_000;
 const FIVE_MIN_MS = 5 * 60_000;
@@ -230,6 +236,30 @@ async function initializeAIHelpers() {
         }),
     });
 
+    // The contact-sync handlers queue follow-up work. Injected rather than imported to
+    // avoid a cycle back into this module, matching the other providers here.
+    setContactSyncEnqueuers({
+      nameSync: async (businessId, connectionId) => {
+        await queue.enqueue(
+          "contact-name-sync",
+          { businessId, connectionId },
+          // Fixed id: a burst of messages from unknown contacts collapses into one sync.
+          { jobId: `contact-name-sync:${connectionId}` },
+        );
+      },
+      avatarFetch: async (businessId, connectionId, platform, psids) => {
+        for (const psid of psids) {
+          await queue.enqueue(
+            "contact-avatar-fetch",
+            { businessId, connectionId, platform, psid },
+            // Two attempts, not the default three with backoff: an avatar is cosmetic and
+            // must never occupy the queue retrying something App Review has to fix.
+            { jobId: `contact-avatar:${businessId}:${psid}`, attempts: 2 },
+          );
+        }
+      },
+    });
+
     setHandlingModeProvider({
       getHandlingMode: (businessId, threadId) =>
         aiHelpers.getConversationHandlingMode(businessId, threadId),
@@ -325,6 +355,27 @@ function registerHandlers() {
     { onCompleted: rescheduleReviewRequestSweep, onFailed: rescheduleReviewRequestSweep },
   );
 
+  // Contact identity: names for a whole page in one request, avatars one per contact.
+  // Both are kept off the inbox render path — resolving them inline previously cost a
+  // Graph round trip on every single page load.
+  queue.process<ContactNameSyncJob>("contact-name-sync", async (job) => {
+    await handleContactNameSync(job);
+  });
+
+  queue.process<ContactAvatarFetchJob>("contact-avatar-fetch", async (job) => {
+    await handleContactAvatarFetch(job);
+  });
+
+  const rescheduleContactRefresh = () =>
+    void queue.enqueue("contact-refresh-sweep", {}, { delay: HOUR_MS, jobId: "contact-refresh-sweep-loop" });
+  queue.process(
+    "contact-refresh-sweep",
+    async () => {
+      await runContactRefreshSweep();
+    },
+    { onCompleted: rescheduleContactRefresh, onFailed: rescheduleContactRefresh },
+  );
+
   console.log("[Worker] Job handlers registered");
 }
 
@@ -337,6 +388,7 @@ function scheduleBillingJobs() {
   void queue.enqueue("trial-expiry-sweep", {}, { delay: initialDelayMs, jobId: "trial-expiry-sweep-loop" });
   void queue.enqueue("conversation-followup", {}, { delay: initialDelayMs, jobId: "conversation-followup-loop" });
   void queue.enqueue("review-request-sweep", {}, { delay: initialDelayMs, jobId: "review-request-sweep-loop" });
+  void queue.enqueue("contact-refresh-sweep", {}, { delay: initialDelayMs, jobId: "contact-refresh-sweep-loop" });
 }
 
 // Graceful shutdown

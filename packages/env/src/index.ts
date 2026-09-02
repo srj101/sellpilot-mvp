@@ -72,6 +72,11 @@ export const env = createEnv({
     // AES-256 key source for encrypting store-connection credentials at rest.
     STORE_CONNECTION_ENCRYPTION_KEY: z.string().optional(),
 
+    // How stale a cached contact name or avatar may get before the sweep refreshes it.
+    // Names cost one Graph call per page; avatars cost one per contact, so lowering this
+    // multiplies avatar traffic far faster than name traffic.
+    CONTACT_REFRESH_DAYS: z.coerce.number().default(7),
+
     SALES_EMAIL: z.string().default("sales@sellpilot-mvp.online"),
 
     RBAC_ENFORCE: z

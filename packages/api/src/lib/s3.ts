@@ -1,4 +1,13 @@
-import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { createHash } from "node:crypto";
+
+import {
+  S3Client,
+  PutObjectCommand,
+  HeadObjectCommand,
+  DeleteObjectCommand,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import { env } from "@acme/env";
@@ -50,6 +59,105 @@ export async function deleteS3Object(key: string): Promise<void> {
   } catch (error) {
     console.error("[S3] Failed to delete object:", key, error);
   }
+}
+
+/** Stable, derivable key for a contact's avatar. Deliberately not the random UUID
+ * processImageUrl generates: a refresh must overwrite the same object, or every sync cycle
+ * would leave the previous avatar orphaned in the bucket forever. */
+export function contactAvatarKey(businessId: string, platform: string, psid: string): string {
+  return `avatars/${businessId}/${platform}/${psid}.jpg`;
+}
+
+export interface UploadedAvatar {
+  key: string;
+  hash: string;
+  /** False when the bytes matched `previousHash`, meaning nothing was written to S3. */
+  changed: boolean;
+}
+
+/**
+ * Download a contact's profile picture and store it under a stable key.
+ *
+ * `previousHash` is what makes refreshes cheap. Meta signs profile_pic URLs, so the URL is
+ * different on every call even when the photo has not changed — comparing URLs can never
+ * detect "unchanged". Hashing the bytes can, which stops a weekly refresh from rewriting
+ * every avatar in the bucket.
+ *
+ * Cache-Control is a day: the key is stable, so a changed photo takes up to that long to
+ * appear. Invisible for profile pictures, and it keeps repeat inbox loads off S3 egress.
+ */
+export async function uploadContactAvatar(params: {
+  businessId: string;
+  platform: string;
+  psid: string;
+  imageUrl: string;
+  previousHash?: string | null;
+}): Promise<UploadedAvatar | null> {
+  const res = await fetch(params.imageUrl);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch avatar (${res.status}) for ${params.platform}:${params.psid}`);
+  }
+
+  const buffer = Buffer.from(await res.arrayBuffer());
+  if (buffer.byteLength === 0) {
+    return null;
+  }
+
+  const hash = createHash("sha256").update(buffer).digest("hex");
+  const key = contactAvatarKey(params.businessId, params.platform, params.psid);
+
+  if (params.previousHash && params.previousHash === hash) {
+    return { key, hash, changed: false };
+  }
+
+  await s3Client.send(
+    new PutObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: key,
+      Body: buffer,
+      ContentType: res.headers.get("content-type") ?? "image/jpeg",
+      CacheControl: "public, max-age=86400",
+    }),
+  );
+
+  return { key, hash, changed: true };
+}
+
+/**
+ * Remove every stored avatar for a business.
+ *
+ * The meta_contact rows go on their own via the business FK cascade, but S3 objects have
+ * no such relationship — without this they would outlive the business indefinitely, which
+ * is the wrong answer for photographs of someone else's customers. Called from the store
+ * deletion path; deliberately not called on disconnect, where history is meant to survive.
+ */
+export async function deleteBusinessAvatars(businessId: string): Promise<number> {
+  const prefix = `avatars/${businessId}/`;
+  let deleted = 0;
+  let continuationToken: string | undefined;
+
+  do {
+    const listed = await s3Client.send(
+      new ListObjectsV2Command({
+        Bucket: BUCKET_NAME,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      }),
+    );
+
+    const keys = (listed.Contents ?? []).map((o) => ({ Key: o.Key! })).filter((o) => o.Key);
+    if (keys.length > 0) {
+      // DeleteObjects caps at 1000 per call, which matches ListObjectsV2's page size.
+      await s3Client.send(
+        new DeleteObjectsCommand({ Bucket: BUCKET_NAME, Delete: { Objects: keys } }),
+      );
+      deleted += keys.length;
+    }
+
+    continuationToken = listed.IsTruncated ? listed.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  return deleted;
 }
 
 export function getPublicUrl(key: string): string {

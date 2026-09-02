@@ -186,6 +186,32 @@ export interface ActivityLogJob {
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * Refresh the cached display names for one page's contacts.
+ *
+ * Keyed by connection rather than by contact because /me/conversations returns every
+ * participant on the page in a single call — syncing 500 contacts costs the same one
+ * request as syncing 1. Avatars are the opposite shape; see ContactAvatarFetchJob.
+ */
+export interface ContactNameSyncJob {
+  businessId: string;
+  connectionId: string;
+}
+
+/**
+ * Download one contact's profile picture and store it in S3.
+ *
+ * One job per contact, because profile_pic is only available from the per-user endpoint.
+ * Expect these to fail until the app is granted the User Profile capability through App
+ * Review — the handler treats that as non-fatal and does not retry it.
+ */
+export interface ContactAvatarFetchJob {
+  businessId: string;
+  connectionId: string;
+  platform: "facebook_page" | "instagram";
+  psid: string;
+}
+
 export type QueueJobMap = {
   "meta-dm-reply": MetaDMReplyJob;
   "meta-comment-reply": MetaCommentReplyJob;
@@ -195,6 +221,10 @@ export type QueueJobMap = {
   "conversation-followup": ConversationFollowUpJob;
   "order-status-notify": OrderStatusNotifyJob;
   "activity-log": ActivityLogJob;
+  "contact-name-sync": ContactNameSyncJob;
+  "contact-avatar-fetch": ContactAvatarFetchJob;
+  // Enqueued by apps/worker/src/index.ts but previously absent from this map.
+  "review-request-sweep": Record<string, never>;
 };
 
 export type QueueJobName = keyof QueueJobMap;

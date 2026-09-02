@@ -1,5 +1,7 @@
 import type { TRPCRouterRecord } from "@trpc/server";
 import { TRPCError } from "@trpc/server";
+
+import { deleteBusinessAvatars } from "../lib/s3";
 import { z } from "zod/v4";
 
 import { and, eq, ilike, isNotNull } from "@acme/db";
@@ -360,6 +362,18 @@ export const businessRouter = {
       entityId: ctx.businessId,
       summary: `${ctx.session.user.name ?? "Staff"} deleted the store`,
     });
+
+    // Stored avatars are not covered by the business FK cascade — S3 has no idea this row
+    // existed — so they have to be removed explicitly, before the row that names them goes.
+    try {
+      const removed = await deleteBusinessAvatars(ctx.businessId);
+      if (removed > 0) {
+        console.log(`[business.delete] removed ${removed} stored avatar(s) for ${ctx.businessId}`);
+      }
+    } catch (err) {
+      // Never block deleting a store on object cleanup; log it so the orphans are findable.
+      console.error(`[business.delete] failed to remove avatars for ${ctx.businessId}:`, err);
+    }
 
     await ctx.db.delete(business).where(eq(business.id, ctx.businessId));
     return { success: true };

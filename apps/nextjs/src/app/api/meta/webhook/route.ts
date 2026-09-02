@@ -15,9 +15,9 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { and, desc, eq, or } from "@acme/db";
+import { and, desc, eq, inArray, or } from "@acme/db";
 import { db } from "@acme/db/client";
-import { metaConnection, metaWebhookEvent } from "@acme/db/schema";
+import { metaConnection, metaContact, metaWebhookEvent } from "@acme/db/schema";
 
 import { env } from "~/env";
 import { triggerInboxBroadcast } from "~/lib/inbox-broadcast";
@@ -212,6 +212,11 @@ export async function POST(req: NextRequest) {
     void triggerInboxBroadcast(businessId);
   }
 
+  // Queue a name sync for any sender we haven't seen before, so a first-time customer gets
+  // a real name instead of "Contact 2835…4561". Fire-and-forget: the inbox reads whatever
+  // meta_contact holds and falls back to a short id until this lands.
+  void queueContactSyncForNewSenders(rows, jobsToEnqueue);
+
   // Enqueue jobs for new events only (not duplicates) - FIRE AND FORGET
   const enqueuePromises = jobsToEnqueue
     .filter(({ event }) => insertedKeys.has(event.eventId))
@@ -277,6 +282,64 @@ export async function POST(req: NextRequest) {
 // ============================================
 // Helper Functions
 // ============================================
+
+
+/**
+ * Enqueue a contact-name-sync for any sender with no meta_contact row yet.
+ *
+ * Deliberately checks first rather than syncing on every message: one sync covers a whole
+ * page, so firing per message would re-pull the entire participant list dozens of times an
+ * hour for no new information. The periodic sweep handles refreshing contacts we already
+ * know about.
+ */
+async function queueContactSyncForNewSenders(
+  rows: (typeof metaWebhookEvent.$inferInsert)[],
+  jobs: { event: WebhookEvent; connection: typeof metaConnection.$inferSelect }[],
+) {
+  try {
+    const byConnection = new Map<string, { businessId: string; psids: Set<string> }>();
+
+    for (const { event, connection } of jobs) {
+      if (event.platform !== "facebook_page" && event.platform !== "instagram") continue;
+      const psid = event.message?.senderId;
+      if (!psid || !connection.businessId) continue;
+
+      const entry = byConnection.get(connection.id) ?? {
+        businessId: connection.businessId,
+        psids: new Set<string>(),
+      };
+      entry.psids.add(psid);
+      byConnection.set(connection.id, entry);
+    }
+
+    if (byConnection.size === 0) return;
+
+    for (const [connectionId, { businessId, psids }] of byConnection) {
+      const known = await db
+        .select({ psid: metaContact.psid })
+        .from(metaContact)
+        .where(
+          and(
+            eq(metaContact.businessId, businessId),
+            inArray(metaContact.psid, [...psids]),
+          ),
+        );
+
+      const knownSet = new Set(known.map((k) => k.psid));
+      const hasNewContact = [...psids].some((psid) => !knownSet.has(psid));
+      if (!hasNewContact) continue;
+
+      await queue.enqueue(
+        "contact-name-sync",
+        { businessId, connectionId },
+        { jobId: `contact-name-sync:${connectionId}` },
+      );
+    }
+  } catch (err) {
+    // Never let contact syncing affect the webhook's 200 — Meta retries on anything else.
+    console.error("[Webhook] Failed to queue contact sync:", err);
+  }
+}
 
 function getObjectType(platform: PlatformType): "page" | "instagram" | "whatsapp_business_account" {
   switch (platform) {
