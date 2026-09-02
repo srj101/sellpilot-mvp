@@ -29,13 +29,49 @@ export function CopilotWidget({ tier }: { tier: "none" | "basic" | "full" }) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Bumped whenever something asks for the input to be focused. The focus effect below
+  // keys off `open`, which doesn't change when the panel is already showing — without a
+  // separate token, a second "open" request would silently do nothing.
+  const [focusToken, setFocusToken] = useState(0);
 
   const locked = tier === "none";
   const suggestions = SUGGESTIONS[locked ? "basic" : tier];
 
   useEffect(() => {
     if (open && !locked && inputRef.current) inputRef.current.focus();
-  }, [open, locked]);
+  }, [open, locked, focusToken]);
+
+  /**
+   * Open on request from elsewhere in the page.
+   *
+   * The analytics page's "Ask Copilot Follow-up Question" button sits in a different
+   * component subtree (WeeklyInsightBanner) with no handle on this widget's state, so it
+   * asks over a window event rather than through props. It has always dispatched
+   * "open-copilot-chat" — there was simply no listener, which is why the button did
+   * nothing at all.
+   *
+   * An initialPrompt is placed in the input and selected rather than sent: the button
+   * invites the merchant to ask *their* follow-up, and auto-firing a question they didn't
+   * choose spends a Copilot call on the wrong thing. Enter sends it as-is; typing replaces
+   * it.
+   */
+  useEffect(() => {
+    function handleOpenRequest(event: Event) {
+      const initialPrompt = (event as CustomEvent<{ initialPrompt?: string }>).detail
+        ?.initialPrompt;
+      setOpen(true);
+      if (initialPrompt) {
+        setInput(initialPrompt);
+        // Select so the seeded question reads as a suggestion, not as something the
+        // merchant has to clear before typing their own.
+        requestAnimationFrame(() => inputRef.current?.select());
+      }
+      setFocusToken((token) => token + 1);
+    }
+
+    window.addEventListener("open-copilot-chat", handleOpenRequest);
+    return () => window.removeEventListener("open-copilot-chat", handleOpenRequest);
+  }, []);
 
   useEffect(() => {
     if (turns.length > 0 && scrollRef.current) {
