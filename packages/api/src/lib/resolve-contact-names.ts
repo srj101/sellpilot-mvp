@@ -2,53 +2,150 @@ import { env } from "@acme/env";
 
 import type { MetaConnectionRow, MetaWebhookEventRow } from "./meta-inbox";
 
-/** A customer's display identity as Meta knows it. `avatarUrl` is a signed CDN URL
- * that expires — never persist it, always fetch alongside the name. */
+/** A customer's display identity as Meta knows it. `avatarUrl` is a signed CDN URL that
+ * expires — never persist it. It is null unless the app holds the User Profile capability
+ * (see fetchContactDirect). */
 export interface ResolvedContact {
   name: string | null;
   avatarUrl: string | null;
 }
 
-// Resolved contacts are cached in memory so a page load doesn't hit the Graph API once
-// per conversation. Keyed by platform:psid.
-const contactCache = new Map<string, { contact: ResolvedContact; expiresAt: number }>();
 const CACHE_TTL = 1000 * 60 * 60; // 1 hour
+
+// Keyed by `platform:psid`. Negative results are cached too, so a contact Meta refuses to
+// resolve doesn't trigger a fresh request on every inbox load.
+const contactCache = new Map<string, { contact: ResolvedContact; expiresAt: number }>();
+
+// Keyed by page/account id — tracks which pages we've already pulled the conversation list
+// for, so N conversations cost one request rather than N.
+const pageLoadedAt = new Map<string, number>();
+
+// When the per-contact profile lookup was last attempted, keyed the same way as
+// contactCache. Without this the lookup would repeat on every inbox load forever: it never
+// yields an avatar while the app lacks the capability, so a "do we have an avatar yet?"
+// check alone can never be satisfied.
+const directAttemptedAt = new Map<string, number>();
+
+// The User Profile capability error is a property of the app, not of any one contact.
+// Logged once per process instead of once per customer.
+let profileCapabilityWarned = false;
 
 const FB_VERSION = env.FACEBOOK_GRAPH_VERSION;
 
+type MetaPlatform = "facebook_page" | "instagram";
+
 /**
- * Fetch a customer's name and profile picture from the Graph API.
+ * Resolve display names for everyone the page has an open conversation with.
  *
- * This used to swallow every failure and return null with no logging, on the assumption
- * that the only cause was a deleted or blocked user. It isn't — a missing `pages_messaging`
- * permission, an app still in Development mode, and a User token used where a Page token is
- * required all fail here too, and all looked identical from the outside. That is why the
- * inbox showed "Contact 2731…8960" with no way to find out why. The failure is still
- * non-fatal (the caller falls back to a short id), but it now says what went wrong.
+ * This is the path that actually works. The obvious approach — GET /{psid}?fields=name —
+ * requires the User Profile capability, which an app only gets through App Review, and
+ * without it every lookup returns:
+ *
+ *   (#3) Application does not have the capability to make this API call.
+ *
+ * That was why the inbox showed "Contact 2731…8960" for everyone. The conversations edge
+ * needs only `pages_messaging`, returns the same names, and costs one request per page
+ * instead of one per customer.
  */
-async function fetchContact(
+async function loadPageContacts(
+  platform: MetaPlatform,
+  accessToken: string,
+  accountId: string,
+): Promise<void> {
+  const cacheKey = `${platform}:${accountId}`;
+  const loadedAt = pageLoadedAt.get(cacheKey);
+  if (loadedAt && loadedAt > Date.now() - CACHE_TTL) {
+    return;
+  }
+
+  // `participants` cannot be narrowed with a nested field set — asking for
+  // participants{id,name,profile_pic} makes Graph drop the whole block and return bare
+  // thread ids. Take the default shape.
+  let url: string | null =
+    `https://graph.facebook.com/${FB_VERSION}/me/conversations` +
+    `?fields=participants&limit=100&access_token=${encodeURIComponent(accessToken)}`;
+
+  let pages = 0;
+  try {
+    // Bounded: a page with thousands of threads shouldn't stall an inbox render. Older
+    // conversations fall back to the short-id label until they receive a new message.
+    while (url && pages < 5) {
+      const res: Response = await fetch(url, { cache: "no-store" });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        console.warn(
+          `[contact-names] conversations lookup for ${platform}:${accountId} failed ` +
+            `(${res.status}): ${body.slice(0, 300)}`,
+        );
+        return;
+      }
+
+      const data = (await res.json().catch(() => ({}))) as {
+        data?: { participants?: { data?: { id?: string; name?: string }[] } }[];
+        paging?: { next?: string };
+      };
+
+      for (const conversation of data.data ?? []) {
+        for (const participant of conversation.participants?.data ?? []) {
+          // Every thread lists the page itself alongside the customer; skip it.
+          if (!participant.id || participant.id === accountId || !participant.name) {
+            continue;
+          }
+          const key = `${platform}:${participant.id}`;
+          const existing = contactCache.get(key)?.contact;
+          contactCache.set(key, {
+            contact: { name: participant.name, avatarUrl: existing?.avatarUrl ?? null },
+            expiresAt: Date.now() + CACHE_TTL,
+          });
+        }
+      }
+
+      url = data.paging?.next ?? null;
+      pages += 1;
+    }
+
+    pageLoadedAt.set(cacheKey, Date.now());
+  } catch (err) {
+    console.warn(`[contact-names] conversations lookup for ${platform}:${accountId} threw:`, err);
+  }
+}
+
+/**
+ * Per-customer lookup, which additionally yields a profile picture.
+ *
+ * Currently expected to fail with "(#3) Application does not have the capability" until the
+ * app is granted the User Profile capability via App Review. It is still attempted — once
+ * per contact per hour, with the failure cached — so that avatars start appearing on their
+ * own the day that capability is granted, with no code change.
+ */
+async function fetchContactDirect(
   psid: string,
-  platform: "facebook_page" | "instagram",
+  platform: MetaPlatform,
   accessToken: string,
 ): Promise<ResolvedContact | null> {
-  // profile_pic comes from the same call as name, so showing an avatar costs no extra
-  // request. Instagram additionally exposes `username`, which is a better fallback than a
-  // numeric id when the display name is unavailable.
-  const fields =
-    platform === "instagram" ? "name,username,profile_pic" : "name,profile_pic";
-
+  const fields = platform === "instagram" ? "name,username,profile_pic" : "name,profile_pic";
   const url = new URL(`https://graph.facebook.com/${FB_VERSION}/${psid}`);
   url.searchParams.set("access_token", accessToken);
   url.searchParams.set("fields", fields);
 
   try {
     const res = await fetch(url, { cache: "no-store" });
-
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      console.warn(
-        `[contact-names] ${platform} lookup for ${psid} failed (${res.status}): ${body.slice(0, 300)}`,
-      );
+      if (body.includes("does not have the capability")) {
+        if (!profileCapabilityWarned) {
+          profileCapabilityWarned = true;
+          console.warn(
+            "[contact-names] this app lacks the User Profile capability, so profile " +
+              "pictures are unavailable. Names still resolve via the conversations edge. " +
+              "Request advanced access for pages_messaging in App Review to enable avatars.",
+          );
+        }
+      } else {
+        console.warn(
+          `[contact-names] ${platform} profile lookup for ${psid} failed (${res.status}): ${body.slice(0, 300)}`,
+        );
+      }
       return null;
     }
 
@@ -57,61 +154,89 @@ async function fetchContact(
       username?: string;
       profile_pic?: string;
     };
-
-    const name = data.name ?? data.username ?? null;
-    if (!name && !data.profile_pic) {
-      // A 200 with neither field means the token lacks the permission that would have
-      // populated them, rather than the person being unreachable.
-      console.warn(
-        `[contact-names] ${platform} lookup for ${psid} returned no name or picture — ` +
-          "the page token is probably missing pages_messaging, or the app has not passed App Review.",
-      );
-      return null;
-    }
-
-    return { name, avatarUrl: data.profile_pic ?? null };
+    return { name: data.name ?? data.username ?? null, avatarUrl: data.profile_pic ?? null };
   } catch (err) {
-    console.warn(`[contact-names] ${platform} lookup for ${psid} threw:`, err);
+    console.warn(`[contact-names] ${platform} profile lookup for ${psid} threw:`, err);
     return null;
   }
 }
 
 async function getContact(
   psid: string,
-  platform: "facebook_page" | "instagram",
+  platform: MetaPlatform,
   accessToken: string,
+  accountId: string,
 ): Promise<ResolvedContact | null> {
   const cacheKey = `${platform}:${psid}`;
+  const now = Date.now();
+
+  // An entry is complete once it has an avatar, or once the direct lookup has been tried
+  // recently and we know none is coming.
+  const triedDirect = (directAttemptedAt.get(cacheKey) ?? 0) > now - CACHE_TTL;
+
   const cached = contactCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
+  if (cached && cached.expiresAt > now && (cached.contact.avatarUrl || triedDirect)) {
     return cached.contact;
   }
 
-  const contact = await fetchContact(psid, platform, accessToken);
-  if (contact) {
-    contactCache.set(cacheKey, { contact, expiresAt: Date.now() + CACHE_TTL });
+  // One request covers every contact on the page.
+  await loadPageContacts(platform, accessToken, accountId);
+
+  const fromConversations = contactCache.get(cacheKey);
+  if (
+    fromConversations &&
+    fromConversations.expiresAt > now &&
+    (fromConversations.contact.avatarUrl || triedDirect)
+  ) {
+    return fromConversations.contact;
   }
-  return contact;
+
+  // Try for a picture (and a name, if the conversations edge missed this contact).
+  directAttemptedAt.set(cacheKey, now);
+  const direct = await fetchContactDirect(psid, platform, accessToken);
+  const merged: ResolvedContact = {
+    name: direct?.name ?? fromConversations?.contact.name ?? null,
+    avatarUrl: direct?.avatarUrl ?? null,
+  };
+
+  if (!merged.name && !merged.avatarUrl) {
+    return null;
+  }
+
+  contactCache.set(cacheKey, { contact: merged, expiresAt: now + CACHE_TTL });
+  return merged;
 }
 
 /**
- * Name-only lookup, used by the worker to greet a customer by their real first name
- * (apps/worker/src/handlers/dm-reply.ts). Shares the cache with the inbox resolver below,
- * so whichever runs first warms it for the other.
+ * Name-only lookup used by the worker to greet a customer by their real first name
+ * (apps/worker/src/handlers/dm-reply.ts). Shares the cache with the inbox resolver, so
+ * whichever runs first warms it for the other.
  *
- * WhatsApp returns null: the Cloud API exposes no profile lookup. The customer's name
- * arrives in the webhook payload itself instead — see extractContactLabel in meta-inbox.ts.
+ * WhatsApp returns null: the Cloud API has no profile lookup. Those names arrive in the
+ * webhook payload instead — see extractContactLabel in meta-inbox.ts.
  */
 export async function getMetaContactName(
   psid: string,
   platform: "facebook_page" | "instagram" | "whatsapp",
   accessToken: string,
+  accountId?: string,
 ): Promise<string | null> {
   if (platform === "whatsapp") {
     return null;
   }
-  const contact = await getContact(psid, platform, accessToken);
-  return contact?.name ?? null;
+
+  const cached = contactCache.get(`${platform}:${psid}`);
+  if (cached && cached.expiresAt > Date.now() && cached.contact.name) {
+    return cached.contact.name;
+  }
+
+  // Without the page id we can't use the conversations edge, so fall back to the direct
+  // lookup on its own.
+  if (!accountId) {
+    return (await fetchContactDirect(psid, platform, accessToken))?.name ?? null;
+  }
+
+  return (await getContact(psid, platform, accessToken, accountId))?.name ?? null;
 }
 
 export async function resolveContactNames(
@@ -121,8 +246,9 @@ export async function resolveContactNames(
   const resolved: Record<string, ResolvedContact> = {};
   const lookups: {
     psid: string;
-    platform: "facebook_page" | "instagram";
+    platform: MetaPlatform;
     accessToken: string;
+    accountId: string;
   }[] = [];
   const seenKeys = new Set<string>();
   let missingToken = 0;
@@ -161,13 +287,18 @@ export async function resolveContactNames(
     seenKeys.add(cacheKey);
 
     const connection = connections.find((c) => c.id === event.metaConnectionId);
-    // Page access token first: PSIDs are page-scoped, so a User token cannot resolve them.
-    // The previous order preferred `accessToken`, which silently produced empty results
-    // whenever that column held a user token rather than a page one.
+    // Page token first: PSIDs and the conversations edge are both page-scoped, so a user
+    // token resolves neither.
     const accessToken = connection?.facebookPageAccessToken ?? connection?.accessToken;
+    // The page's own id, needed to address the conversations edge and to tell the page
+    // apart from the customer in each thread's participant list.
+    const accountId =
+      connection?.facebookPageId ??
+      connection?.instagramBusinessAccountId ??
+      connection?.platformAccountId;
 
-    if (accessToken) {
-      lookups.push({ psid, platform: event.platform, accessToken });
+    if (accessToken && accountId) {
+      lookups.push({ psid, platform: event.platform, accessToken, accountId });
     } else {
       missingToken += 1;
     }
@@ -175,19 +306,20 @@ export async function resolveContactNames(
 
   if (missingToken > 0) {
     console.warn(
-      `[contact-names] ${missingToken} conversation(s) had no page access token on their ` +
-        "meta_connection row — those will fall back to a short contact id.",
+      `[contact-names] ${missingToken} conversation(s) had no page token or page id on ` +
+        "their meta_connection row — those fall back to a short contact id.",
     );
   }
 
-  await Promise.all(
-    lookups.map(async ({ psid, platform, accessToken }) => {
-      const contact = await getContact(psid, platform, accessToken);
-      if (contact) {
-        resolved[`${platform}:${psid}`] = contact;
-      }
-    }),
-  );
+  // Sequential rather than Promise.all: the first call warms the page-wide cache, so the
+  // rest are almost always cache hits. Firing them in parallel would send the same
+  // conversations request once per contact.
+  for (const { psid, platform, accessToken, accountId } of lookups) {
+    const contact = await getContact(psid, platform, accessToken, accountId);
+    if (contact) {
+      resolved[`${platform}:${psid}`] = contact;
+    }
+  }
 
   return resolved;
 }

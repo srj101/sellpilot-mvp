@@ -289,7 +289,14 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
   // greet them by name like a human would. Cached ~1hr internally; returns null for
   // WhatsApp (no such lookup available) or if the Graph API call fails, both handled
   // by simply omitting the greeting context below rather than erroring the reply.
-  const facebookName = await getMetaContactName(data.recipientId, data.platform, data.accessToken);
+  const facebookName = await getMetaContactName(
+    data.recipientId,
+    data.platform,
+    data.accessToken,
+    // The page's own id — lets the resolver use the conversations edge, which is
+    // the only one that returns names without the User Profile capability.
+    data.accountId,
+  );
   const facebookFirstName = facebookName?.split(" ")[0];
 
   // Cached summary of the whole conversation so far — covers anything older than the
