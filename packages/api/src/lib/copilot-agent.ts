@@ -124,7 +124,7 @@ async function callChatCompletions(messages: OpenAIMessage[], tools: ToolDefinit
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages, tools, tool_choice: "auto", temperature: 0.2, max_tokens: 500 }),
+    body: JSON.stringify({ model, messages, tools, tool_choice: "auto", temperature: 0.2 }),
   });
 
   if (!response.ok) {
