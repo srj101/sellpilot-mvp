@@ -642,6 +642,18 @@ export function RolesClient() {
                                 onChange={(e) => updateMemberRole.mutate({ memberId: m.id, customRoleKey: e.target.value })}
                                 className="h-8 rounded-lg border border-border bg-background px-3 pr-8 text-xs font-semibold focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 appearance-none cursor-pointer"
                               >
+                                {/* A native <select> whose value matches no <option> displays its
+                                    FIRST option instead, which reads as "this member has that
+                                    role" when they don't. Keeping an explicit placeholder means an
+                                    unassigned or unrecognised key shows as unset rather than
+                                    silently impersonating whichever role happens to be listed
+                                    first. (roles.list now always includes the built-ins, so this
+                                    should only ever trigger for a member with no role at all.) */}
+                                {!roles.some((r) => r.key === m.customRoleKey) && (
+                                  <option value="" disabled>
+                                    No role assigned
+                                  </option>
+                                )}
                                 {roles.map((r) => (
                                   <option key={r.key} value={r.key}>{r.name}</option>
                                 ))}

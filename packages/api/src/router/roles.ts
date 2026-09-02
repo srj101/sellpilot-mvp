@@ -17,24 +17,52 @@ function appUrl(): string {
 }
 
 export const rolesRouter = {
+  /**
+   * Admin, Editor and Viewer are never rows in the `role` table — they are synthesized
+   * from DEFAULT_ROLES. They must therefore be merged into every response, not used as a
+   * fallback for an empty table.
+   *
+   * This used to return DEFAULT_ROLES only when the business had zero custom roles, so
+   * creating a first custom role made all three built-ins disappear. Two things then broke
+   * downstream, because both assume the built-ins are always listed:
+   *
+   *   - the member role <select> is bound to `customRoleKey` with options built from this
+   *     list, and a native <select> whose value matches no option silently displays its
+   *     first one — so every member on a built-in role appeared to have been reassigned to
+   *     the newly created role (the DB was untouched; only the rendering lied)
+   *   - the role cards hide Delete via a hard-coded ["admin","editor","viewer"] check
+   *
+   * A stored row wins over the built-in of the same key, so a business that customises
+   * "admin" sees its own version rather than two entries.
+   */
   list: permissionProcedure("users", "view").query(async ({ ctx }) => {
-    const roles = await ctx.db
+    const storedRoles = await ctx.db
       .select()
       .from(role)
       .where(eq(role.businessId, ctx.businessId))
       .orderBy(desc(role.createdAt));
 
-    if (roles.length === 0) {
-      return DEFAULT_ROLES.map((r) => ({ ...r, id: r.key }));
-    }
-
-    return roles.map((r) => ({
+    const shape = (r: typeof role.$inferSelect) => ({
       id: r.id,
       name: r.name,
       key: r.key,
       description: r.description ?? "",
       permissions: r.permissions,
-    }));
+    });
+
+    const storedByKey = new Map(storedRoles.map((r) => [r.key, r]));
+    const defaultKeys = new Set(DEFAULT_ROLES.map((r) => r.key));
+
+    // Built-ins first, in their declared order, so the list stays stable as custom roles
+    // come and go — the invite dialog defaults to roles[0], which must not drift.
+    const builtIns = DEFAULT_ROLES.map((builtIn) => {
+      const stored = storedByKey.get(builtIn.key);
+      return stored ? shape(stored) : { ...builtIn, id: builtIn.key, description: builtIn.description };
+    });
+
+    const custom = storedRoles.filter((r) => !defaultKeys.has(r.key)).map(shape);
+
+    return [...builtIns, ...custom];
   }),
 
   /** Resolves the caller's own effective permissions — used by the dashboard nav to hide pages the member can't reach. */
