@@ -149,9 +149,10 @@ export function WhatsAppConnectButton() {
         if (!code) return;
 
         startTransition(async () => {
+          // redirectUri is passed to FB.login below but deliberately NOT to the token
+          // exchange — see persistWhatsAppSignup for why sending it fails with error 191.
           const result = await completeWhatsAppSignup.mutateAsync({
             code,
-            redirectUri,
             ...signupIds.current,
           });
 

@@ -22,12 +22,17 @@ async function persistWhatsAppSignup(
   input: {
     businessId: string;
     code: string;
-    redirectUri: string;
     wabaId?: string;
     phoneNumberId?: string;
   },
 ) {
-  const tokenData = await exchangeCodeForToken(input.code, input.redirectUri);
+  // No redirect_uri, deliberately. Embedded Signup hands back its code through a
+  // postMessage from the FB.login popup — the browser never navigates to a redirect URI,
+  // so there is nothing for Meta to match. Sending one anyway makes Meta validate it
+  // against the app's App Domains and fail with OAuthException 191 ("Can't load URL"),
+  // which is exactly what broke every WhatsApp connection until now. The Page/Instagram
+  // flow in /api/meta/callback is a real browser redirect and does still pass one.
+  const tokenData = await exchangeCodeForToken(input.code);
 
   if (!tokenData.access_token) {
     return { ok: false as const, error: "No access token returned" };
@@ -225,7 +230,6 @@ export const integrationsRouter = {
     .input(
       z.object({
         code: z.string(),
-        redirectUri: z.string(),
         wabaId: z.string().optional(),
         phoneNumberId: z.string().optional(),
       }),
@@ -236,7 +240,6 @@ export const integrationsRouter = {
         const res = await persistWhatsAppSignup(ctx.db, {
           businessId: ctx.businessId,
           code: input.code,
-          redirectUri: input.redirectUri,
           wabaId: input.wabaId,
           phoneNumberId: input.phoneNumberId,
         });
