@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowUpRight, ExternalLink, Search, X } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { ArrowUpRight, ExternalLink, Search, Sparkles, X } from "lucide-react";
 
 import { cn } from "@acme/ui";
 import { Badge } from "@acme/ui/badge";
@@ -18,6 +18,7 @@ import {
   SheetTitle,
 } from "@acme/ui/sheet";
 import { Skeleton } from "@acme/ui/skeleton";
+import { toast } from "@acme/ui/toast";
 
 import { useTRPC } from "~/trpc/react";
 
@@ -74,13 +75,24 @@ function formatDate(date: Date | string) {
 
 export function StoresDirectory() {
   const trpc = useTRPC();
-  const { data: stores, isLoading } = useQuery(
+  const { data: stores, isLoading, refetch } = useQuery(
     trpc.superadmin.listStores.queryOptions(),
   );
-
   const [search, setSearch] = useState("");
   const [planFilter, setPlanFilter] = useState<string>("all");
   const [selectedStore, setSelectedStore] = useState<StoreItem | null>(null);
+
+  const updateSub = useMutation(
+    trpc.superadmin.updateStoreSubscription.mutationOptions({
+      onSuccess: () => {
+        toast.success("Store subscription updated successfully.");
+        void refetch();
+      },
+      onError: (err) => {
+        toast.error(err.message || "Failed to update subscription");
+      },
+    }),
+  );
 
   const filtered = useMemo(() => {
     if (!stores) return [];
@@ -468,6 +480,76 @@ export function StoresDirectory() {
                   <p className="text-foreground mt-0.5 font-semibold">
                     {selectedStore.subscription?.aiConversationsUsed ?? 0} msgs
                   </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Superadmin Overrides Section */}
+            <div className="bg-primary/5 border border-primary/20 space-y-3 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-primary text-xs font-semibold tracking-wider uppercase flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Superadmin Controls
+                </h4>
+                <Badge variant="outline" className="text-[10px] border-primary/30 text-primary">
+                  Staff Only
+                </Badge>
+              </div>
+              <p className="text-muted-foreground text-xs">
+                Directly adjust quotas or grant trial extensions for this merchant.
+              </p>
+
+              <div className="space-y-2.5 pt-1">
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 flex-1 text-xs"
+                    disabled={updateSub.isPending}
+                    onClick={() => {
+                      updateSub.mutate({
+                        businessId: selectedStore.id,
+                        extendTrialDays: 14,
+                      });
+                    }}
+                  >
+                    +14d Trial
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 flex-1 text-xs"
+                    disabled={updateSub.isPending}
+                    onClick={() => {
+                      updateSub.mutate({
+                        businessId: selectedStore.id,
+                        addExtraConversations: 100,
+                      });
+                    }}
+                  >
+                    +100 AI Msgs
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-1.5 pt-1">
+                  <span className="text-muted-foreground text-xs shrink-0">Plan:</span>
+                  {(["starter", "growth", "pro"] as const).map((p) => (
+                    <Button
+                      key={p}
+                      size="sm"
+                      variant={selectedStore.subscription?.plan === p ? "default" : "secondary"}
+                      className="h-7 px-2 text-[11px] capitalize flex-1"
+                      disabled={updateSub.isPending || selectedStore.subscription?.plan === p}
+                      onClick={() => {
+                        updateSub.mutate({
+                          businessId: selectedStore.id,
+                          plan: p,
+                        });
+                      }}
+                    >
+                      {p}
+                    </Button>
+                  ))}
                 </div>
               </div>
             </div>

@@ -29,9 +29,12 @@ import { toast } from "@acme/ui/toast";
 
 import type { SuperadminTab } from "./superadmin-sidebar";
 import { useTRPC } from "~/trpc/react";
+import { AiObservability } from "./ai-observability";
 import { BugReports } from "./bug-reports";
+import { ChannelHealth } from "./channel-health";
 import { PlatformOverview } from "./platform-overview";
 import { PlatformPaymentSettings } from "./platform-payment-settings";
+import { QueueHealth } from "./queue-health";
 import { StoresDirectory } from "./stores-directory";
 import { SuperadminShell } from "./superadmin-shell";
 
@@ -111,6 +114,12 @@ export function SuperadminClient({
         <PlatformOverview onSwitchTab={(t) => setTab(t)} />
       ) : tab === "stores" ? (
         <StoresDirectory />
+      ) : tab === "ai" ? (
+        <AiObservability />
+      ) : tab === "queues" ? (
+        <QueueHealth />
+      ) : tab === "channels" ? (
+        <ChannelHealth />
       ) : tab === "bugs" ? (
         <BugReports />
       ) : tab === "payments" ? (

@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
+  Activity,
   ArrowUpRight,
   Bug,
   ChevronLeft,
@@ -11,7 +12,9 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Radio,
   ShieldCheck,
+  Sparkles,
   Store,
   Users,
 } from "lucide-react";
@@ -26,6 +29,9 @@ import { signOut } from "~/app/[businessSlug]/dashboard/(home)/actions";
 export type SuperadminTab =
   | "overview"
   | "stores"
+  | "ai"
+  | "queues"
+  | "channels"
   | "users"
   | "payments"
   | "bugs";
@@ -47,6 +53,14 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "overview", label: "Dashboard", icon: LayoutDashboard },
       { id: "stores", label: "Stores Directory", icon: Store },
+    ],
+  },
+  {
+    title: "System & AI Ops",
+    items: [
+      { id: "ai", label: "AI Observability", icon: Sparkles },
+      { id: "queues", label: "Queues & Workers", icon: Activity },
+      { id: "channels", label: "Channel Health", icon: Radio },
     ],
   },
   {

@@ -27,6 +27,9 @@ import { signOut } from "~/app/[businessSlug]/dashboard/(home)/actions";
 const TAB_LABELS: Record<SuperadminTab, string> = {
   overview: "Platform Overview",
   stores: "Stores Directory",
+  ai: "AI Usage & Observability",
+  queues: "Queues & Worker Health",
+  channels: "Meta Channel Health",
   users: "User Management",
   payments: "Payment Gateways",
   bugs: "Bug Reports",

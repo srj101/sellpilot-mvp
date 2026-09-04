@@ -237,7 +237,8 @@ export const businessRouter = {
         .from(businessMember)
         .where(and(eq(businessMember.businessId, org.id), eq(businessMember.userId, ctx.session.user.id)))
         .limit(1);
-      if (!membership) return { ok: false as const, reason: "forbidden" as const };
+      const isSuperadmin = (ctx.session.user as { role?: string | null }).role === "superadmin";
+      if (!membership && !isSuperadmin) return { ok: false as const, reason: "forbidden" as const };
 
       const activeBusinessId = (ctx.session.session as { activeBusinessId?: string | null }).activeBusinessId;
       if (activeBusinessId !== org.id) {

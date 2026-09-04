@@ -26,18 +26,20 @@ export default async function StoreLayout({
 
   const { businessSlug } = await params;
 
-  // Superadmin bypasses membership check — can enter any store
   const userRole = (session.user as { role?: string | null }).role;
-  if (userRole === "superadmin") {
-    return <>{children}</>;
-  }
+  const isSuperadmin = userRole === "superadmin";
 
   const caller = await createCaller(await headers());
   const result = await caller.business.enterBySlug({ slug: businessSlug });
 
   if (!result.ok) {
     if (result.reason === "not_found") notFound();
-    redirect("/onboarding/select-business");
+    redirect(isSuperadmin ? "/superadmin" : "/onboarding/select-business");
+  }
+
+  // Superadmin bypasses onboarding wizard and subscription lock checks
+  if (isSuperadmin) {
+    return <>{children}</>;
   }
 
   // Business exists but the wizard was abandoned partway (e.g. closed the browser right after

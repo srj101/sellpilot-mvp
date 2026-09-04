@@ -3,16 +3,20 @@ import { z } from "zod/v4";
 
 import { and, desc, eq, inArray, sql } from "@acme/db";
 import {
+  agentSession,
   business,
   businessMember,
   metaConnection,
+  metaWebhookEvent,
   order,
   platformSettings,
   product,
   subscription,
   user,
 } from "@acme/db/schema";
+import { createQueue } from "@acme/queue";
 
+import { PLAN_CATALOG, type PlanKey } from "../lib/plans";
 import { superadminProcedure } from "../trpc";
 
 /**
@@ -436,6 +440,274 @@ export const superadminRouter = {
           sslcommerzStorePassword: storePassword,
         });
       }
+      return { success: true };
+    }),
+
+  /**
+   * AI Usage, Costs & Token Analytics — Phase 2
+   */
+  getAiObservability: superadminProcedure.query(async ({ ctx }) => {
+    const subs = await ctx.db
+      .select({
+        subscriptionId: subscription.id,
+        businessId: subscription.businessId,
+        plan: subscription.plan,
+        status: subscription.status,
+        aiConversationsUsed: subscription.aiConversationsUsed,
+        extraConversations: subscription.extraConversations,
+        currentPeriodStart: subscription.currentPeriodStart,
+        currentPeriodEnd: subscription.currentPeriodEnd,
+        businessName: business.name,
+        businessSlug: business.slug,
+        businessLogo: business.logo,
+      })
+      .from(subscription)
+      .innerJoin(business, eq(subscription.businessId, business.id));
+
+    const storeIds = subs.map((s) => s.businessId).filter(Boolean) as string[];
+    const ownerRows =
+      storeIds.length > 0
+        ? await ctx.db
+            .select({
+              businessId: businessMember.businessId,
+              userId: user.id,
+              name: user.name,
+              email: user.email,
+            })
+            .from(businessMember)
+            .innerJoin(user, eq(businessMember.userId, user.id))
+            .where(
+              and(
+                inArray(businessMember.businessId, storeIds),
+                eq(businessMember.role, "owner"),
+              ),
+            )
+        : [];
+    const ownerByBusiness = new Map(ownerRows.map((o) => [o.businessId, o]));
+
+    const [agentSessionsRow] = await ctx.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(agentSession);
+    const totalAgentSessions = agentSessionsRow?.count ?? 0;
+
+    let totalConversationsUsed = 0;
+    const storeLeaderboard = subs.map((sub) => {
+      const planKey = (sub.plan as PlanKey) in PLAN_CATALOG ? (sub.plan as PlanKey) : "starter";
+      const planConfig = PLAN_CATALOG[planKey];
+      const baseQuota = planConfig?.limits.aiConversationsPerMonth ?? 500;
+      const totalQuota = baseQuota + (sub.extraConversations ?? 0);
+      const used = sub.aiConversationsUsed ?? 0;
+      totalConversationsUsed += used;
+
+      const estimatedCostUsd = Number((used * 0.000188).toFixed(4));
+      const estimatedCostBdt = Math.round(estimatedCostUsd * 120);
+      const usagePct = totalQuota > 0 ? Math.min(100, Math.round((used / totalQuota) * 100)) : 0;
+
+      return {
+        businessId: sub.businessId,
+        businessName: sub.businessName,
+        businessSlug: sub.businessSlug,
+        businessLogo: sub.businessLogo,
+        owner: ownerByBusiness.get(sub.businessId ?? "") ?? null,
+        plan: sub.plan,
+        status: sub.status,
+        aiConversationsUsed: used,
+        extraConversations: sub.extraConversations ?? 0,
+        baseQuota,
+        totalQuota,
+        usagePct,
+        estimatedCostUsd,
+        estimatedCostBdt,
+        currentPeriodEnd: sub.currentPeriodEnd,
+      };
+    });
+
+    storeLeaderboard.sort((a, b) => b.aiConversationsUsed - a.aiConversationsUsed);
+
+    const estimatedPromptTokens = totalConversationsUsed * 650;
+    const estimatedCompletionTokens = totalConversationsUsed * 150;
+    const totalTokens = estimatedPromptTokens + estimatedCompletionTokens;
+    const totalEstimatedCostUsd = Number((totalConversationsUsed * 0.000188).toFixed(3));
+    const totalEstimatedCostBdt = Math.round(totalEstimatedCostUsd * 120);
+
+    return {
+      kpis: {
+        totalConversationsUsed,
+        totalTokens,
+        estimatedPromptTokens,
+        estimatedCompletionTokens,
+        totalEstimatedCostUsd,
+        totalEstimatedCostBdt,
+        totalAgentSessions,
+        activeAiStores: storeLeaderboard.filter((s) => s.aiConversationsUsed > 0).length,
+      },
+      workloadBreakdown: [
+        { label: "Customer DM Replies", pct: 82, tokens: Math.round(totalTokens * 0.82) },
+        { label: "Product Vision & Catalog Ingestion", pct: 11, tokens: Math.round(totalTokens * 0.11) },
+        { label: "Vector Embeddings & Semantic Search", pct: 7, tokens: Math.round(totalTokens * 0.07) },
+      ],
+      leaderboard: storeLeaderboard,
+    };
+  }),
+
+  /**
+   * Background Queue & Worker Health Monitor — Phase 2
+   */
+  getQueueHealth: superadminProcedure.query(async () => {
+    const queue = createQueue();
+    const isHealthy = await queue.isHealthy().catch(() => false);
+
+    const QUEUE_DEFINITIONS = [
+      { id: "meta-dm-reply", name: "Meta DM AI Replies", description: "Inbound customer messaging & AI response generation" },
+      { id: "meta-comment-reply", name: "Meta Comment Replies", description: "Facebook & Instagram post comment automation" },
+      { id: "product-image-index", name: "Product Visual Search", description: "Image embedding & semantic product indexing" },
+      { id: "subscription-renewal", name: "Subscription Renewal", description: "Recurring SaaS charge and invoice renewal" },
+      { id: "trial-expiry-sweep", name: "Trial Expiry Lifecycle", description: "Daily sweep for expired trials & notifications" },
+      { id: "conversation-followup", name: "Abandoned Cart Sweeper", description: "Re-engagement followups for inactive chat sessions" },
+      { id: "order-status-notify", name: "Order Notifications", description: "Customer order confirmation & status alerts" },
+      { id: "activity-log", name: "Audit & Activity Logs", description: "Background recording of business activity events" },
+    ];
+
+    const queues = await Promise.all(
+      QUEUE_DEFINITIONS.map(async (def) => {
+        try {
+          const stats = await queue.getStats(def.id);
+          return {
+            ...def,
+            stats,
+            status: stats.failed > 0 ? ("degraded" as const) : ("healthy" as const),
+          };
+        } catch {
+          return {
+            ...def,
+            stats: { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 },
+            status: "offline" as const,
+          };
+        }
+      }),
+    );
+
+    const totalActive = queues.reduce((sum, q) => sum + q.stats.active, 0);
+    const totalWaiting = queues.reduce((sum, q) => sum + q.stats.waiting, 0);
+    const totalFailed = queues.reduce((sum, q) => sum + q.stats.failed, 0);
+    const totalCompleted = queues.reduce((sum, q) => sum + q.stats.completed, 0);
+
+    return {
+      provider: queue.name,
+      isHealthy,
+      summary: {
+        totalActive,
+        totalWaiting,
+        totalFailed,
+        totalCompleted,
+      },
+      queues,
+    };
+  }),
+
+  /**
+   * Meta & Channel Health Monitor — Phase 2
+   */
+  getChannelHealth: superadminProcedure.query(async ({ ctx }) => {
+    const connections = await ctx.db
+      .select({
+        id: metaConnection.id,
+        businessId: metaConnection.businessId,
+        businessName: business.name,
+        businessSlug: business.slug,
+        platform: metaConnection.platform,
+        platformAccountName: metaConnection.platformAccountName,
+        facebookPageName: metaConnection.facebookPageName,
+        instagramUsername: metaConnection.instagramUsername,
+        status: metaConnection.status,
+        updatedAt: metaConnection.updatedAt,
+        connectedAt: metaConnection.connectedAt,
+      })
+      .from(metaConnection)
+      .innerJoin(business, eq(metaConnection.businessId, business.id))
+      .orderBy(desc(metaConnection.updatedAt));
+
+    const totalWhatsApp = connections.filter((c) => c.platform === "whatsapp").length;
+    const totalFacebook = connections.filter((c) => c.platform === "facebook_page").length;
+    const totalInstagram = connections.filter((c) => c.platform === "instagram").length;
+    const activeCount = connections.filter((c) => c.status === "active").length;
+    const degradedCount = connections.length - activeCount;
+
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [recentEventsRow] = await ctx.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(metaWebhookEvent)
+      .where(sql`${metaWebhookEvent.receivedAt} >= ${oneDayAgo}`);
+    const eventsLast24h = recentEventsRow?.count ?? 0;
+
+    return {
+      counts: {
+        total: connections.length,
+        active: activeCount,
+        degraded: degradedCount,
+        whatsapp: totalWhatsApp,
+        facebook: totalFacebook,
+        instagram: totalInstagram,
+        eventsLast24h,
+      },
+      connections,
+    };
+  }),
+
+  /**
+   * Superadmin Plan & Quota Override — Phase 2
+   */
+  updateStoreSubscription: superadminProcedure
+    .input(
+      z.object({
+        businessId: z.string(),
+        plan: z.enum(["starter", "growth", "pro"]).optional(),
+        status: z.enum(["trialing", "active", "past_due", "cancelled"]).optional(),
+        addExtraConversations: z.number().int().optional(),
+        extendTrialDays: z.number().int().positive().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [existing] = await ctx.db
+        .select()
+        .from(subscription)
+        .where(eq(subscription.businessId, input.businessId))
+        .limit(1);
+
+      if (!existing) {
+        throw new Error("No subscription found for this business.");
+      }
+
+      const updates: Partial<typeof subscription.$inferInsert> = {};
+
+      if (input.plan) {
+        updates.plan = input.plan;
+      }
+      if (input.status) {
+        updates.status = input.status;
+      }
+      if (typeof input.addExtraConversations === "number") {
+        updates.extraConversations = Math.max(
+          0,
+          (existing.extraConversations ?? 0) + input.addExtraConversations,
+        );
+      }
+      if (input.extendTrialDays) {
+        const currentEnd = existing.currentPeriodEnd
+          ? new Date(existing.currentPeriodEnd)
+          : new Date();
+        const baseDate = currentEnd.getTime() > Date.now() ? currentEnd : new Date();
+        updates.currentPeriodEnd = new Date(
+          baseDate.getTime() + input.extendTrialDays * 86400000,
+        );
+        updates.status = "trialing";
+      }
+
+      await ctx.db
+        .update(subscription)
+        .set(updates)
+        .where(eq(subscription.id, existing.id));
+
       return { success: true };
     }),
 } satisfies TRPCRouterRecord;
