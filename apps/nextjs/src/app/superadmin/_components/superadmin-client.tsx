@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Building2,
   ChevronRight,
+  Bug,
   CreditCard,
   ExternalLink,
   Search,
@@ -20,6 +21,7 @@ import { toast } from "@acme/ui/toast";
 import { cn } from "@acme/ui";
 import { useTRPC } from "~/trpc/react";
 import { PlatformPaymentSettings } from "./platform-payment-settings";
+import { BugReports } from "./bug-reports";
 
 type UserRow = {
   id: string;
@@ -36,7 +38,7 @@ export function SuperadminClient({ initialUsers }: { initialUsers: UserRow[] }) 
   const [users, setUsers] = useState<UserRow[]>(initialUsers);
   const [search, setSearch] = useState("");
   const [selectedUser, setSelectedUser] = useState<UserRow | null>(null);
-  const [tab, setTab] = useState<"users" | "payments">("users");
+  const [tab, setTab] = useState<"users" | "payments" | "bugs">("users");
 
   const setBanStatus = useMutation(
     trpc.superadmin.setBanStatus.mutationOptions({
@@ -91,9 +93,21 @@ export function SuperadminClient({ initialUsers }: { initialUsers: UserRow[] }) 
         >
           <CreditCard className="h-4 w-4" /> Payment Settings
         </button>
+        <button
+          type="button"
+          onClick={() => setTab("bugs")}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+            tab === "bugs" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Bug className="h-4 w-4" /> Bug Reports
+        </button>
       </div>
 
-      {tab === "payments" ? (
+      {tab === "bugs" ? (
+        <BugReports />
+      ) : tab === "payments" ? (
         <PlatformPaymentSettings />
       ) : (
     <div className="grid gap-6 lg:grid-cols-[1fr_400px]">

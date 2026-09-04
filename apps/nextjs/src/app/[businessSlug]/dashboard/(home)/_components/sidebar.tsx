@@ -7,6 +7,7 @@ import {
   Activity,
   BarChart3,
   Bell,
+  Bug,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -142,6 +143,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/dashboard/billing", icon: CreditCard, label: "Billing & Plan" },
       { href: "/dashboard/pricing", icon: Tags, label: "Pricing Plans" },
       { href: "/dashboard/notifications", icon: Bell, label: "Notifications" },
+      { href: "/dashboard/report", icon: Bug, label: "Report a Problem" },
     ],
   },
 ];

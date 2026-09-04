@@ -19,6 +19,7 @@ import { storeConnectionsRouter } from "./router/store-connections";
 import { importsRouter } from "./router/imports";
 import { rolesRouter } from "./router/roles";
 import { settingsRouter } from "./router/settings";
+import { bugReportsRouter } from "./router/bug-reports";
 import { subscriptionRouter } from "./router/subscription";
 import { superadminRouter } from "./router/superadmin";
 import { usersRouter } from "./router/users";
@@ -45,6 +46,7 @@ export const appRouter = createTRPCRouter({
   subscription: subscriptionRouter,
   roles: rolesRouter,
   settings: settingsRouter,
+  bugReports: bugReportsRouter,
   superadmin: superadminRouter,
   users: usersRouter,
   notifications: notificationsRouter,

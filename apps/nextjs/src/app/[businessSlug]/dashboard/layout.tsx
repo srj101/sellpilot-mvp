@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { DashboardShell } from "./(home)/_components/dashboard-shell";
+import { ReportProblemTrigger } from "./_components/report-problem-trigger";
 
 export default async function DashboardLayout({
   children,
@@ -13,5 +14,12 @@ export default async function DashboardLayout({
     return <>{children}</>;
   }
 
-  return <DashboardShell>{children}</DashboardShell>;
+  return (
+    <DashboardShell>
+      {children}
+      {/* Mounted at the layout so it is present on every dashboard page — reporting from
+          where the bug is captures the page and, in the Inbox, the conversation. */}
+      <ReportProblemTrigger />
+    </DashboardShell>
+  );
 }
