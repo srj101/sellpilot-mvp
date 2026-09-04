@@ -10,12 +10,5 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  // The real superadmin panel lives at /superadmin; the /{slug}/dashboard/saas page is a
-  // static Haze mock, not a functional route — never redirect there. Platform "admin" users
-  // land on their normal dashboard and reach Users via the sidebar.
-  if (session.user.role === "superadmin") {
-    redirect("/superadmin");
-  }
-
   return <DashboardClient userName={session.user.name} />;
 }
