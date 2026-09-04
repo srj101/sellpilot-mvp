@@ -25,13 +25,11 @@ const FB_VERSION = env.FACEBOOK_GRAPH_VERSION;
 // get orgProcedure's automatic businessId resolution — this mirrors that same lookup
 // (URL slug -> real businessMembership row), never trusting the slug alone.
 async function resolveBusinessId(userId: string, businessSlug: string): Promise<string> {
-  console.log("resolveBusinessId called with:", { userId, businessSlug });
   const [org] = await db
     .select({ id: business.id })
     .from(business)
     .where(eq(business.slug, businessSlug))
     .limit(1);
-  console.log("org found:", org);
   if (!org) throw new Error(`Store not found for slug: ${businessSlug}`);
 
   const [businessMembership] = await db

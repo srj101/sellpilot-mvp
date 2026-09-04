@@ -244,7 +244,7 @@ async function initializeAIHelpers() {
           "contact-name-sync",
           { businessId, connectionId },
           // Fixed id: a burst of messages from unknown contacts collapses into one sync.
-          { jobId: `contact-name-sync:${connectionId}` },
+          { jobId: `contact-name-sync-${connectionId}` },
         );
       },
       avatarFetch: async (businessId, connectionId, platform, psids) => {
@@ -254,7 +254,7 @@ async function initializeAIHelpers() {
             { businessId, connectionId, platform, psid },
             // Two attempts, not the default three with backoff: an avatar is cosmetic and
             // must never occupy the queue retrying something App Review has to fix.
-            { jobId: `contact-avatar:${businessId}:${psid}`, attempts: 2 },
+            { jobId: `contact-avatar-${businessId}-${psid}`, attempts: 2 },
           );
         }
       },

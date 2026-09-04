@@ -338,10 +338,14 @@ async function queueContactSyncForNewSenders(
       const hasNewContact = [...psids].some((psid) => !knownSet.has(psid));
       if (!hasNewContact) continue;
 
+      // "-" not ":" as the separator. BullMQ uses ":" to build its own Redis keys and
+      // rejects any custom job id containing one ("Custom Id cannot contain :"), so the
+      // colon form threw on every single inbound message and no contact name was ever
+      // synced automatically — every new customer stayed "Contact 2657…3964".
       await queue.enqueue(
         "contact-name-sync",
         { businessId, connectionId },
-        { jobId: `contact-name-sync:${connectionId}` },
+        { jobId: `contact-name-sync-${connectionId}` },
       );
     }
   } catch (err) {

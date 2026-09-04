@@ -82,7 +82,7 @@ export class RedisQueueProvider implements QueueProvider {
     const mergedOptions = { ...this.defaultJobOptions, ...options };
 
     const job = await queue.add(jobName, data, {
-      jobId: options.jobId,
+      jobId: safeJobId(options.jobId),
       delay: mergedOptions.delay,
       attempts: mergedOptions.attempts,
       backoff: mergedOptions.backoff,
@@ -232,4 +232,15 @@ export class RedisQueueProvider implements QueueProvider {
       return false;
     }
   }
+}
+
+/**
+ * ":" is BullMQ's own Redis key separator, so it throws "Custom Id cannot contain :" on
+ * any custom job id containing one. That is an implementation detail of this provider,
+ * not something every call site should have to know — and when a call site did get it
+ * wrong, the throw surfaced only as a swallowed log line while the feature silently did
+ * nothing. Normalizing here keeps the colon impossible rather than merely discouraged.
+ */
+function safeJobId(jobId: string | undefined): string | undefined {
+  return jobId?.replace(/:/g, "-");
 }
