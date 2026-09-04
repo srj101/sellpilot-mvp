@@ -71,7 +71,11 @@ async function transcribeAudio(audioUrl: string, transcription: { baseUrl: strin
  * model a text description it can reason about and verify with its own product
  * lookup tools — rather than the raw image, which it can't read anyway.
  */
-async function describeImagesForAgent(businessId: string, imageUrls: string[]): Promise<string> {
+async function describeImagesForAgent(
+  businessId: string,
+  imageUrls: string[],
+  droppedCount: number,
+): Promise<string> {
   const notes = await Promise.all(
     imageUrls.map(async (imageUrl) => {
       const [match] = await searchProductsByImage({ businessId, imageUrl, limit: 1 });
@@ -83,7 +87,32 @@ async function describeImagesForAgent(businessId: string, imageUrls: string[]): 
       );
     })
   );
-  return `[Customer also sent ${notes.join("; and ")}.]`;
+
+  const dropped =
+    droppedCount > 0
+      ? ` They sent ${droppedCount} more image(s) that were not processed — tell them plainly` +
+        ` that you can look at ${imageUrls.length} at a time and ask them to resend the rest after this.`
+      : "";
+
+  return `[Customer also sent ${notes.join("; and ")}.${dropped}]`;
+}
+
+/**
+ * How many images from one message are actually embedded.
+ *
+ * Every image is a full-size download from Facebook's CDN plus an embedding call, all
+ * fired in parallel. Ten of those from a single message is a denial of service against
+ * your own worker, paid for before anything checks whether the customer could even order
+ * that many: the plan's product limit is only enforced in createOrder, at the very end.
+ *
+ * Bounded by the plan's own cart limit — processing more images than the customer could
+ * put in one order is work nobody can use — and then by a hard ceiling, because 28
+ * simultaneous downloads is unreasonable on any plan.
+ */
+const MAX_PARALLEL_IMAGES = 8;
+
+function imageCapForPlan(planKey: keyof typeof PLAN_CATALOG): number {
+  return Math.min(PLAN_CATALOG[planKey].limits.multiProductCartLimit, MAX_PARALLEL_IMAGES);
 }
 
 const config = loadConfig();
@@ -345,11 +374,15 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
     }
   }
 
-  // The chat model can't process images directly (see describeImagesForAgent) — turn
-  // any into a text description the model can reason about and verify via tools.
-  if (incomingImages?.length) {
-    const imageContext = await describeImagesForAgent(data.businessId, incomingImages);
-    messageText = messageText ? `${imageContext}\n${messageText}` : imageContext;
+  // Capped here rather than at createOrder, which is where the plan limit used to be
+  // enforced — by then every image has already been downloaded and embedded.
+  const imageCap = imageCapForPlan(planKey);
+  const imagesToProcess = incomingImages?.slice(0, imageCap) ?? [];
+  const droppedImages = Math.max(0, (incomingImages?.length ?? 0) - imagesToProcess.length);
+  if (droppedImages > 0) {
+    console.warn(
+      `[DMReply] ${incomingImages?.length} images received, processing ${imagesToProcess.length} (${planKey} cap)`,
+    );
   }
 
   // Build agent input
@@ -381,6 +414,24 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
     let tokensUsed = 0;
 
     const response = await circuitBreaker.run(async (signal) => {
+      // Image description runs INSIDE the breaker, not before it.
+      //
+      // The chat model cannot read images, so each one is embedded and matched against the
+      // catalogue to produce text it can reason about. That work used to happen before
+      // circuitBreaker.run, which meant AI_TIMEOUT_MS did not cover it at all: several slow
+      // CDN downloads or a rate-limited embedding provider could hang the job indefinitely
+      // with no timeout and no fallback. Inside, the same 30s budget and the same abort
+      // signal apply to it as to the model call.
+      let message = agentInput.message;
+      if (imagesToProcess.length > 0) {
+        const imageContext = await describeImagesForAgent(
+          data.businessId,
+          imagesToProcess,
+          droppedImages,
+        );
+        message = message ? `${imageContext}\n${message}` : imageContext;
+      }
+
       const agent = createSalesAgent({
         apiKey: config.openaiApiKey,
         baseUrl: config.openaiBaseUrl,
@@ -391,7 +442,10 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
 
       // Combine the circuit breaker's own timeout signal with this job's cancel
       // signal — either one aborting stops the in-flight LLM call.
-      return agent.run(agentInput, { signal: AbortSignal.any([signal, thisController.signal]) });
+      return agent.run(
+        { ...agentInput, message },
+        { signal: AbortSignal.any([signal, thisController.signal]) },
+      );
     });
     responseText = response.response;
     tokensUsed = response.tokensUsed?.total ?? 0;

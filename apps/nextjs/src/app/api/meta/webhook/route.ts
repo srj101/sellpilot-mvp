@@ -36,6 +36,11 @@ import type { MetaDMReplyJob, MetaCommentReplyJob } from "@acme/queue";
 
 export const runtime = "nodejs";
 
+/** Upper bound on attachments carried into a reply job. Nothing downstream can use more
+ * than the plan's cart limit (the worker caps again, lower), and an unbounded list would
+ * let one message put an arbitrarily large payload on the queue. */
+const MAX_ATTACHMENTS_PER_MESSAGE = 10;
+
 // Initialize services
 const messagingService = new MessagingService({ logging: true });
 const queue = createQueue();
@@ -241,12 +246,17 @@ export async function POST(req: NextRequest) {
             threadId: event.message.threadId,
             incomingMessage: {
               text: event.message.text ?? `[${event.message.type || "voice"} message]`,
+              // Bounded before the job is even queued. The worker caps again by plan, but
+              // an unbounded array here means an arbitrarily large job payload sitting in
+              // Redis for every message — the two caps guard different things.
               imageUrls: event.message.attachments
                 ?.filter((a) => a.type === "image")
-                .map((a) => a.url),
+                .map((a) => a.url)
+                .slice(0, MAX_ATTACHMENTS_PER_MESSAGE),
               audioUrls: event.message.attachments
                 ?.filter((a) => a.type === "audio")
-                .map((a) => a.url),
+                .map((a) => a.url)
+                .slice(0, MAX_ATTACHMENTS_PER_MESSAGE),
               timestamp: event.message.timestamp.getTime(),
             },
             accessToken: connection.accessToken ?? connection.facebookPageAccessToken ?? "",
