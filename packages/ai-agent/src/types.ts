@@ -92,6 +92,18 @@ export interface ConversationContext {
    * plausible-looking phone number instead of calling the tool. Providing the real value
    * directly removes the opportunity to guess. */
   knownCustomer?: { name: string; phone: string; address: string };
+  /**
+   * Products already discussed in this conversation, most recent first — real ids read
+   * from agent_session, not anything the model remembered.
+   *
+   * Handed over for the same reason knownCustomer is: the prompt requires a product id to
+   * be resolved fresh in the current turn, and a customer who shopped by photo never typed
+   * a product name for it to resolve. "Haa order korbo" gave the model nothing to search
+   * with, so it searched nothing, found nothing, and refused an order for a product it had
+   * quoted a price for moments earlier. Providing the real ids removes the dead end
+   * without giving the model licence to invent one.
+   */
+  recentProducts?: { id: string; title: string }[];
   /** Connection context for sending messages */
   connectionContext?: ConnectionContext;
   /** Subscription plan tier, used by tool handlers to resolve per-plan limits at call

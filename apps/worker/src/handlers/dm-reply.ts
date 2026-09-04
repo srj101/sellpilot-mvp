@@ -16,7 +16,7 @@ import {
 import type { ThreadCancelBroadcast } from "@acme/queue";
 import { searchProductsByImage } from "@acme/api/vector-search";
 import { getMetaContactName } from "@acme/api/resolve-contact-names";
-import { getConversationSummary, generateAndSaveConversationSummary, getCustomerForThread, getBusinessProfile, createNotification, escalateToHuman } from "@acme/db/helpers/aiHelpers";
+import { getConversationSummary, generateAndSaveConversationSummary, getCustomerForThread, getBusinessProfile, createNotification, escalateToHuman, getRecentProductsForThread } from "@acme/db/helpers/aiHelpers";
 
 import { checkAiConversationAvailability, incrementAiConversation } from "../lib/ai-conversations.js";
 import { getBusinessPlanKey } from "../lib/plan.js";
@@ -312,6 +312,17 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
       ? { name: existingCustomer.name, phone: existingCustomer.phone, address: existingCustomer.address }
       : undefined;
 
+  // Products already discussed here, so a customer who never typed a product name — the
+  // photo path, or just "order korbo" — can still be understood. Best-effort: without it
+  // the agent behaves exactly as it did before, which is to say it asks them to name the
+  // product again, so a failed read must not cost the customer their reply.
+  const recentProducts = await getRecentProductsForThread(data.businessId, data.threadId).catch(
+    (err) => {
+      console.warn("[DMReply] Failed to load recent products for thread:", err);
+      return [];
+    },
+  );
+
   // Handle voice messages - transcribe first. Pro-only per the pricing plan (§6 "Voice
   // Message Support") — Starter/Growth get a fallback asking them to type instead.
   let messageText = incomingText;
@@ -352,6 +363,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
       customerName: facebookFirstName,
       conversationSummary: conversationSummary ?? undefined,
       knownCustomer,
+      recentProducts,
       connectionContext: {
         platform: data.platform,
         accessToken: data.accessToken,

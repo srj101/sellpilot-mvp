@@ -678,8 +678,22 @@ export interface AgentSessionState {
   | "support";
   /** Set alongside currentStep: "product_selected" — the last product the customer asked
    * about, so an abandoned-conversation follow-up (FR-AGT-13) can reference it even when
-   * they never got as far as a cart. */
+   * they never got as far as a cart. Always equal to recentProductIds[0]; kept as its own
+   * field because conversation-followup.ts reads it directly. */
   lastViewedProductId?: string;
+  /**
+   * Every product discussed in this conversation, most recent first, capped at 5.
+   *
+   * Exists because a customer who shops by photo never types a product name. "Haa order
+   * korbo" contains nothing to search for, and the agent is required to resolve a product
+   * id fresh on every turn — so it searched an empty string, found nothing, and refused an
+   * order for a product it had quoted a price for thirty seconds earlier. This list is
+   * what the agent falls back to when the customer refers to a product without naming it.
+   *
+   * A list rather than a single id because a customer can discuss several products in one
+   * conversation, and "ei duita nibo" needs more than the latest one.
+   */
+  recentProductIds?: string[];
   pendingOrderId?: string;
   notes?: string;
 }

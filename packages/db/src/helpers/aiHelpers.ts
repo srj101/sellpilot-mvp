@@ -1521,12 +1521,28 @@ export async function markProductSelected(
     .where(and(eq(agentSession.businessId, businessId), eq(agentSession.threadId, threadId)));
 
   if (existing) {
+    // The product list is recorded on EVERY view. It used to bail out here whenever
+    // currentStep had moved past "browsing", which meant only the first product a customer
+    // ever looked at was remembered — S R Joy bought a sneaker and a vase in one
+    // conversation and only the sneaker was recorded, and three separate threads all
+    // showed the same stale product id.
+    //
+    // The step itself still only advances: a customer who has already placed an order or
+    // filled a cart must not be dragged back to "product_selected" just for glancing at
+    // another item. That was the half of the old guard worth keeping.
+    const recentProductIds = withRecentProduct(existing.state.recentProductIds, productId);
     const step = existing.state.currentStep;
-    if (step && step !== "browsing") return;
+    const keepStep = step && step !== "browsing";
+
     await db
       .update(agentSession)
       .set({
-        state: { ...existing.state, currentStep: "product_selected", lastViewedProductId: productId },
+        state: {
+          ...existing.state,
+          currentStep: keepStep ? step : "product_selected",
+          lastViewedProductId: productId,
+          recentProductIds,
+        },
         lastMessageAt: new Date(),
         senderId: senderId ?? undefined,
       })
@@ -1539,8 +1555,75 @@ export async function markProductSelected(
     channel,
     threadId,
     senderId,
-    state: { currentStep: "product_selected", lastViewedProductId: productId },
+    state: {
+      currentStep: "product_selected",
+      lastViewedProductId: productId,
+      recentProductIds: [productId],
+    },
   });
+}
+
+/** How many products a conversation remembers. Enough for "ei tinta nibo", small enough
+ * that a long browsing session can't bury the product actually under discussion. */
+const MAX_RECENT_PRODUCTS = 5;
+
+/** Most recent first, no duplicates, capped. Re-viewing a product moves it back to front,
+ * which is what "eta" should resolve to. */
+function withRecentProduct(existing: string[] | undefined, productId: string): string[] {
+  return [productId, ...(existing ?? []).filter((id) => id !== productId)].slice(
+    0,
+    MAX_RECENT_PRODUCTS,
+  );
+}
+
+/**
+ * The products discussed in this conversation, newest first, with their titles.
+ *
+ * Fed into the agent's system prompt so a customer who never types a product name — the
+ * photo path, or simply "order korbo" — can still be understood. Titles are included
+ * because a bare uuid tells the model nothing and it cannot state which product it is
+ * about to order.
+ */
+export async function getRecentProductsForThread(
+  businessId: string,
+  threadId: string,
+  options: { maxAgeMs?: number } = {},
+): Promise<{ id: string; title: string }[]> {
+  const [session] = await db
+    .select({ state: agentSession.state, lastMessageAt: agentSession.lastMessageAt })
+    .from(agentSession)
+    // Both columns: thread_id is the customer's platform id, so two businesses that have
+    // connected the same Facebook page share a thread key. Scoping by threadId alone would
+    // hand one merchant's products to another merchant's customer.
+    .where(and(eq(agentSession.businessId, businessId), eq(agentSession.threadId, threadId)));
+
+  if (!session) return [];
+
+  // A conversation resumed days later is a new conversation in every way that matters —
+  // injecting last week's products would have the agent confidently offer something the
+  // customer has long since bought elsewhere.
+  const maxAgeMs = options.maxAgeMs ?? 24 * 60 * 60 * 1000;
+  if (session.lastMessageAt && Date.now() - session.lastMessageAt.getTime() > maxAgeMs) {
+    return [];
+  }
+
+  const ids = session.state.recentProductIds?.length
+    ? session.state.recentProductIds
+    : session.state.lastViewedProductId
+      ? [session.state.lastViewedProductId]
+      : [];
+  if (ids.length === 0) return [];
+
+  const rows = await db
+    .select({ id: product.id, title: product.title })
+    .from(product)
+    .where(and(eq(product.businessId, businessId), inArray(product.id, ids)));
+
+  // Preserve recency order — the SQL IN clause does not.
+  const byId = new Map(rows.map((r) => [r.id, r.title]));
+  return ids
+    .filter((id) => byId.has(id))
+    .map((id) => ({ id, title: byId.get(id)! }));
 }
 
 // Log an AI-generated reply so future turns in this thread have it as history.
