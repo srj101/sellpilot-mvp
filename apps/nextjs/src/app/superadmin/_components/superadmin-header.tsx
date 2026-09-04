@@ -30,9 +30,11 @@ const TAB_LABELS: Record<SuperadminTab, string> = {
   ai: "AI Usage & Observability",
   queues: "Queues & Worker Health",
   channels: "Meta Channel Health",
+  broadcasts: "System Broadcasts",
   users: "User Management",
+  audit: "Platform Security & Audit Trail",
   payments: "Payment Gateways",
-  bugs: "Bug Reports",
+  bugs: "Bug Reports & Triage",
 };
 
 function initials(name: string) {

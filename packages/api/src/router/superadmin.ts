@@ -3,11 +3,14 @@ import { z } from "zod/v4";
 
 import { and, desc, eq, inArray, sql } from "@acme/db";
 import {
+  activityLog,
   agentSession,
+  bugReport,
   business,
   businessMember,
   metaConnection,
   metaWebhookEvent,
+  notification,
   order,
   platformSettings,
   product,
@@ -709,6 +712,134 @@ export const superadminRouter = {
         .update(subscription)
         .set(updates)
         .where(eq(subscription.id, existing.id));
+
+      return { success: true };
+    }),
+
+  /**
+   * Phase 3: Global & Targeted System Broadcast
+   */
+  broadcastNotification: superadminProcedure
+    .input(
+      z.object({
+        title: z.string().min(1).max(100),
+        body: z.string().min(1).max(500),
+        link: z.string().optional(),
+        targetPlan: z.enum(["all", "starter", "growth", "pro"]).default("all"),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      let businessesToNotify: { id: string }[] = [];
+
+      if (input.targetPlan === "all") {
+        businessesToNotify = await ctx.db.select({ id: business.id }).from(business);
+      } else {
+        businessesToNotify = await ctx.db
+          .select({ id: subscription.businessId })
+          .from(subscription)
+          .where(eq(subscription.plan, input.targetPlan))
+          .then((rows) => rows.filter((r) => Boolean(r.id)).map((r) => ({ id: r.id! })));
+      }
+
+      if (businessesToNotify.length === 0) {
+        return { success: true, count: 0 };
+      }
+
+      const rows = businessesToNotify.map((b) => ({
+        businessId: b.id,
+        type: "system_announcement",
+        title: `📢 ${input.title}`,
+        body: input.body,
+        link: input.link ?? null,
+      }));
+
+      // Chunk inserts in batches of 50
+      for (let i = 0; i < rows.length; i += 50) {
+        const batch = rows.slice(i, i + 50);
+        await ctx.db.insert(notification).values(batch);
+      }
+
+      return { success: true, count: businessesToNotify.length };
+    }),
+
+  /**
+   * Phase 3: Platform Security & Audit Trail
+   */
+  getAuditLogs: superadminProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().int().min(1).max(100).default(50),
+          actionFilter: z.string().optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      const limit = input?.limit ?? 50;
+
+      const logs = await ctx.db
+        .select({
+          id: activityLog.id,
+          businessId: activityLog.businessId,
+          businessName: business.name,
+          businessSlug: business.slug,
+          actorUserId: activityLog.actorUserId,
+          actorName: activityLog.actorName,
+          actorType: activityLog.actorType,
+          action: activityLog.action,
+          entityType: activityLog.entityType,
+          entityId: activityLog.entityId,
+          summary: activityLog.summary,
+          metadata: activityLog.metadata,
+          createdAt: activityLog.createdAt,
+        })
+        .from(activityLog)
+        .leftJoin(business, eq(activityLog.businessId, business.id))
+        .orderBy(desc(activityLog.createdAt))
+        .limit(limit);
+
+      return logs;
+    }),
+
+  /**
+   * Phase 3: Store Suspension / Emergency Lock
+   */
+  toggleStoreSuspension: superadminProcedure
+    .input(
+      z.object({
+        businessId: z.string(),
+        suspend: z.boolean(),
+        reason: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [sub] = await ctx.db
+        .select({ id: subscription.id, status: subscription.status })
+        .from(subscription)
+        .where(eq(subscription.businessId, input.businessId))
+        .limit(1);
+
+      if (sub) {
+        await ctx.db
+          .update(subscription)
+          .set({ status: input.suspend ? "past_due" : "active" })
+          .where(eq(subscription.id, sub.id));
+      }
+
+      // Log the suspension/reactivation audit event
+      await ctx.db.insert(activityLog).values({
+        businessId: input.businessId,
+        actorUserId: ctx.session.user.id,
+        actorName: ctx.session.user.name ?? "Superadmin",
+        actorType: "staff",
+        action: input.suspend ? "store.suspended" : "store.reactivated",
+        entityType: "subscription",
+        entityId: sub?.id ?? input.businessId,
+        summary: input.suspend
+          ? `Store was suspended by Superadmin${input.reason ? `: ${input.reason}` : ""}`
+          : "Store suspension was lifted by Superadmin",
+        metadata: { reason: input.reason ?? null },
+      });
 
       return { success: true };
     }),

@@ -32,11 +32,13 @@ import { useTRPC } from "~/trpc/react";
 import { AiObservability } from "./ai-observability";
 import { BugReports } from "./bug-reports";
 import { ChannelHealth } from "./channel-health";
+import { PlatformAuditLogs } from "./platform-audit-logs";
 import { PlatformOverview } from "./platform-overview";
 import { PlatformPaymentSettings } from "./platform-payment-settings";
 import { QueueHealth } from "./queue-health";
 import { StoresDirectory } from "./stores-directory";
 import { SuperadminShell } from "./superadmin-shell";
+import { SystemBroadcasts } from "./system-broadcasts";
 
 interface UserRow {
   id: string;
@@ -120,6 +122,10 @@ export function SuperadminClient({
         <QueueHealth />
       ) : tab === "channels" ? (
         <ChannelHealth />
+      ) : tab === "broadcasts" ? (
+        <SystemBroadcasts />
+      ) : tab === "audit" ? (
+        <PlatformAuditLogs />
       ) : tab === "bugs" ? (
         <BugReports />
       ) : tab === "payments" ? (

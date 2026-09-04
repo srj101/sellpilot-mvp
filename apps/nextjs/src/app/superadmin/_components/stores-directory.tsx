@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowUpRight, ExternalLink, Search, Sparkles, X } from "lucide-react";
+import { ArrowUpRight, ExternalLink, Search, ShieldAlert, ShieldCheck, Sparkles, X } from "lucide-react";
 
 import { cn } from "@acme/ui";
 import { Badge } from "@acme/ui/badge";
@@ -90,6 +90,18 @@ export function StoresDirectory() {
       },
       onError: (err) => {
         toast.error(err.message || "Failed to update subscription");
+      },
+    }),
+  );
+
+  const toggleSuspension = useMutation(
+    trpc.superadmin.toggleStoreSuspension.mutationOptions({
+      onSuccess: () => {
+        toast.success("Store status updated successfully.");
+        void refetch();
+      },
+      onError: (err) => {
+        toast.error(err.message || "Failed to toggle store suspension");
       },
     }),
   );
@@ -623,6 +635,57 @@ export function StoresDirectory() {
                     {formatDate(selectedStore.createdAt)}
                   </p>
                 </div>
+              </div>
+            </div>
+
+            {/* Danger Zone: Emergency Suspension / Freeze */}
+            <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 text-rose-500" />
+                <h4 className="text-xs font-semibold text-rose-600 dark:text-rose-400 uppercase tracking-wider">
+                  Store Security & Access Controls
+                </h4>
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Suspension immediately locks this store's dashboard and halts automated AI message consumption and webhook processing.
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                {selectedStore.subscription?.status === "past_due" ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5 text-xs text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10 w-full"
+                    disabled={toggleSuspension.isPending}
+                    onClick={() => {
+                      toggleSuspension.mutate({
+                        businessId: selectedStore.id,
+                        suspend: false,
+                      });
+                    }}
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Lift Suspension (Reactivate Store)
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5 text-xs text-rose-600 border-rose-500/30 hover:bg-rose-500/10 w-full"
+                    disabled={toggleSuspension.isPending}
+                    onClick={() => {
+                      if (confirm(`Are you sure you want to suspend "${selectedStore.name}"? This will lock their dashboard.`)) {
+                        toggleSuspension.mutate({
+                          businessId: selectedStore.id,
+                          suspend: true,
+                          reason: "Administrative suspension by Superadmin",
+                        });
+                      }
+                    }}
+                  >
+                    <ShieldAlert className="h-3.5 w-3.5" />
+                    Suspend Store (Emergency Lock)
+                  </Button>
+                )}
               </div>
             </div>
           </SheetContent>

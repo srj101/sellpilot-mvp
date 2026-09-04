@@ -5,14 +5,17 @@ import Link from "next/link";
 import {
   Activity,
   ArrowUpRight,
+  BellRing,
   Bug,
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  History,
   LayoutDashboard,
   LogOut,
   Menu,
   Radio,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Store,
@@ -32,7 +35,9 @@ export type SuperadminTab =
   | "ai"
   | "queues"
   | "channels"
+  | "broadcasts"
   | "users"
+  | "audit"
   | "payments"
   | "bugs";
 
@@ -61,12 +66,14 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "ai", label: "AI Observability", icon: Sparkles },
       { id: "queues", label: "Queues & Workers", icon: Activity },
       { id: "channels", label: "Channel Health", icon: Radio },
+      { id: "broadcasts", label: "System Broadcasts", icon: BellRing },
     ],
   },
   {
-    title: "Administration",
+    title: "Administration & Security",
     items: [
       { id: "users", label: "Platform Users", icon: Users },
+      { id: "audit", label: "Security & Audit", icon: History },
       { id: "payments", label: "Payment Gateways", icon: CreditCard },
       { id: "bugs", label: "Bug Reports", icon: Bug },
     ],
