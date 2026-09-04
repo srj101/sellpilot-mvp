@@ -329,7 +329,41 @@ export async function searchProductsByKeyword(
     .orderBy(desc(score))
     .limit(limit);
 
-  return rows.map((r) => r.row);
+  return withStartingPrice(rows.map((r) => r.row));
+}
+
+/**
+ * Attach each product's cheapest variant price, and drop the search-index columns.
+ *
+ * Price, because this helper returns product rows and product has no price column —
+ * prices live on variants. Handed a result with no price and told to answer briefly, the
+ * agent quoted a customer "Running Sneakers ache, ৳0". Providing the real number removes
+ * the opportunity to guess, the same reason the caller is handed knownCustomer outright.
+ *
+ * searchText/searchKeywords out, because they are index material: 25 synonyms and
+ * misspellings per product, useful to Postgres and pure noise in a model's context.
+ */
+async function withStartingPrice<T extends { id: string }>(rows: T[]) {
+  if (rows.length === 0) return [];
+
+  const variants = await db
+    .select({ productId: productVariant.productId, price: productVariant.price })
+    .from(productVariant)
+    .where(inArray(productVariant.productId, rows.map((r) => r.id)));
+
+  const cheapest = new Map<string, number>();
+  for (const v of variants) {
+    const current = cheapest.get(v.productId);
+    if (current === undefined || v.price < current) cheapest.set(v.productId, v.price);
+  }
+
+  return rows.map((row) => {
+    const { searchText: _t, searchKeywords: _k, ...rest } = row as T & {
+      searchText?: unknown;
+      searchKeywords?: unknown;
+    };
+    return { ...rest, startingPrice: cheapest.get(row.id) ?? null };
+  });
 }
 
 /**
@@ -401,7 +435,10 @@ export async function discoverProducts(
     })
     .sort((a, b) => (a.startingPrice ?? Infinity) - (b.startingPrice ?? Infinity));
 
-  return matches.slice(0, filters.limit ?? 10);
+  // Index columns are for Postgres, not for the model's context window.
+  return matches
+    .slice(0, filters.limit ?? 10)
+    .map(({ searchText: _t, searchKeywords: _k, ...p }) => p);
 }
 
 // Get variants for a product
