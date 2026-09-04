@@ -417,7 +417,14 @@ function extractMessageText(
 ) {
   const direction = asString(rawPayload.direction);
   if (direction === "outbound") {
-    return asString(rawPayload.text) ?? "Sent message";
+    const text = asString(rawPayload.text);
+    if (text) {
+      return text;
+    }
+    if (asString(rawPayload.imageUrl)) {
+      return "Sent an image";
+    }
+    return "Sent message";
   }
 
   if (event.platform === "whatsapp") {
@@ -549,11 +556,10 @@ export function buildInboxData({
       const existingThread = threadsById.get(threadKey);
       if (existingThread) {
         existingThread.messages.push(message);
-        existingThread.lastMessageAt =
-          message.timestamp > existingThread.lastMessageAt
-            ? message.timestamp
-            : existingThread.lastMessageAt;
-        existingThread.preview = message.text;
+        if (message.timestamp > existingThread.lastMessageAt) {
+          existingThread.lastMessageAt = message.timestamp;
+          existingThread.preview = message.text;
+        }
         existingThread.messageCount += 1;
         continue;
       }
@@ -606,10 +612,18 @@ export function buildInboxData({
   }
 
   const threads = Array.from(threadsById.values())
-    .map((thread) => ({
-      ...thread,
-      messages: thread.messages.sort(sortNewestFirst).reverse(),
-    }))
+    .map((thread) => {
+      const messages = [...thread.messages]
+        .reverse()
+        .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
+      const lastMessage = messages[messages.length - 1];
+      return {
+        ...thread,
+        messages,
+        lastMessageAt: lastMessage ? lastMessage.timestamp : thread.lastMessageAt,
+        preview: lastMessage ? lastMessage.text : thread.preview,
+      };
+    })
     .sort(
       (left, right) =>
         right.lastMessageAt.getTime() - left.lastMessageAt.getTime(),

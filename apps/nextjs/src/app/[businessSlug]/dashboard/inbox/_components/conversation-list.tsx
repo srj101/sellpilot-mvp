@@ -28,12 +28,22 @@ export function ConversationList({
 
   const isUnreplied = (t: InboxThread) => t.messages[t.messages.length - 1]?.direction === "inbound";
 
+  const getThreadHref = (threadId: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("thread", threadId);
+    return `/${businessSlug}/dashboard/inbox?${params.toString()}`;
+  };
+
   const filtered = useMemo(() => {
     return threads.filter((t) => {
-      if (statusTab !== "archived" && t.status === "archived") return false;
-      if (statusTab === "order_requests" && !t.hasOrderRequest) return false;
-      if (statusTab === "unreplied" && !isUnreplied(t)) return false;
-      if (["ticket", "resolved"].includes(statusTab) && t.status !== statusTab) return false;
+      if (statusTab === "archived") {
+        if (t.status !== "archived") return false;
+      } else {
+        if (t.status === "archived") return false;
+        if (statusTab === "order_requests" && !t.hasOrderRequest) return false;
+        if (statusTab === "unreplied" && !isUnreplied(t)) return false;
+        if (["ticket", "resolved"].includes(statusTab) && t.status !== statusTab) return false;
+      }
       if (channel !== "all" && t.platform !== channel) return false;
       if (search && !t.contactLabel.toLowerCase().includes(search.toLowerCase())) return false;
       return true;
@@ -62,11 +72,12 @@ export function ConversationList({
             const unreadCount = thread.messages.filter((m) => m.direction === "inbound" && !m.isRead).length;
             const selected = thread.id === selectedThreadId;
             const aiHandled = thread.handlingMode === "ai";
+            const previewText = latestMessage?.text ?? thread.preview;
 
             return (
               <Link
                 key={thread.id}
-                href={`/${businessSlug}/dashboard/inbox?thread=${encodeURIComponent(thread.id)}`}
+                href={getThreadHref(thread.id)}
                 className={cn(
                   "flex items-start gap-3 border-b px-4 py-3 transition-colors hover:bg-accent/50",
                   selected && "bg-accent",
@@ -100,7 +111,7 @@ export function ConversationList({
                   <div className="mt-0.5 flex items-center justify-between gap-2">
                     <p className={cn("flex min-w-0 items-center gap-1 truncate text-xs", isUnread ? "font-medium text-foreground" : "text-muted-foreground")}>
                       {aiHandled && <Sparkles className="h-3 w-3 shrink-0 text-violet-500" />}
-                      <span className="truncate">{thread.preview}</span>
+                      <span className="truncate">{previewText}</span>
                     </p>
                     {unreadCount > 0 && (
                       <Badge className="h-5 min-w-5 shrink-0 justify-center rounded-full bg-emerald-500 px-1.5 text-[11px] text-white hover:bg-emerald-500">
