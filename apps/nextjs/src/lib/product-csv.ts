@@ -26,6 +26,8 @@ export interface BulkRow {
   description?: string;
   rating?: number;
   imageUrl?: string;
+  /** Optional. Left blank, the AI generates keywords after import. */
+  searchKeywords?: string;
 }
 
 export interface ParsedProductCsv {
@@ -179,6 +181,7 @@ export function parseProductCsvRows(rawRows: Record<string, string>[]): ParsedPr
       description: pickField(raw, "description", "Description"),
       rating: rating.value,
       imageUrl: pickField(raw, "imageUrl", "Image", "image", "Image URL", "image_url"),
+      searchKeywords: pickField(raw, "searchKeywords", "Search Keywords", "keywords", "Keywords", "tags", "Tags"),
     });
   }
 

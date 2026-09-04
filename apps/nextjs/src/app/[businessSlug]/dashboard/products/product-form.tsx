@@ -87,6 +87,7 @@ export function ProductForm({
   const [category, setCategory] = useState(initialProduct?.category ?? "");
   const [gender, setGender] = useState(initialProduct?.gender ?? "");
   const [rating, setRating] = useState<number>(initialProduct?.rating ?? 0);
+  const [searchKeywords, setSearchKeywords] = useState<string>(initialProduct?.searchKeywords ?? "");
   const [status, setStatus] = useState(initialProduct?.status ?? "active");
   const [images, setImages] = useState<string[]>(initialProduct?.images ?? []);
   const [newImageUrl, setNewImageUrl] = useState("");
@@ -331,6 +332,7 @@ export function ProductForm({
         variants: finalVariants,
         rating: rating || undefined,
         lowStockThreshold: Number(lowStockThreshold) || 5,
+        searchKeywords: searchKeywords.trim() || undefined,
       };
 
       if (isEditing) {
@@ -463,6 +465,26 @@ export function ProductForm({
                 Rating
               </label>
               <StarPicker value={rating} onChange={setRating} />
+            </div>
+            <div>
+              <label className="text-muted-foreground mb-1.5 block text-xs font-semibold tracking-wider uppercase">
+                Search keywords
+              </label>
+              <textarea
+                value={searchKeywords}
+                onChange={(e) => setSearchKeywords(e.target.value)}
+                rows={2}
+                placeholder={
+                  isEditing
+                    ? "e.g. জুতা, juta, keds, sports shoe"
+                    : "Filled in automatically after you save"
+                }
+                className="border-input bg-background/50 focus:bg-background ring-offset-background focus:ring-ring w-full resize-y rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-offset-2"
+              />
+              <p className="text-muted-foreground mt-1 text-xs">
+                Words customers might type to find this — including Bangla. Filled in
+                automatically when you save; edit any time and yours will be kept.
+              </p>
             </div>
             <div>
               <label className="text-muted-foreground mb-1.5 block text-xs font-semibold tracking-wider uppercase">

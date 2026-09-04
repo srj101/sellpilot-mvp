@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
 import { env } from "@acme/env";
 import { createQueue, publishNotificationEvent } from "@acme/queue";
@@ -237,24 +237,99 @@ export async function listActiveProducts(businessId: string, limit = 20) {
     .limit(limit);
 }
 
-// Search products by keyword (simple)
+/**
+ * Trigram similarity floor.
+ *
+ * word_similarity compares the query against the best-matching *span* of searchText rather
+ * than the whole string, so a genuine hit scores high (an exact keyword match scores 1.0)
+ * while incidental letter overlap sits well below. Measured against the live catalogue:
+ * real queries — "Runner sneaker" 0.61, "watter bottel" 0.71, "denim jaket" 1.00 — clear
+ * this comfortably, while conversational noise like "hello bhai" and "eita ache" peaked at
+ * 0.20 and is excluded. Returning a product for "hello bhai" is worse than returning
+ * nothing: the agent would go on to quote a price for something nobody asked about.
+ */
+const PRODUCT_MATCH_THRESHOLD = 0.3;
+
+/**
+ * Conversational filler that carries no product meaning, in the English and romanized
+ * Bangla customers actually type. Left in the query these words match something in almost
+ * every catalogue — "ki ki product ache" ("what products do you have") scored 0.50 against
+ * a lipstick, purely on the word "product" — and the agent would then quote a price for
+ * something nobody asked about.
+ */
+const SEARCH_FILLER = new Set([
+  "a", "an", "the", "is", "are", "do", "does", "you", "your", "have", "has", "any", "some",
+  "i", "me", "my", "it", "this", "that", "for", "and", "or", "of", "with", "want", "need",
+  "please", "show", "send", "give", "product", "products", "item", "items", "thing",
+  "ache", "ase", "achhe", "ki", "kina", "kichu", "amar", "ami", "apnar", "apnader", "eta",
+  "eita", "ta", "ti", "gulo", "gula", "chai", "lagbe", "dorkar", "koto", "kemon", "kmn",
+  "dam", "bhai", "vai", "apu", "hello", "hi", "assalamu", "alaikum", "kinte", "nite",
+  "kache", "kase", "dekhan", "dekhben", "bolen", "ki-ki", "kikī",
+]);
+
+/** Drop filler, but never return an empty query when the customer typed only filler —
+ * an empty search is handled by the caller as "no match", which is the honest answer. */
+function stripSearchFiller(keyword: string): string {
+  const kept = keyword
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w && !SEARCH_FILLER.has(w.toLowerCase().replace(/[^\p{L}\p{N}\p{M}]/gu, "")));
+  return kept.join(" ").trim();
+}
+
+/**
+ * Relevance score for a product against a customer's phrase.
+ *
+ * word_similarity finds the best-matching run of words inside searchText, which is what
+ * makes "Runner sneaker" match "running sneakers ... juta keds" — it compares against the
+ * closest span rather than diluting across the whole column. similarity() is kept as a
+ * weaker second signal so a query that broadly resembles the whole entry still ranks.
+ */
+function productMatchScore(query: string) {
+  return sql<number>`GREATEST(
+    word_similarity(${query}, ${product.searchText}),
+    similarity(${query}, ${product.searchText}) * 0.8
+  )`;
+}
+
+/**
+ * Keyword product search.
+ *
+ * Was: load every product for the business into Node, then require EVERY word of the
+ * query to appear as a literal substring of the title or description. That could not match
+ * "Runner sneaker" to "Running Sneakers" ("running" does not contain "runner"), threw away
+ * "ceramic flower vest" despite two of three words matching exactly, and could never match
+ * a Bangla query against an English catalogue. Customers were told the product did not
+ * exist while it sat in the database.
+ *
+ * Now: one indexed pg_trgm lookup against product.searchText, which carries the title,
+ * description, category, variant titles, SKUs and the product's Bangla/Banglish/synonym
+ * keywords (see packages/api/src/lib/product-search-text.ts). Typos, inflections and both
+ * languages all fall out of the same query, ranked by relevance.
+ */
 export async function searchProductsByKeyword(
   businessId: string,
   keyword: string,
   limit = 10,
 ) {
+  const query = stripSearchFiller(keyword);
+  if (!query) return [];
+
+  const score = productMatchScore(query);
   const rows = await db
-    .select()
+    .select({ row: product, score })
     .from(product)
-    .where(and(eq(product.businessId, businessId), eq(product.status, "active")));
-  const normalized = keyword.trim().toLowerCase();
-  const words = normalized.split(/\s+/).filter(Boolean);
-  const matches = rows.filter((p) => {
-    const t = (p.title ?? "").toLowerCase();
-    const d = (p.description ?? "").toLowerCase();
-    return words.every((w) => t.includes(w) || d.includes(w));
-  });
-  return matches.slice(0, limit);
+    .where(
+      and(
+        eq(product.businessId, businessId),
+        eq(product.status, "active"),
+        gte(score, PRODUCT_MATCH_THRESHOLD),
+      ),
+    )
+    .orderBy(desc(score))
+    .limit(limit);
+
+  return rows.map((r) => r.row);
 }
 
 /**
@@ -292,16 +367,33 @@ export async function discoverProducts(
     if (cur === undefined || v.price < cur) minPriceByProduct.set(v.productId, v.price);
   }
 
-  const keywordWords = filters.keyword?.trim().toLowerCase().split(/\s+/).filter(Boolean) ?? [];
+  // Same trigram scoring as searchProductsByKeyword. This helper had an identical
+  // exact-substring bug, and it matters more: the system prompt tells the agent to prefer
+  // discoverProducts whenever a budget, gender or purpose is mentioned, so the broken
+  // matching was on the busier path.
+  const keyword = filters.keyword ? stripSearchFiller(filters.keyword) : "";
+  const matchedIds = keyword
+    ? new Set(
+        (
+          await db
+            .select({ id: product.id })
+            .from(product)
+            .where(
+              and(
+                eq(product.businessId, businessId),
+                eq(product.status, "active"),
+                gte(productMatchScore(keyword), PRODUCT_MATCH_THRESHOLD),
+              ),
+            )
+        ).map((r) => r.id),
+      )
+    : null;
   const gender = filters.gender?.trim().toLowerCase();
 
   const matches = rows
     .map((p) => ({ ...p, startingPrice: minPriceByProduct.get(p.id) ?? null }))
     .filter((p) => {
-      if (keywordWords.length > 0) {
-        const haystack = `${p.title} ${p.description ?? ""} ${p.category ?? ""}`.toLowerCase();
-        if (!keywordWords.every((w) => haystack.includes(w))) return false;
-      }
+      if (matchedIds && !matchedIds.has(p.id)) return false;
       if (gender && (p.gender ?? "").toLowerCase() !== gender) return false;
       if (filters.maxPrice !== undefined && (p.startingPrice === null || p.startingPrice > filters.maxPrice)) return false;
       if (filters.minPrice !== undefined && (p.startingPrice === null || p.startingPrice < filters.minPrice)) return false;
@@ -1123,15 +1215,33 @@ export async function getOfferByCode(businessId: string, code: string) {
 }
 
 // Get FAQ by query (simple)
+/**
+ * FAQ lookup.
+ *
+ * Was: the customer's ENTIRE message had to appear verbatim inside an FAQ's question or
+ * answer, so "apnader delivery koto din lage?" could never match an FAQ titled "Delivery
+ * time". In practice nothing ever matched unless a customer pasted the question exactly,
+ * which meant the FAQ feature silently did nothing.
+ *
+ * Now the same trigram similarity product search uses, against question and answer.
+ */
 export async function getFAQMatches(businessId: string, query: string, limit = 5) {
-  const rows = await db.select().from(faq).where(eq(faq.businessId, businessId));
-  const q = query.trim().toLowerCase();
-  const matches = rows.filter(
-    (r) =>
-      (r.question ?? "").toLowerCase().includes(q) ||
-      (r.answer ?? "").toLowerCase().includes(q),
-  );
-  return matches.slice(0, limit);
+  const q = stripSearchFiller(query);
+  if (!q) return [];
+
+  const score = sql<number>`GREATEST(
+    word_similarity(${q}, ${faq.question}),
+    word_similarity(${q}, ${faq.answer}) * 0.7
+  )`;
+
+  const rows = await db
+    .select({ row: faq, score })
+    .from(faq)
+    .where(and(eq(faq.businessId, businessId), gte(score, PRODUCT_MATCH_THRESHOLD)))
+    .orderBy(desc(score))
+    .limit(limit);
+
+  return rows.map((r) => r.row);
 }
 
 // Get low stock products using dynamic lowStockThreshold settings

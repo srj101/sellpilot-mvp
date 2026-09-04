@@ -209,8 +209,8 @@ export function ProductsClient() {
   }
 
   function downloadTemplate() {
-    const header = "title,category,gender,price,discountPercent,stockQty,description,rating,imageUrl\n";
-    const sample = "Ceramic Flower Vase,Decor,,450,10,20,Hand-finished ceramic vase,,https://example.com/vase.jpg\n";
+    const header = "title,category,gender,price,discountPercent,stockQty,description,rating,imageUrl,searchKeywords\n";
+    const sample = "Ceramic Flower Vase,Decor,,450,10,20,Hand-finished ceramic vase,,https://example.com/vase.jpg,\"ফুলদানি, phuldani, flower pot\"\n";
     const blob = new Blob([header + sample], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

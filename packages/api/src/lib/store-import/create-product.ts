@@ -3,7 +3,8 @@ import type { db as Db } from "@acme/db/client";
 
 import type { NormalizedProduct } from "./types";
 import { processImageUrl } from "../s3";
-import { queueProductImageIndexing } from "../queue";
+import { queueProductImageIndexing, queueProductKeywordIndexing } from "../queue";
+import { rebuildProductSearchText } from "../product-search-text";
 
 export interface CreateProductInput {
   normalized: NormalizedProduct;
@@ -102,6 +103,15 @@ export async function createProductFromNormalized(
       });
     }
   }
+
+  // Same as the manual create path: searchText immediately so the product is findable now,
+  // keywords on the queue so a 200-product import isn't 200 serial model calls.
+  await rebuildProductSearchText(ctx.db, newProduct.id);
+  queueProductKeywordIndexing({
+    businessId: ctx.businessId,
+    productId: newProduct.id,
+    productTitle: newProduct.title,
+  });
 
   return newProduct;
 }

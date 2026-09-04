@@ -21,6 +21,32 @@ export const product = pgTable("product", {
     .default([])
     .notNull(),
   rating: integer("rating"),
+
+  /**
+   * Merchant-owned search terms — the words a customer might type that don't appear in
+   * the title or description. Pre-filled once by AI on create (Bangla script, romanized
+   * Bangla, synonyms, common misspellings) and freely editable afterwards, because the
+   * shop owner knows their customers better than a model does: when people search "keds"
+   * and find nothing, they can fix it without an engineer.
+   *
+   * Kept separate from searchText so rebuilding the derived column never destroys a
+   * merchant's edits.
+   */
+  searchKeywords: text("search_keywords"),
+
+  /**
+   * Everything searchable about this product, flattened and lowercased: title,
+   * description, category, gender, variant titles, SKUs and searchKeywords. Derived —
+   * never written by hand, rebuilt on every product write (see rebuildProductSearchText).
+   *
+   * This column, not the individual fields, is what the pg_trgm GIN index covers. Product
+   * search used to load every row for a business into Node and do exact substring
+   * matching, which meant "Runner sneaker" could not find "Running Sneakers" and a
+   * Bangla query could not find anything at all. One indexed trigram query over this
+   * column replaces all of it.
+   */
+  searchText: text("search_text"),
+
   status: text("status").default("active").notNull(), // active, draft, archived
   lowStockThreshold: integer("low_stock_threshold").default(5).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

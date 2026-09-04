@@ -7,7 +7,8 @@ import { product, productVariant, subscription } from "@acme/db/schema";
 
 import { deleteProductImageFromVectorDb, searchProductsByImage } from "../lib/vector-search";
 import { assertPlanLimit, getProductUsage } from "../lib/plan-limits";
-import { queueProductImageIndexing } from "../lib/queue";
+import { queueProductImageIndexing, queueProductKeywordIndexing } from "../lib/queue";
+import { rebuildProductSearchText } from "../lib/product-search-text";
 import { deleteS3Object, getPresignedUploadUrl, getPublicUrl, getS3ObjectSize, processImageUrl } from "../lib/s3";
 import { getStockStatus } from "../lib/stock-status";
 import { enqueueActivityLog } from "../lib/activity-queue";
@@ -41,6 +42,9 @@ const ProductInput = z.object({
   variants: z.array(VariantInput),
   rating: z.number().int().min(1).max(5).optional(),
   lowStockThreshold: z.number().min(0).optional(),
+  /** Merchant-editable search terms. Left empty on create, AI fills it; once the merchant
+   * has written their own, generation stops overwriting them. */
+  searchKeywords: z.string().max(2000).optional(),
 });
 
 /**
@@ -153,6 +157,7 @@ export const productsRouter = {
         description: input.description,
         category: input.category,
         gender: input.gender ?? null,
+        searchKeywords: input.searchKeywords?.trim() || null,
         status: input.status,
         images: processedImages,
         options: input.options,
@@ -207,6 +212,16 @@ export const productsRouter = {
       }
     }
 
+    // searchText first, synchronously: it is built from data already saved, so the product
+    // is findable the moment this call returns rather than only after the queue drains.
+    // Keywords widen that net afterwards, off the request path.
+    await rebuildProductSearchText(ctx.db, newProduct.id);
+    void queueProductKeywordIndexing({
+      businessId,
+      productId: newProduct.id,
+      productTitle: newProduct.title,
+    });
+
     await enqueueActivityLog({
       businessId,
       actorUserId: ctx.session.user.id,
@@ -243,6 +258,14 @@ export const productsRouter = {
       })),
     );
 
+    // Captured before the write so keyword regeneration can be limited to edits that
+    // actually change what the product IS — see the check after the update.
+    const [previous] = await ctx.db
+      .select({ title: product.title, category: product.category })
+      .from(product)
+      .where(and(eq(product.id, productId), eq(product.businessId, businessId)))
+      .limit(1);
+
     const [updatedProduct] = await ctx.db
       .update(product)
       .set({
@@ -250,6 +273,7 @@ export const productsRouter = {
         description: input.description,
         category: input.category,
         gender: input.gender ?? null,
+        searchKeywords: input.searchKeywords?.trim() || null,
         status: input.status,
         images: processedImages,
         options: input.options,
@@ -353,6 +377,18 @@ export const productsRouter = {
       }
     }
 
+    await rebuildProductSearchText(ctx.db, updatedProduct.id);
+    // Only regenerate keywords when what they describe actually changed. Editing a price
+    // or stock level must not spend an LLM call, and must not risk overwriting keywords a
+    // merchant tuned by hand.
+    if (previous?.title !== updatedProduct.title || previous.category !== updatedProduct.category) {
+      void queueProductKeywordIndexing({
+        businessId,
+        productId: updatedProduct.id,
+        productTitle: updatedProduct.title,
+      });
+    }
+
     await enqueueActivityLog({
       businessId,
       actorUserId: ctx.session.user.id,
@@ -432,6 +468,7 @@ export const productsRouter = {
         // 1-5; anything rounding below 1 means unrated rather than a fabricated one star.
         rating: ratingInt(),
         imageUrl: z.string().optional(),
+        searchKeywords: z.string().max(2000).optional(),
       })).min(1).max(500),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -475,6 +512,7 @@ export const productsRouter = {
             images: processedImageUrl ? [processedImageUrl] : [],
             options: [],
             rating: p.rating ?? null,
+            searchKeywords: p.searchKeywords?.trim() || null,
           })
           .returning();
 
@@ -497,6 +535,13 @@ export const productsRouter = {
               productTitle: p.title,
             });
           }
+
+          await rebuildProductSearchText(ctx.db, newProduct.id);
+          void queueProductKeywordIndexing({
+            businessId,
+            productId: newProduct.id,
+            productTitle: newProduct.title,
+          });
 
           results.push(newProduct);
         }

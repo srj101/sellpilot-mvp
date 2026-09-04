@@ -236,9 +236,9 @@ export function StepAddProducts({ businessSlug, onNext }: { businessSlug: string
   }
 
   function downloadTemplate() {
-    const header = "title,category,gender,price,discountPercent,stockQty,description,rating,imageUrl\n";
+    const header = "title,category,gender,price,discountPercent,stockQty,description,rating,imageUrl,searchKeywords\n";
     const sample =
-      "Classic White T-Shirt,Fashion & Apparel,unisex,500,10,25,100% cotton crewneck tee,,https://example.com/tshirt.jpg\n";
+      "Classic White T-Shirt,Fashion & Apparel,unisex,500,10,25,100% cotton crewneck tee,,https://example.com/tshirt.jpg,\"টি-শার্ট, tshirt, gonji\"\n";
     const blob = new Blob([header + sample], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
