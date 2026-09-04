@@ -156,7 +156,39 @@ async function initializeAIHelpers() {
         submitReview: aiHelpers.submitReview,
       },
       businessHelpers: {
-        getBusinessProfile: aiHelpers.getBusinessProfile,
+        /**
+         * Sanitized on the way in, deliberately.
+         *
+         * aiHelpers.getBusinessProfile returns the whole business_profile row, and this
+         * helper feeds two things that both leave our infrastructure: the system prompt,
+         * and the getBusinessProfile tool, whose result is JSON.stringify'd straight to
+         * the model. Passing the raw row therefore sent the store's live SSLCommerz store
+         * id and password to OpenAI on every conversation, and into LangSmith traces with
+         * them. The agent has no use for a payment credential — only for whether one
+         * exists — so it gets a boolean and never the value.
+         *
+         * Whitelist, not blacklist: a column added to business_profile later must not
+         * silently start leaking because nobody remembered to exclude it here.
+         */
+        getBusinessProfile: async (businessId) => {
+          const row = await aiHelpers.getBusinessProfile(businessId);
+          if (!row) return null;
+          return {
+            name: row.name,
+            description: row.description,
+            industry: row.industry,
+            currency: row.currency,
+            supportEmail: row.supportEmail,
+            supportPhone: row.supportPhone,
+            agentName: row.agentName,
+            conversationTone: row.conversationTone,
+            preferredLanguage: row.preferredLanguage,
+            // Whether this store can take online payment at all. A store with no gateway
+            // configured must never be told to offer a payment link: the link would
+            // generate fine and lead to a checkout that can never be completed.
+            onlinePaymentEnabled: Boolean(row.sslcommerzStoreId && row.sslcommerzStorePassword),
+          };
+        },
         getOfferByCode: aiHelpers.getOfferByCode,
         getComboOffersForProduct: aiHelpers.getComboOffersForProduct,
         getFrequentlyBoughtTogether: aiHelpers.getFrequentlyBoughtTogether,

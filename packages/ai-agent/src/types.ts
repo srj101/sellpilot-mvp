@@ -127,6 +127,13 @@ export interface BusinessProfileSnapshot {
   conversationTone?: string | null;
   /** "auto" | "bangla" | "english" */
   preferredLanguage?: string | null;
+  /**
+   * Whether the store has a working SSLCommerz gateway — derived in the worker
+   * (apps/worker/src/index.ts) so the credentials themselves never reach this package.
+   * False means COD is the only payment method that exists for this store, and the agent
+   * must not offer a link to a checkout nobody can complete.
+   */
+  onlinePaymentEnabled?: boolean;
 }
 
 // ============================================
