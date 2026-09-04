@@ -23,6 +23,7 @@ import {
 } from "@acme/db/schema";
 
 import { sendMetaInboxReply } from "../lib/meta";
+import { getPresignedUploadUrl, getPublicUrl } from "../lib/s3";
 import { enqueueActivityLog } from "../lib/activity-queue";
 import { buildInboxData } from "../lib/meta-inbox";
 import { getQueueStatus } from "../lib/queue-status";
@@ -122,6 +123,22 @@ export const inboxRouter = {
       return { threads: data.threads, selectedThread, connections, markedRead };
     }),
 
+  /**
+   * Presigned upload for an image a staff member wants to send to a customer.
+   *
+   * Returns a key, not a URL, and sendReply takes the key — so the send path can only
+   * ever reference something uploaded to our own bucket, never an arbitrary host supplied
+   * by a caller.
+   */
+  getReplyImageUploadUrl: permissionProcedure("inbox", "edit")
+    .input(z.object({ contentType: z.string().regex(/^image\/(png|jpe?g|webp)$/) }))
+    .mutation(async ({ ctx, input }) => {
+      const ext = input.contentType.split("/")[1]?.replace("jpeg", "jpg") ?? "png";
+      const key = `inbox-replies/${ctx.businessId}/${crypto.randomUUID()}.${ext}`;
+      const uploadUrl = await getPresignedUploadUrl(key, input.contentType);
+      return { uploadUrl, key };
+    }),
+
   sendReply: permissionProcedure("inbox", "edit")
     .input(
       z.object({
@@ -129,11 +146,20 @@ export const inboxRouter = {
         platform: z.enum(["facebook_page", "instagram", "whatsapp"]),
         accountId: z.string(),
         recipientId: z.string(),
-        message: z.string().min(1),
+        message: z.string(),
+        /** S3 key of an image to send alongside the text, from getReplyImageUploadUrl.
+         * A key rather than a URL so a caller cannot make us fetch an arbitrary host. */
+        imageKey: z.string().max(500).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const businessId = ctx.businessId;
+
+      // An image on its own is a valid message — a shop owner sending a photo of a
+      // product should not have to type something to go with it.
+      if (!input.message.trim() && !input.imageKey) {
+        return { ok: false as const, reason: "Nothing to send." };
+      }
 
       const [connection] = await ctx.db
         .select()
@@ -168,12 +194,15 @@ export const inboxRouter = {
         return { ok: false as const, reason: "Missing access token for this channel." };
       }
 
+      const imageUrl = input.imageKey ? getPublicUrl(input.imageKey) : undefined;
+
       const sent = await sendMetaInboxReply({
         platform: input.platform,
         accessToken,
         accountId: input.platform === "instagram" ? (connection.facebookPageId ?? input.accountId) : input.accountId,
         recipientId: input.recipientId,
         text: input.message,
+        imageUrl,
       });
 
       await ctx.db.insert(metaWebhookEvent).values({
@@ -197,6 +226,9 @@ export const inboxRouter = {
           accountId: input.accountId,
           platform: input.platform,
           text: input.message,
+          // Read back by meta-inbox.ts's outbound branch so the photo appears in the
+          // merchant's own thread, not just in the customer's chat.
+          imageUrl,
           response: sent.raw,
         },
         headers: {},
