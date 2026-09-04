@@ -31,7 +31,7 @@ export const env = createEnv({
 
     OPENAI_API_KEY: z.string().optional(),
     OPENAI_BASE_URL: z.string().optional(),
-    OPENAI_MODEL: z.string().default("gpt-4o-mini"),
+    OPENAI_MODEL: z.string().default("gpt-5.4-mini"),
 
     // Image/text embeddings for image search — optional: without it, image
     // indexing/search just no-ops (see packages/api/src/lib/embeddings.ts).
