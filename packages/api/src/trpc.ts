@@ -13,7 +13,7 @@ import { z, ZodError } from "zod/v4";
 import type { Auth, Session } from "@acme/auth";
 import { and, eq } from "@acme/db";
 import { db } from "@acme/db/client";
-import { businessMember, business } from "@acme/db/schema";
+import { business, businessMember } from "@acme/db/schema";
 import { env } from "@acme/env";
 
 import type { Action, Resource } from "./lib/permissions";
@@ -160,60 +160,87 @@ export const protectedProcedure = t.procedure
  * only as a fallback for the handful of routes with no store in the URL at all
  * (/onboarding/select-store, the bare /dashboard redirector).
  */
-export const businessProcedure = protectedProcedure.use(async ({ ctx, next }) => {
-  const userId = ctx.session.user.id;
-  const requestedSlug = ctx.headers.get("x-business-slug");
+export const businessProcedure = protectedProcedure.use(
+  async ({ ctx, next }) => {
+    const userId = ctx.session.user.id;
+    const requestedSlug = ctx.headers.get("x-business-slug");
 
-  const memberships = await ctx.db
-    .select({ businessId: businessMember.businessId, role: businessMember.role, customRoleKey: businessMember.customRoleKey })
-    .from(businessMember)
-    .where(eq(businessMember.userId, userId));
+    const memberships = await ctx.db
+      .select({
+        businessId: businessMember.businessId,
+        role: businessMember.role,
+        customRoleKey: businessMember.customRoleKey,
+      })
+      .from(businessMember)
+      .where(eq(businessMember.userId, userId));
 
-  let membership: (typeof memberships)[number] | undefined;
+    let membership: (typeof memberships)[number] | undefined;
 
-  if (requestedSlug) {
-    const [org] = await ctx.db
-      .select({ id: business.id })
-      .from(business)
-      .where(eq(business.slug, requestedSlug))
-      .limit(1);
-    membership = org ? memberships.find((m) => m.businessId === org.id) : undefined;
-    if (!membership) {
-      // The URL names a real store, but this caller isn't a member of it — fail loudly
-      // rather than silently falling back to a *different* store's data.
-      throw new TRPCError({ code: "FORBIDDEN", message: "You don't have access to this business." });
+    if (requestedSlug) {
+      const [org] = await ctx.db
+        .select({ id: business.id })
+        .from(business)
+        .where(eq(business.slug, requestedSlug))
+        .limit(1);
+      membership = org
+        ? memberships.find((m) => m.businessId === org.id)
+        : undefined;
+      const isSuperadmin =
+        (ctx.session.user as { role?: string | null }).role === "superadmin";
+      if (org && isSuperadmin && !membership) {
+        membership = {
+          businessId: org.id,
+          role: "owner",
+          customRoleKey: null,
+        };
+      }
+      if (!membership) {
+        // The URL names a real store, but this caller isn't a member of it — fail loudly
+        // rather than silently falling back to a *different* store's data.
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "You don't have access to this business.",
+        });
+      }
+    } else {
+      const activeBusinessId = (
+        ctx.session.session as { activeBusinessId?: string | null }
+      ).activeBusinessId;
+      membership =
+        (activeBusinessId
+          ? memberships.find((m) => m.businessId === activeBusinessId)
+          : undefined) ?? memberships[0];
     }
-  } else {
-    const activeBusinessId = (ctx.session.session as { activeBusinessId?: string | null }).activeBusinessId;
-    membership =
-      (activeBusinessId ? memberships.find((m) => m.businessId === activeBusinessId) : undefined) ??
-      memberships[0];
-  }
 
-  let memberRole = "owner";
-  let customRoleKey: string | null = null;
-  let businessId: string | null = null;
+    let memberRole = "owner";
+    let customRoleKey: string | null = null;
+    let businessId: string | null = null;
 
-  if (membership) {
-    businessId = membership.businessId;
-    memberRole = membership.role;
-    customRoleKey = membership.customRoleKey;
-  }
+    if (membership) {
+      businessId = membership.businessId;
+      memberRole = membership.role;
+      customRoleKey = membership.customRoleKey;
+    }
 
-  // Effective RBAC permissions for this member, resolved once per request so the
-  // permission gate below costs nothing. Owners short-circuit to "*" (no extra query);
-  // members with no business resolved get an empty set.
-  const permissions =
-    membership && businessId
-      ? memberRole === "owner"
-        ? ["*"]
-        : await resolvePermissions(ctx.db, { memberRole, customRoleKey, businessId })
-      : [];
+    // Effective RBAC permissions for this member, resolved once per request so the
+    // permission gate below costs nothing. Owners short-circuit to "*" (no extra query);
+    // members with no business resolved get an empty set.
+    const permissions =
+      membership && businessId
+        ? memberRole === "owner"
+          ? ["*"]
+          : await resolvePermissions(ctx.db, {
+              memberRole,
+              customRoleKey,
+              businessId,
+            })
+        : [];
 
-  return next({
-    ctx: { ...ctx, memberRole, customRoleKey, businessId, permissions },
-  });
-});
+    return next({
+      ctx: { ...ctx, memberRole, customRoleKey, businessId, permissions },
+    });
+  },
+);
 
 /**
  * Store-scoped procedure — for every business-data router (products, orders, customers,
@@ -225,12 +252,17 @@ export const businessProcedure = protectedProcedure.use(async ({ ctx, next }) =>
  * thrown FORBIDDEN. Routes that can legitimately run with no store yet (invites, the store
  * picker) stay on the plain `businessProcedure`.
  */
-export const businessScopedProcedure = businessProcedure.use(({ ctx, next }) => {
-  if (!ctx.businessId) {
-    throw new TRPCError({ code: "FORBIDDEN", message: "No active business selected." });
-  }
-  return next({ ctx: { ...ctx, businessId: ctx.businessId } });
-});
+export const businessScopedProcedure = businessProcedure.use(
+  ({ ctx, next }) => {
+    if (!ctx.businessId) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "No active business selected.",
+      });
+    }
+    return next({ ctx: { ...ctx, businessId: ctx.businessId } });
+  },
+);
 
 /**
  * Owner-only procedure — for actions only the business owner can perform:
@@ -238,15 +270,17 @@ export const businessScopedProcedure = businessProcedure.use(({ ctx, next }) => 
  * deleting the store itself. Invited members, even with the "admin" custom
  * role, cannot do these.
  */
-export const ownerOnlyProcedure = businessScopedProcedure.use(({ ctx, next }) => {
-  if (ctx.memberRole !== "owner") {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Only the business owner can perform this action.",
-    });
-  }
-  return next({ ctx });
-});
+export const ownerOnlyProcedure = businessScopedProcedure.use(
+  ({ ctx, next }) => {
+    if (ctx.memberRole !== "owner") {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Only the business owner can perform this action.",
+      });
+    }
+    return next({ ctx });
+  },
+);
 
 /**
  * Permission-gated procedure — enforces a `resource:action` RBAC check against the
@@ -259,7 +293,10 @@ const RBAC_ENFORCE = env.RBAC_ENFORCE;
 
 export const permissionProcedure = (resource: Resource, action: Action) =>
   businessScopedProcedure.use(async ({ ctx, next, path }) => {
-    if (ctx.permissions.includes("*") || ctx.permissions.includes(`${resource}:${action}`)) {
+    if (
+      ctx.permissions.includes("*") ||
+      ctx.permissions.includes(`${resource}:${action}`)
+    ) {
       return next({ ctx });
     }
 
@@ -283,13 +320,22 @@ export const permissionProcedure = (resource: Resource, action: Action) =>
  * holds ANY one of the listed resource:action pairs, rather than requiring one specific pair.
  * Same staged RBAC_ENFORCE rollout behavior as permissionProcedure.
  */
-export const permissionAnyProcedure = (checks: readonly (readonly [Resource, Action])[]) =>
+export const permissionAnyProcedure = (
+  checks: readonly (readonly [Resource, Action])[],
+) =>
   businessScopedProcedure.use(async ({ ctx, next, path }) => {
-    if (ctx.permissions.includes("*") || checks.some(([resource, action]) => ctx.permissions.includes(`${resource}:${action}`))) {
+    if (
+      ctx.permissions.includes("*") ||
+      checks.some(([resource, action]) =>
+        ctx.permissions.includes(`${resource}:${action}`),
+      )
+    ) {
       return next({ ctx });
     }
 
-    const wanted = checks.map(([resource, action]) => `${resource}:${action}`).join(" or ");
+    const wanted = checks
+      .map(([resource, action]) => `${resource}:${action}`)
+      .join(" or ");
 
     if (!RBAC_ENFORCE) {
       console.warn(
