@@ -499,7 +499,14 @@ export function buildInboxData({
         asString(rawPayload.accountLabel) ?? defaultAccountLabel(connection);
 
       let imageUrl: string | undefined = undefined;
-      if (direction === "inbound") {
+      if (direction === "outbound") {
+        // Images the shop sent. This branch did not exist: the extractor only looked at
+        // inbound attachments, so even once outbound images were logged the merchant's
+        // thread would still have shown the agent's sentence with no picture beside it.
+        // Written flat by logOutboundImage and inbox.sendReply rather than in a platform
+        // payload shape, because we produced it — there is no webhook to parse.
+        imageUrl = asString(rawPayload.imageUrl);
+      } else {
         if (event.platform === "whatsapp") {
           const val = extractWhatsAppValue(rawPayload);
           const msgs = asArray(val.messages);

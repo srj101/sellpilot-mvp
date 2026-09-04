@@ -246,6 +246,27 @@ async function initializeAIHelpers() {
         };
 
         const sendResult = await mediaMessagingService.sendImage(connection, connectionContext.recipientId, imageUrl);
+
+        // Mirror it into the merchant's own inbox. Without this the customer received a
+        // photo on Messenger while the shop owner saw only the agent's sentence ("chobi
+        // pathiye diyechi") with nothing beside it — they could not see what their own
+        // shop had sent. Best-effort: a logging failure must not turn a delivered image
+        // into a reported failure.
+        if (sendResult.success) {
+          await aiHelpers
+            .logOutboundImage({
+              businessId,
+              threadId: `${connectionContext.platform}:${connectionContext.recipientId}`,
+              platform: connectionContext.platform,
+              platformAccountId: connectionContext.accountId,
+              recipientId: connectionContext.recipientId,
+              messageId: sendResult.messageId,
+              imageUrl,
+              caption: productResult.product.title,
+            })
+            .catch((err) => console.error("[sendImageFn] Failed to log outbound image:", err));
+        }
+
         return { success: sendResult.success, error: sendResult.error };
       },
     });

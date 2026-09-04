@@ -1695,8 +1695,56 @@ export async function logOutboundMessage(params: {
   });
 }
 
+/**
+ * Record a product image the agent sent to the customer.
+ *
+ * sendProductImage delivered the image to Messenger and returned, logging nothing — so
+ * the customer saw a photo while the merchant's own inbox showed only the agent's text
+ * ("chobi pathiye diyechi") with no image beside it. The merchant could not see what
+ * their own shop had sent.
+ *
+ * Deliberately a separate row from the text reply rather than a field on it: the image
+ * and the sentence are two messages in the customer's chat, and the inbox should show the
+ * same two.
+ */
+export async function logOutboundImage(params: {
+  businessId: string;
+  threadId: string;
+  platform: string;
+  platformAccountId: string;
+  recipientId?: string;
+  messageId?: string;
+  imageUrl: string;
+  caption?: string;
+}): Promise<void> {
+  const { businessId, threadId, platform, platformAccountId, recipientId, messageId, imageUrl, caption } =
+    params;
+
+  await db.insert(metaWebhookEvent).values({
+    dedupeKey: `outbound:aiimage:${platform}:${threadId}:${Date.now()}:${crypto.randomUUID()}`,
+    platform,
+    object: "page",
+    eventType: "outbound",
+    businessId,
+    platformAccountId,
+    threadId,
+    sourceId: messageId ?? null,
+    rawPayload: {
+      direction: "outbound",
+      threadKey: threadId,
+      recipientId: recipientId ?? null,
+      text: caption ?? "",
+      // Read back by meta-inbox.ts to render the image in the merchant's thread.
+      imageUrl,
+    },
+    status: "sent",
+    sentBy: "ai",
+  });
+}
+
 // Export a convenience map of functions
 export const aiHelpers = {
+  logOutboundImage,
   getTopSellingProducts,
   getProductById,
   listActiveProducts,
