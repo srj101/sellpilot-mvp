@@ -221,7 +221,7 @@ export function AiObservability() {
             ))}
 
             <div className="mt-4 rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
-              <span className="font-semibold text-foreground">Model Cost Reference:</span> Multi-tenant prompt caching is active. Primary response engine: <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">gpt-4o-mini</code> ($0.15/1M in, $0.60/1M out). Vision model: <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">gpt-4o-mini-vision</code>.
+              <span className="font-semibold text-foreground">Model Cost Reference:</span> Multi-tenant prompt caching is active. Primary response engine: <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-semibold text-primary">{data?.kpis.activeModel ?? "gpt-5.4-mini"}</code> ($0.15/1M in, $0.60/1M out). Vision model: <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-semibold text-foreground">gpt-5.4-mini-vision</code>.
             </div>
           </CardContent>
         </Card>

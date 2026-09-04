@@ -18,6 +18,7 @@ import { createQueue } from "@acme/queue";
 
 import { PLAN_CATALOG, type PlanKey } from "../lib/plans";
 import { superadminProcedure } from "../trpc";
+import { env } from "@acme/env";
 
 /**
  * Superadmin router — platform owner / developer only.
@@ -532,6 +533,7 @@ export const superadminRouter = {
 
     return {
       kpis: {
+        activeModel: env.OPENAI_MODEL,
         totalConversationsUsed,
         totalTokens,
         estimatedPromptTokens,
