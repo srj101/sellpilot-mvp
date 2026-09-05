@@ -50,6 +50,10 @@
     "./media-storage": {
       "types": "./dist/lib/media-storage.d.ts",
       "default": "./src/lib/media-storage.ts"
+    },
+    "./image-compress": {
+      "types": "./dist/lib/image-compress.d.ts",
+      "default": "./src/lib/image-compress.ts"
     }
   },
   "license": "MIT",
@@ -75,7 +79,8 @@
     "@trpc/server": "catalog:",
     "bullmq": "^5.79.3",
     "superjson": "2.2.3",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "sharp": "^0.34.4"
   },
   "devDependencies": {
     "@acme/eslint-config": "workspace:*",

@@ -33,6 +33,8 @@ import { runReviewRequestSweep } from "./handlers/review-request.js";
 import { handleOrderStatusNotify } from "./handlers/order-status-notify.js";
 import { handleActivityLog } from "./handlers/activity-log.js";
 import { runMediaRetentionSweep } from "./handlers/media-retention.js";
+import { setImageCompressor } from "@acme/api/media-storage";
+import { compressImageWithSharp } from "@acme/api/image-compress";
 import {
   handleContactAvatarFetch,
   handleContactNameSync,
@@ -84,6 +86,12 @@ if (config.queueProvider === "redis") {
     })
   );
 }
+
+// Customer photos arrive straight from a phone camera and are wildly oversized for a chat
+// archive — measured, this halves what conversation media costs a merchant's plan. The
+// compressor is injected rather than imported by media-storage so the Next.js image never
+// carries sharp's native binary.
+setImageCompressor(compressImageWithSharp);
 
 // Initialize AI helpers (lazy loaded to avoid circular deps)
 async function initializeAIHelpers() {

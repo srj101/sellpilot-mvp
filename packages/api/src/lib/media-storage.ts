@@ -39,6 +39,28 @@ const OVERAGE_CEILING = 1.5;
  * outright rather than allowed to eat a plan in one request. */
 const MAX_SINGLE_FILE_BYTES = 25 * 1024 * 1024;
 
+/**
+ * Image compression, injected rather than imported.
+ *
+ * The compressor uses sharp, a native module. This file is reachable from the Next.js
+ * server bundle — the inbox router calls recordExistingObject — and Next refuses to
+ * bundle sharp from a workspace package ("Package sharp can't be external"). Injection
+ * keeps a 30MB platform-specific binary out of the web image entirely, and matches how
+ * every other cross-boundary dependency in this repo is wired.
+ *
+ * Unset means store the original. Compression is an optimisation; losing a customer's
+ * photo because a compressor was not registered is not a trade worth making.
+ */
+export type ImageCompressor = (
+  buffer: Buffer,
+) => Promise<{ buffer: Buffer; contentType: string } | null>;
+
+let imageCompressor: ImageCompressor | null = null;
+
+export function setImageCompressor(fn: ImageCompressor): void {
+  imageCompressor = fn;
+}
+
 export type StoreMediaResult =
   | { stored: true; key: string; url: string; bytes: number; overQuota: boolean }
   | { stored: false; reason: "ceiling_reached" | "too_large" | "fetch_failed" | "empty" };
@@ -114,6 +136,18 @@ export async function storeMediaFromUrl(params: {
 
   if (buffer.byteLength === 0) return { stored: false, reason: "empty" };
   if (buffer.byteLength > MAX_SINGLE_FILE_BYTES) return { stored: false, reason: "too_large" };
+
+  if ((kind === "image" || kind === "avatar") && imageCompressor) {
+    try {
+      const compressed = await imageCompressor(buffer);
+      if (compressed) {
+        buffer = compressed.buffer;
+        contentType = compressed.contentType;
+      }
+    } catch (err) {
+      console.warn("[media-storage] Compression failed, storing original:", err);
+    }
+  }
 
   const extension = extensionFor(kind, contentType);
   const key = `conversations/${businessId}/${kind}/${crypto.randomUUID()}${extension}`;
@@ -262,6 +296,16 @@ export async function pruneExpiredMedia(
   return { deleted: expired.length, bytesFreed };
 }
 
+/**
+ * Phone camera photos are wildly oversized for a chat archive — a customer's 630KB, 3000px
+ * product photo is displayed in a thread at a few hundred pixels and downloaded on a
+ * phone. Re-encoding at a sane size is the difference between a merchant's 3GB lasting
+ * months and lasting weeks.
+ *
+ * Voice notes deliberately get NO equivalent. Messenger and WhatsApp already deliver them
+ * as Opus at 14-16KB — close to optimal for speech — and squeezing a couple more KB out
+ * would mean an ffmpeg binary in the image for no meaningful gain.
+ */
 function extensionFor(kind: MediaKind, contentType?: string): string {
   if (contentType?.includes("png")) return ".png";
   if (contentType?.includes("webp")) return ".webp";

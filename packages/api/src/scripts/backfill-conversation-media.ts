@@ -15,7 +15,11 @@ import { asc, eq } from "@acme/db";
 import { db } from "@acme/db/client";
 import { conversationMedia, metaConnection, metaWebhookEvent } from "@acme/db/schema";
 
-import { storeMediaFromUrl } from "../lib/media-storage";
+import { setImageCompressor, storeMediaFromUrl } from "../lib/media-storage";
+import { compressImageWithSharp } from "../lib/image-compress";
+
+// Rescued files go through the same compression as newly arriving ones.
+setImageCompressor(compressImageWithSharp);
 
 const dryRun = process.argv.includes("--dry-run");
 
