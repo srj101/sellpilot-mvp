@@ -2,9 +2,9 @@ import type { TRPCRouterRecord } from "@trpc/server";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod/v4";
 
-import { and, count, desc, eq } from "@acme/db";
+import { and, count, desc, eq, sum } from "@acme/db";
 import type { db as Db } from "@acme/db/client";
-import { business, businessMember, order, paymentMethod, product, saasInvoice, subscription } from "@acme/db/schema";
+import { business, businessMember, conversationMedia, order, paymentMethod, product, saasInvoice, subscription } from "@acme/db/schema";
 import { env } from "@acme/env";
 
 import type { BillingCycle, PlanKey } from "../lib/plans";
@@ -144,15 +144,32 @@ export const subscriptionRouter = {
     const planKey = (sub?.plan as PlanKey | undefined) ?? "starter";
     const limits = PLAN_CATALOG[planKey].limits;
 
-    const [productsRow, seatsRow, invoicesRow, storageMetrics] = await Promise.all([
+    const [productsRow, seatsRow, invoicesRow, storageMetrics, mediaRows] = await Promise.all([
       ctx.db.select({ value: count() }).from(product).where(eq(product.businessId, ctx.businessId)),
       ctx.db.select({ value: count() }).from(businessMember).where(eq(businessMember.businessId, ctx.businessId)),
       ctx.db.select({ value: count() }).from(order).where(eq(order.businessId, ctx.businessId)),
       getStorageUsage(ctx),
+      ctx.db
+        .select({ kind: conversationMedia.kind, bytes: sum(conversationMedia.bytes) })
+        .from(conversationMedia)
+        .where(eq(conversationMedia.businessId, ctx.businessId))
+        .groupBy(conversationMedia.kind),
     ]);
     const productsUsed = productsRow[0]?.value ?? 0;
     const seatsUsed = seatsRow[0]?.value ?? 0;
     const invoicesUsed = invoicesRow[0]?.value ?? 0;
+
+    const byKind = new Map(mediaRows.map((r) => [r.kind, Number(r.bytes ?? 0)]));
+    const conversationBytes =
+      (byKind.get("image") ?? 0) + (byKind.get("audio") ?? 0) + (byKind.get("avatar") ?? 0);
+    const storageBreakdown = {
+      conversationImages: byKind.get("image") ?? 0,
+      voiceNotes: byKind.get("audio") ?? 0,
+      contactAvatars: byKind.get("avatar") ?? 0,
+      // The remainder is product media, which predates conversation_media and is tracked
+      // only as a total. Floored at zero so a stale counter cannot render a negative bar.
+      productMedia: Math.max(0, storageMetrics.usedBytes - conversationBytes),
+    };
 
     const pct = (used: number, limit: number | null) => (limit === null ? null : Math.min(100, Math.round((used / limit) * 100)));
 
@@ -177,6 +194,10 @@ export const subscriptionRouter = {
         limitGb: storageMetrics.limitGb,
         limitBytes: storageMetrics.limitBytes,
         pct: storageMetrics.percentage,
+        // Broken out so a merchant nearing their limit can see WHAT is filling it. A bare
+        // "you are at 92%" with no breakdown leaves them nothing to act on but upgrade.
+        // Anything not in conversation_media is product media, which is the remainder.
+        breakdown: storageBreakdown,
       },
     };
   }),

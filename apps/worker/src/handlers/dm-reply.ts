@@ -15,6 +15,8 @@ import {
 } from "@acme/ai-agent";
 import type { ThreadCancelBroadcast } from "@acme/queue";
 import { searchProductsByImage } from "@acme/api/vector-search";
+import { storeMediaFromUrl } from "@acme/api/media-storage";
+import { db } from "@acme/db/client";
 import { getMetaContactName } from "@acme/api/resolve-contact-names";
 import { getConversationSummary, generateAndSaveConversationSummary, getCustomerForThread, getBusinessProfile, createNotification, escalateToHuman, getRecentProductsForThread } from "@acme/db/helpers/aiHelpers";
 
@@ -113,6 +115,56 @@ const MAX_PARALLEL_IMAGES = 8;
 
 function imageCapForPlan(planKey: keyof typeof PLAN_CATALOG): number {
   return Math.min(PLAN_CATALOG[planKey].limits.multiProductCartLimit, MAX_PARALLEL_IMAGES);
+}
+
+/**
+ * Archive a customer's attachments to our own storage.
+ *
+ * Every failure is swallowed: this is a background archive of something already delivered,
+ * and no part of it should be able to affect the customer's reply.
+ */
+async function persistIncomingMedia(params: {
+  businessId: string;
+  threadId: string;
+  eventId: string;
+  platform: string;
+  accessToken: string;
+  imageUrls: string[];
+  audioUrls: string[];
+  transcript?: string;
+}): Promise<void> {
+  // WhatsApp's lookaside media URLs require the connection's token; Messenger and
+  // Instagram CDN URLs are pre-signed and must NOT carry an Authorization header.
+  const authToken = params.platform === "whatsapp" ? params.accessToken : undefined;
+
+  const jobs = [
+    ...params.imageUrls.map((url) => ({ url, kind: "image" as const, transcript: undefined })),
+    ...params.audioUrls.map((url) => ({ url, kind: "audio" as const, transcript: params.transcript })),
+  ];
+
+  for (const job of jobs) {
+    try {
+      const result = await storeMediaFromUrl({
+        db,
+        businessId: params.businessId,
+        sourceUrl: job.url,
+        kind: job.kind,
+        threadId: params.threadId,
+        messageEventId: params.eventId,
+        transcript: job.transcript,
+        authToken,
+      });
+      if (!result.stored) {
+        console.warn(`[DMReply] Did not archive ${job.kind}: ${result.reason}`);
+      } else if (result.overQuota) {
+        console.warn(
+          `[DMReply] ${params.businessId} is over its storage plan — still archiving, see OVERAGE_CEILING`,
+        );
+      }
+    } catch (err) {
+      console.warn(`[DMReply] Failed to archive ${job.kind}:`, err);
+    }
+  }
 }
 
 const config = loadConfig();
@@ -373,6 +425,32 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
       }
     }
   }
+
+  /**
+   * Keep our own copy of whatever the customer sent.
+   *
+   * Meta's media URLs expire — Messenger photos in about 30 days, and WhatsApp media in
+   * HOURS, as three files that vanished before a backfill could reach them demonstrated.
+   * Storing only the URL meant a merchant's conversation history quietly turned into
+   * broken thumbnails weeks later, with nothing to connect it back to a cause.
+   *
+   * Fire-and-forget: the customer is waiting for a reply, and archiving their photo must
+   * never be the reason it is slow or fails. Runs after the reply path has what it needs,
+   * so a slow S3 write costs nothing.
+   */
+  void persistIncomingMedia({
+    businessId: data.businessId,
+    threadId: data.threadId,
+    eventId: data.eventId,
+    platform: data.platform,
+    accessToken: data.accessToken,
+    imageUrls: incomingImages ?? [],
+    audioUrls: incomingAudio ?? [],
+    // The transcript is generated above and otherwise thrown away after one turn. Stored
+    // with the audio so a merchant can READ a voice note in their inbox instead of
+    // downloading and playing it — on a phone, in a shop, that is the whole difference.
+    transcript: audioUrl ? messageText : undefined,
+  });
 
   // Capped here rather than at createOrder, which is where the plan limit used to be
   // enforced — by then every image has already been downloaded and embedded.

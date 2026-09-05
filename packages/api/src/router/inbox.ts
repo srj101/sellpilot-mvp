@@ -24,6 +24,7 @@ import {
 
 import { sendMetaInboxReply } from "../lib/meta";
 import { getPresignedUploadUrl, getPublicUrl } from "../lib/s3";
+import { recordExistingObject } from "../lib/media-storage";
 import { enqueueActivityLog } from "../lib/activity-queue";
 import { buildInboxData } from "../lib/meta-inbox";
 import { getQueueStatus } from "../lib/queue-status";
@@ -195,6 +196,15 @@ export const inboxRouter = {
       }
 
       const imageUrl = input.imageKey ? getPublicUrl(input.imageKey) : undefined;
+
+      // Staff reply images land in S3 via a presigned PUT, which counts nothing — one of
+      // several paths that consumed real storage while the merchant's usage figure stood
+      // still. Best-effort: a failure to count must not stop the message going out.
+      if (input.imageKey) {
+        void recordExistingObject(ctx.db, businessId, input.imageKey, "image", {
+          threadId: input.threadId,
+        }).catch((err) => console.warn("[inbox] Failed to count reply image storage:", err));
+      }
 
       const sent = await sendMetaInboxReply({
         platform: input.platform,

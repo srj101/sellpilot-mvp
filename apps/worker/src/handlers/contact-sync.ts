@@ -10,6 +10,7 @@ import { and, eq, inArray, isNull, lt, or, sql } from "@acme/db";
 import { db } from "@acme/db/client";
 import { metaConnection, metaContact } from "@acme/db/schema";
 import { uploadContactAvatar } from "@acme/api/s3";
+import { recordExistingObject } from "@acme/api/media-storage";
 import type { ContactAvatarFetchJob, ContactNameSyncJob, Job } from "@acme/queue";
 import { env } from "@acme/env";
 
@@ -199,6 +200,15 @@ export async function handleContactAvatarFetch(job: Job<ContactAvatarFetchJob>):
     previousHash: existing?.avatarHash,
   });
   if (!uploaded) return;
+
+  // Counted only when the image actually changed. uploadContactAvatar skips the write
+  // when the hash matches, and re-counting an unchanged file would inflate the merchant's
+  // usage a little more on every refresh sweep until the number was meaningless.
+  if (uploaded.changed) {
+    await recordExistingObject(db, businessId, uploaded.key, "avatar").catch((err: unknown) =>
+      console.warn("[contact-sync] Failed to count avatar storage:", err),
+    );
+  }
 
   await db
     .update(metaContact)

@@ -32,6 +32,7 @@ import { runConversationFollowUp } from "./handlers/conversation-followup.js";
 import { runReviewRequestSweep } from "./handlers/review-request.js";
 import { handleOrderStatusNotify } from "./handlers/order-status-notify.js";
 import { handleActivityLog } from "./handlers/activity-log.js";
+import { runMediaRetentionSweep } from "./handlers/media-retention.js";
 import {
   handleContactAvatarFetch,
   handleContactNameSync,
@@ -419,6 +420,18 @@ function registerHandlers() {
     await handleContactAvatarFetch(job);
   });
 
+  // Daily, not hourly: retention windows are measured in months, so anything more
+  // frequent is pure churn against S3 for files that were not old an hour ago either.
+  const rescheduleMediaRetention = () =>
+    void queue.enqueue("media-retention-sweep", {}, { delay: DAY_MS, jobId: "media-retention-sweep-loop" });
+  queue.process(
+    "media-retention-sweep",
+    async () => {
+      await runMediaRetentionSweep();
+    },
+    { onCompleted: rescheduleMediaRetention, onFailed: rescheduleMediaRetention },
+  );
+
   const rescheduleContactRefresh = () =>
     void queue.enqueue("contact-refresh-sweep", {}, { delay: HOUR_MS, jobId: "contact-refresh-sweep-loop" });
   queue.process(
@@ -442,6 +455,7 @@ function scheduleBillingJobs() {
   void queue.enqueue("conversation-followup", {}, { delay: initialDelayMs, jobId: "conversation-followup-loop" });
   void queue.enqueue("review-request-sweep", {}, { delay: initialDelayMs, jobId: "review-request-sweep-loop" });
   void queue.enqueue("contact-refresh-sweep", {}, { delay: initialDelayMs, jobId: "contact-refresh-sweep-loop" });
+  void queue.enqueue("media-retention-sweep", {}, { delay: initialDelayMs, jobId: "media-retention-sweep-loop" });
 }
 
 // Graceful shutdown

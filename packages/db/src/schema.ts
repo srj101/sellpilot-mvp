@@ -35,3 +35,4 @@ export * from "./inbox-schema";
 export * from "./billing-schema";
 export * from "./activity-schema";
 export * from "./bug-report-schema";
+export * from "./conversation-media-schema";

@@ -65,6 +65,45 @@ function Meter({ label, used, limit, customDisplay }: { label: string; used: num
   );
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 B";
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function StorageBreakdown({
+  breakdown,
+}: {
+  breakdown?: {
+    conversationImages: number;
+    voiceNotes: number;
+    contactAvatars: number;
+    productMedia: number;
+  } | null;
+}) {
+  if (!breakdown) return null;
+
+  const rows = [
+    { label: "Product photos", bytes: breakdown.productMedia },
+    { label: "Customer photos", bytes: breakdown.conversationImages },
+    { label: "Voice messages", bytes: breakdown.voiceNotes },
+    { label: "Contact pictures", bytes: breakdown.contactAvatars },
+  ].filter((r) => r.bytes > 0);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="text-muted-foreground -mt-2 flex flex-wrap gap-x-4 gap-y-1 pl-1 text-xs">
+      {rows.map((r) => (
+        <span key={r.label}>
+          {r.label} <span className="text-foreground font-medium">{formatBytes(r.bytes)}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function BillingClient({ businessSlug }: { businessSlug: string }) {
   const trpc = useTRPC();
   const qc = useQueryClient();
@@ -400,6 +439,9 @@ export function BillingClient({ businessSlug }: { businessSlug: string }) {
               <Meter label="Team Seats" used={usage?.seats.used ?? 0} limit={usage?.seats.limit ?? null} />
               <Meter label="Invoices" used={usage?.invoices.used ?? 0} limit={usage?.invoices.limit ?? null} />
               <Meter label="Media Storage" used={usage?.storage?.usedBytes ?? 0} limit={usage?.storage?.limitBytes ?? 3221225472} customDisplay={`${usage?.storage?.usedGb ?? "0.00"} GB / ${usage?.storage?.limitGb ?? 3} GB`} />
+              {/* What is actually filling it. A meter at 92% with no breakdown gives the
+                  merchant nothing to act on except upgrading. */}
+              <StorageBreakdown breakdown={usage?.storage?.breakdown} />
             </>
           )}
         </CardContent>
