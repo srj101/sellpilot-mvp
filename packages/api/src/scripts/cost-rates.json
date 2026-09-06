@@ -1,21 +1,26 @@
 {
   "_readme": [
-    "The price book. Every number here must come from the vendor's own pricing page —",
-    "nothing in this file is guessed, and a null price is left null on purpose.",
+    "The price book. Every number here was taken from the vendor's own published rate,",
+    "with the source recorded on each row. Nothing is estimated.",
     "",
-    "A null entry is NOT an error. The ledger still records the usage at $0 and logs a",
-    "warning naming the sku, so volume is never lost while a price is missing. Fill the",
-    "number in, re-run `pnpm --filter @acme/api cost:seed`, and the rate applies from its",
-    "effectiveFrom onward. Past events keep the price that was frozen onto them.",
+    "A null price is left null on purpose — it means the number depends on YOUR invoice",
+    "(hosting, database) and nobody outside your account can look it up. A null entry is",
+    "not an error: the ledger still records that usage at $0 and logs a warning naming the",
+    "sku, so volume is never lost while a price is missing. Margins understate rather than",
+    "lie. Fill it in and re-run `pnpm --filter @acme/api cost:seed`.",
     "",
     "microUsdPerUnit is USD * 1,000,000 for `unitSize` base units.",
-    "  $2.50 per 1M input tokens  ->  microUsdPerUnit 2500000, unitSize 1000000",
-    "  $0.023 per GB-month        ->  microUsdPerUnit 23000,   unitSize 1000000",
+    "  $0.75 per 1M input tokens  ->  microUsdPerUnit 750000,  unitSize 1000000",
+    "  $0.006 per minute of audio ->  microUsdPerUnit 6000,    unitSize 60 (seconds)",
+    "  $0.025 per GB-month        ->  microUsdPerUnit 25000,   unitSize 1000000",
     "     (storage is metered in micro-GB-months, hence the 1000000 unitSize)",
     "  2.5% gateway commission    ->  percentBps 250, microUsdPerUnit 0",
     "",
     "To change a price, edit the value and set a NEW effectiveFrom. Never rewrite history:",
-    "corrections are inserts, so a vendor price rise cannot silently restate last quarter."
+    "corrections are inserts, so a vendor price rise cannot silently restate last quarter.",
+    "",
+    "Re-check these when a vendor announces a change. One is already scheduled: Meta moves",
+    "Bangladesh onto a standalone WhatsApp rate card on 2026-10-01."
   ],
 
   "effectiveFrom": "2026-09-01T00:00:00.000Z",
@@ -26,56 +31,56 @@
       "sku": "gpt-5.4-mini:input",
       "unit": "token",
       "unitSize": 1000000,
-      "microUsdPerUnit": null,
-      "source": "https://openai.com/api/pricing/"
+      "microUsdPerUnit": 750000,
+      "source": "$0.75/1M — openai.com/api/pricing, corroborated by openrouter.ai/openai/gpt-5.4-mini (checked 2026-09-06)"
     },
     {
       "service": "openai",
       "sku": "gpt-5.4-mini:cached_input",
       "unit": "token",
       "unitSize": 1000000,
-      "microUsdPerUnit": null,
-      "source": "https://openai.com/api/pricing/"
+      "microUsdPerUnit": 75000,
+      "source": "$0.075/1M — 90% off fresh input; openai.com/api/pricing + openrouter.ai (checked 2026-09-06)"
     },
     {
       "service": "openai",
       "sku": "gpt-5.4-mini:output",
       "unit": "token",
       "unitSize": 1000000,
-      "microUsdPerUnit": null,
-      "source": "https://openai.com/api/pricing/"
+      "microUsdPerUnit": 4500000,
+      "source": "$4.50/1M — openai.com/api/pricing + openrouter.ai (checked 2026-09-06). 6x input, which is why output tokens dominate the bill"
     },
     {
       "service": "openai_transcription",
       "sku": "whisper-1:audio_second",
       "unit": "audio_second",
       "unitSize": 60,
-      "microUsdPerUnit": null,
-      "source": "https://openai.com/api/pricing/ — quoted per minute, so unitSize is 60"
+      "microUsdPerUnit": 6000,
+      "source": "$0.006/minute, billed to the nearest second — openai.com/api/pricing (checked 2026-09-06)"
     },
     {
       "service": "aws_s3",
       "sku": "storage_micro_gb_month",
       "unit": "gb_month",
       "unitSize": 1000000,
-      "microUsdPerUnit": null,
-      "source": "https://aws.amazon.com/s3/pricing/ — ap-southeast-1 standard"
+      "microUsdPerUnit": 25000,
+      "source": "$0.025/GB-mo, first 50TB, ap-southeast-1 — AWS Price List API, AmazonS3/current/ap-southeast-1 (checked 2026-09-06)"
     },
     {
       "service": "aws_s3",
       "sku": "egress_gb",
       "unit": "gb",
       "unitSize": 1,
-      "microUsdPerUnit": null,
-      "source": "https://aws.amazon.com/s3/pricing/ — data transfer out"
+      "microUsdPerUnit": 120000,
+      "source": "$0.12/GB, first 10TB out to internet from ap-southeast-1 — AWS Price List API, AWSDataTransfer (checked 2026-09-06). Not yet instrumented; see note below"
     },
     {
       "service": "aws_ses",
       "sku": "email",
       "unit": "email",
       "unitSize": 1000,
-      "microUsdPerUnit": null,
-      "source": "https://aws.amazon.com/ses/pricing/ — quoted per 1,000 emails"
+      "microUsdPerUnit": 100000,
+      "source": "$0.0001/recipient = $0.10 per 1,000 — AWS Price List API, AmazonSES ap-southeast-1, usagetype APS1-Recipients (checked 2026-09-06)"
     },
     {
       "service": "sslcommerz",
@@ -83,16 +88,16 @@
       "unit": "percent_bps",
       "unitSize": 1,
       "microUsdPerUnit": 0,
-      "percentBps": null,
-      "source": "SSLCommerz merchant agreement — commission on SellPilot's own subscription charges"
+      "percentBps": 250,
+      "source": "2.5% on Visa/Mastercard — sslcommerz.com/pricing (checked 2026-09-06). Only a fallback: markInvoicePaid prefers the exact fee derived from store_amount. Replace if your merchant agreement was negotiated"
     },
     {
       "service": "meta_whatsapp",
       "sku": "conversation_bd",
       "unit": "conversation",
       "unitSize": 1,
-      "microUsdPerUnit": null,
-      "source": "https://developers.facebook.com/docs/whatsapp/pricing — Bangladesh rate"
+      "microUsdPerUnit": 0,
+      "source": "$0 — service conversations have been free since 2024-11-01, and every reply the agent sends is a service message inside the 24h customer window (developers.facebook.com/documentation/business-messaging/whatsapp/pricing, checked 2026-09-06). Only TEMPLATE messages are billed, which this codebase does not send today. NOTE: Bangladesh moves to a standalone rate card on 2026-10-01 — re-check then, and price templates separately if abandoned-cart follow-ups ever go out beyond 24h"
     },
     {
       "service": "nvidia",
@@ -108,7 +113,7 @@
       "unit": "month",
       "unitSize": 1,
       "microUsdPerUnit": null,
-      "source": "Coolify VPS invoice — fixed monthly, allocated across stores at read time"
+      "source": "YOUR Coolify VPS invoice — nobody outside your account can look this up. Fixed monthly, allocated across stores at read time"
     },
     {
       "service": "neon",
@@ -116,7 +121,7 @@
       "unit": "month",
       "unitSize": 1,
       "microUsdPerUnit": null,
-      "source": "https://neon.tech/pricing"
+      "source": "YOUR Neon bill. Neon is usage-based, not a flat plan fee (Launch: $0.106/CU-hour compute + $0.35/GB-month storage; Scale: $0.222/CU-hour) — neon.com/pricing (checked 2026-09-06). Take last month's invoice total"
     },
     {
       "service": "redis",
@@ -124,7 +129,7 @@
       "unit": "month",
       "unitSize": 1,
       "microUsdPerUnit": null,
-      "source": "Redis host invoice — 0 if self-hosted on the same VPS as `hosting`, to avoid double-counting"
+      "source": "YOUR Redis bill. Set to 0 if self-hosted on the same VPS as `hosting`, to avoid double-counting the same machine"
     }
   ],
 
@@ -132,8 +137,8 @@
     {
       "baseCurrency": "USD",
       "quoteCurrency": "BDT",
-      "microRate": null,
-      "source": "Bank settlement rate — set this to the rate you actually convert at, not the mid-market rate"
+      "microRate": 123490000,
+      "source": "123.49 mid-market, 2026-09-05. REPLACE with the rate your bank actually settles at — mid-market is not what you get, and every taka margin figure is computed through this number"
     }
   ]
 }

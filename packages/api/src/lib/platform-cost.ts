@@ -265,16 +265,22 @@ export async function recordLlmUsage(params: {
 }
 
 /**
- * Convert micro-USD to whole taka using the rate in force at a given moment.
+ * Convert micro-USD to MICRO-taka using the rate in force at a given moment.
  *
  * Read-time rather than write-time: the ledger is kept in the currency we are actually
  * billed in, and taka is a presentation concern. Doing it the other way would bake one
  * day's exchange rate into permanent history.
  *
+ * Micro-taka, not whole taka. A single reply costs a fraction of a taka — measured, one
+ * reply plus a short voice note is about ৳0.32 — so rounding to whole taka here reported
+ * every individual cost as ৳0 and only came right once totals grew large. Returning
+ * micro-units keeps per-event figures meaningful and matches every other money value in
+ * this module; divide by MICRO at the point of display.
+ *
  * Falls back to 0 when no rate is seeded, and says so — a silent guess at the taka rate is
  * the kind of number that ends up in a pricing decision.
  */
-export async function microUsdToBdt(
+export async function microUsdToMicroBdt(
   db: typeof Db,
   microUsd: number,
   at: Date = new Date(),
@@ -297,7 +303,9 @@ export async function microUsdToBdt(
     return 0;
   }
 
-  return Math.round((microUsd * row.microRate) / (MICRO * MICRO));
+  // microUsd * (microRate / MICRO) = micro-BDT, with the division done last to keep the
+  // intermediate exact.
+  return Math.round((microUsd * row.microRate) / MICRO);
 }
 
 /**
