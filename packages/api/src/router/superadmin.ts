@@ -1,7 +1,7 @@
 import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod/v4";
 
-import { and, desc, eq, inArray, sql } from "@acme/db";
+import { and, desc, eq, gte, inArray, sql } from "@acme/db";
 import {
   activityLog,
   agentSession,
@@ -12,14 +12,17 @@ import {
   metaWebhookEvent,
   notification,
   order,
+  platformCostDaily,
   platformSettings,
   product,
+  saasInvoice,
   subscription,
   user,
 } from "@acme/db/schema";
 import { createQueue } from "@acme/queue";
 
-import { PLAN_CATALOG, type PlanKey } from "../lib/plans";
+import { PLAN_CATALOG, PLAN_KEYS, type PlanKey } from "../lib/plans";
+import { microUsdToMicroBdt, MICRO } from "../lib/platform-cost";
 import { superadminProcedure } from "../trpc";
 import { env } from "@acme/env";
 
@@ -842,5 +845,174 @@ export const superadminRouter = {
       });
 
       return { success: true };
+    }),
+
+  /**
+   * Platform economics — revenue, spend and margin, in one place for the first time.
+   *
+   * getPlatformOverview above answers "how much are merchants selling" (their GMV).
+   * Nothing anywhere answered "are WE profitable" — every input existed (subscription
+   * revenue, the cost ledger from platform-cost.ts) and none of it had ever been joined.
+   *
+   * Revenue is read from saasInvoice (status="paid", by paidAt) rather than
+   * subscription.amount: the invoice is the actual cash event, dated to the day it
+   * happened, which is what a day-by-day revenue line needs. subscription.amount is a
+   * snapshot of the *current* charge and has no history.
+   *
+   * Cost is read from platformCostDaily, never platformCostEvent directly — the rollup
+   * exists exactly so this query stays a handful of grouped sums instead of scanning raw
+   * usage rows. Converted to taka at TODAY's FX rate for display; the underlying ledger
+   * stays in USD, which is the currency every vendor actually bills in.
+   *
+   * Deliberately omitted: a "cost per conversation" figure. The ledger prices tokens,
+   * audio-seconds and emails — not "one reply" as its own countable unit — and deriving
+   * that count from event rows would be a guess dressed up as a metric. Worth adding once
+   * dm_reply gets a dedicated per-reply counter; better absent than approximate here.
+   */
+  getPlatformEconomics: superadminProcedure
+    .input(z.object({ days: z.number().min(7).max(180).default(30) }).default({ days: 30 }))
+    .query(async ({ ctx, input }) => {
+      const cutoff = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
+
+      const [revenueByDayRows, costByDayRows, costBySourceRows, revenueByStoreRows, costByStoreRows, storesRow, fixedCostRow] =
+        await Promise.all([
+          ctx.db
+            .select({
+              day: sql<string>`date_trunc('day', ${saasInvoice.paidAt})::date`,
+              takaCents: sql<number>`sum(${saasInvoice.amount})::int`,
+            })
+            .from(saasInvoice)
+            .where(and(eq(saasInvoice.status, "paid"), gte(saasInvoice.paidAt, cutoff)))
+            .groupBy(sql`1`)
+            .orderBy(sql`1`),
+
+          ctx.db
+            .select({
+              day: sql<string>`${platformCostDaily.day}::date`,
+              microUsd: sql<number>`sum(${platformCostDaily.costMicroUsd})::bigint`,
+            })
+            .from(platformCostDaily)
+            .where(gte(platformCostDaily.day, cutoff))
+            .groupBy(platformCostDaily.day)
+            .orderBy(platformCostDaily.day),
+
+          ctx.db
+            .select({
+              source: platformCostDaily.source,
+              microUsd: sql<number>`sum(${platformCostDaily.costMicroUsd})::bigint`,
+            })
+            .from(platformCostDaily)
+            .where(gte(platformCostDaily.day, cutoff))
+            .groupBy(platformCostDaily.source)
+            .orderBy(sql`2 desc`),
+
+          ctx.db
+            .select({
+              businessId: saasInvoice.businessId,
+              taka: sql<number>`sum(${saasInvoice.amount})::int`,
+            })
+            .from(saasInvoice)
+            .where(and(eq(saasInvoice.status, "paid"), gte(saasInvoice.paidAt, cutoff)))
+            .groupBy(saasInvoice.businessId),
+
+          ctx.db
+            .select({
+              businessId: platformCostDaily.businessId,
+              microUsd: sql<number>`sum(${platformCostDaily.costMicroUsd})::bigint`,
+            })
+            .from(platformCostDaily)
+            .where(gte(platformCostDaily.day, cutoff))
+            .groupBy(platformCostDaily.businessId),
+
+          ctx.db
+            .select({ id: business.id, name: business.name, plan: subscription.plan })
+            .from(business)
+            .leftJoin(subscription, eq(subscription.businessId, business.id)),
+
+          // businessId IS NULL rows are platform-wide fixed cost — not attributable to any
+          // one store, so kept out of the per-store table and surfaced only in the totals.
+          ctx.db
+            .select({ microUsd: sql<number>`coalesce(sum(${platformCostDaily.costMicroUsd}), 0)::bigint` })
+            .from(platformCostDaily)
+            .where(and(gte(platformCostDaily.day, cutoff), sql`${platformCostDaily.businessId} is null`)),
+        ]);
+
+      // A dashboard estimate, not a frozen accounting record — the underlying event rows
+      // keep their own point-in-time rate regardless of what this reads today.
+      const toTaka = async (microUsd: number) => Math.round((await microUsdToMicroBdt(ctx.db, microUsd)) / MICRO);
+
+      const revenueByDay = new Map(revenueByDayRows.map((r) => [r.day, r.takaCents]));
+      const costByDayTaka = new Map<string, number>();
+      for (const r of costByDayRows) costByDayTaka.set(r.day, await toTaka(Number(r.microUsd)));
+
+      const days = [...new Set([...revenueByDay.keys(), ...costByDayTaka.keys()])].sort();
+      const series = days.map((day) => ({
+        day,
+        revenueTaka: revenueByDay.get(day) ?? 0,
+        costTaka: costByDayTaka.get(day) ?? 0,
+      }));
+
+      const costBySource = await Promise.all(
+        costBySourceRows.map(async (r) => ({
+          source: r.source,
+          costTaka: await toTaka(Number(r.microUsd)),
+        })),
+      );
+
+      const revenueByStore = new Map(revenueByStoreRows.map((r) => [r.businessId, r.taka]));
+      const costByStoreTaka = new Map<string, number>();
+      for (const r of costByStoreRows) {
+        if (r.businessId) costByStoreTaka.set(r.businessId, await toTaka(Number(r.microUsd)));
+      }
+
+      const storeNames = new Map(storesRow.map((s) => [s.id, { name: s.name, plan: s.plan as PlanKey | null }]));
+
+      const storeIds = new Set([...revenueByStore.keys(), ...costByStoreTaka.keys()].filter((id): id is string => !!id));
+      const perStore = [...storeIds]
+        .map((businessId) => {
+          const revenueTaka = revenueByStore.get(businessId) ?? 0;
+          const costTaka = costByStoreTaka.get(businessId) ?? 0;
+          return {
+            businessId,
+            businessName: storeNames.get(businessId)?.name ?? "Unknown store",
+            plan: storeNames.get(businessId)?.plan ?? null,
+            revenueTaka,
+            costTaka,
+            marginTaka: revenueTaka - costTaka,
+          };
+        })
+        // Losses first — that is the question a superadmin opens this screen to answer.
+        .sort((a, b) => a.marginTaka - b.marginTaka);
+
+      const marginByPlan = PLAN_KEYS.map((plan) => {
+        const rows = perStore.filter((s) => s.plan === plan);
+        return {
+          plan,
+          revenueTaka: rows.reduce((sum, s) => sum + s.revenueTaka, 0),
+          costTaka: rows.reduce((sum, s) => sum + s.costTaka, 0),
+          storeCount: rows.length,
+        };
+      });
+
+      const totalRevenueTaka = perStore.reduce((sum, s) => sum + s.revenueTaka, 0);
+      const totalStoreCostTaka = perStore.reduce((sum, s) => sum + s.costTaka, 0);
+      const fixedCostTaka = await toTaka(Number(fixedCostRow[0]?.microUsd ?? 0));
+      const totalCostTaka = totalStoreCostTaka + fixedCostTaka;
+
+      return {
+        days: input.days,
+        kpis: {
+          revenueTaka: totalRevenueTaka,
+          costTaka: totalCostTaka,
+          fixedCostTaka,
+          marginTaka: totalRevenueTaka - totalCostTaka,
+          marginPct: totalRevenueTaka > 0 ? ((totalRevenueTaka - totalCostTaka) / totalRevenueTaka) * 100 : null,
+          losingStoreCount: perStore.filter((s) => s.marginTaka < 0).length,
+        },
+        series,
+        costBySource,
+        perStore,
+        marginByPlan,
+      };
     }),
 } satisfies TRPCRouterRecord;

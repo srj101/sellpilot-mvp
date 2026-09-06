@@ -27,6 +27,20 @@
   --chart-3: #f99c00;
   --chart-4: #3080ff;
   --chart-5: #8d54ff;
+  /* Superadmin economics dashboard only. The five --chart-N tokens above were built for
+   * on-brand accents (icon chips, badges) and fail the dataviz skill's CVD-separation
+   * check as a categorical set — chart-4/chart-5 measure ΔE 1.4 for deuteranopia, on the
+   * boundary of indistinguishable. A margin dashboard is exactly where a color mix-up is
+   * a real mistake, so these six are a separately validated set (see the dataviz skill's
+   * palette.md), not a replacement for --chart-N elsewhere. */
+  --econ-cat-1: #2a78d6;
+  --econ-cat-2: #eb6834;
+  --econ-cat-3: #1baf7a;
+  --econ-cat-4: #eda100;
+  --econ-cat-5: #e87ba4;
+  --econ-cat-6: #008300;
+  --econ-loss: #d03b3b;
+  --econ-neutral: #f0efec;
   --sidebar: #1c252e;
   --sidebar-foreground: #919eab;
   --sidebar-primary: #00926f;
@@ -94,6 +108,14 @@
     --chart-3: #f99c00;
     --chart-4: #3080ff;
     --chart-5: #8d54ff;
+    --econ-cat-1: #3987e5;
+    --econ-cat-2: #d95926;
+    --econ-cat-3: #199e70;
+    --econ-cat-4: #c98500;
+    --econ-cat-5: #d55181;
+    --econ-cat-6: #008300;
+    --econ-loss: #d03b3b;
+    --econ-neutral: #383835;
     --sidebar: #1c252e;
     --sidebar-foreground: #919eab;
     --sidebar-primary: #00ab81;

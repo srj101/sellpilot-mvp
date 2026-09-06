@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  DollarSign,
   History,
   LayoutDashboard,
   LogOut,
@@ -31,6 +32,7 @@ import { signOut } from "~/app/[businessSlug]/dashboard/(home)/actions";
 
 export type SuperadminTab =
   | "overview"
+  | "economics"
   | "stores"
   | "ai"
   | "queues"
@@ -57,6 +59,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Platform Overview",
     items: [
       { id: "overview", label: "Dashboard", icon: LayoutDashboard },
+      { id: "economics", label: "Economics", icon: DollarSign },
       { id: "stores", label: "Stores Directory", icon: Store },
     ],
   },

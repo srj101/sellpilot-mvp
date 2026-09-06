@@ -33,6 +33,7 @@ import { AiObservability } from "./ai-observability";
 import { BugReports } from "./bug-reports";
 import { ChannelHealth } from "./channel-health";
 import { PlatformAuditLogs } from "./platform-audit-logs";
+import { PlatformEconomics } from "./platform-economics";
 import { PlatformOverview } from "./platform-overview";
 import { PlatformPaymentSettings } from "./platform-payment-settings";
 import { QueueHealth } from "./queue-health";
@@ -114,6 +115,8 @@ export function SuperadminClient({
     <SuperadminShell activeTab={tab} onSelectTab={setTab} user={user}>
       {tab === "overview" ? (
         <PlatformOverview onSwitchTab={(t) => setTab(t)} />
+      ) : tab === "economics" ? (
+        <PlatformEconomics />
       ) : tab === "stores" ? (
         <StoresDirectory />
       ) : tab === "ai" ? (
