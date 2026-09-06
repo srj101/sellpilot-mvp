@@ -78,19 +78,19 @@
     "@aws-sdk/s3-request-presigner": "^3.1094.0",
     "@trpc/server": "catalog:",
     "bullmq": "^5.79.3",
+    "sharp": "^0.34.4",
     "superjson": "2.2.3",
-    "zod": "catalog:",
-    "sharp": "^0.34.4"
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@acme/eslint-config": "workspace:*",
     "@acme/prettier-config": "workspace:*",
     "@acme/tsconfig": "workspace:*",
+    "dotenv-cli": "^10.0.0",
     "eslint": "catalog:",
     "prettier": "catalog:",
-    "typescript": "catalog:",
     "tsx": "^4.7.0",
-    "dotenv-cli": "^10.0.0"
+    "typescript": "catalog:"
   },
   "prettier": "@acme/prettier-config"
 }
