@@ -4,3 +4,4 @@ import { twMerge } from "tailwind-merge";
 export const cn = (...inputs: Parameters<typeof cx>) => twMerge(cx(inputs));
 
 export { Slider } from "./slider";
+export * from "./table";

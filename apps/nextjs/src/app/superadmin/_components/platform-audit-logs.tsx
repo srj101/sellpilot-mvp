@@ -4,21 +4,16 @@ import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Activity,
   ArrowUpRight,
   ChevronDown,
   ChevronRight,
-  Filter,
   History,
   RefreshCw,
-  Search,
-  Shield,
-  User,
 } from "lucide-react";
 
 import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@acme/ui/card";
+import { Card, CardContent } from "@acme/ui/card";
 import { Input } from "@acme/ui/input";
 import { Skeleton } from "@acme/ui/skeleton";
 import { cn } from "@acme/ui";
@@ -74,7 +69,7 @@ export function PlatformAuditLogs() {
       log.summary.toLowerCase().includes(q) ||
       log.action.toLowerCase().includes(q) ||
       log.actorName.toLowerCase().includes(q) ||
-      (log.businessName && log.businessName.toLowerCase().includes(q))
+      (log.businessName?.toLowerCase().includes(q) ?? false)
     );
   });
 

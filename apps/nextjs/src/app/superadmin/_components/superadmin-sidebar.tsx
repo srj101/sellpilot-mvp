@@ -1,24 +1,19 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
   Activity,
   ArrowUpRight,
-  BellRing,
-  Bug,
   ChevronLeft,
   ChevronRight,
-  CreditCard,
   DollarSign,
-  History,
+  Inbox,
   LayoutDashboard,
+  LifeBuoy,
   LogOut,
   Menu,
-  Radio,
-  ShieldAlert,
   ShieldCheck,
-  Sparkles,
   Store,
   Users,
 } from "lucide-react";
@@ -31,9 +26,13 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@acme/ui/tooltip";
 import { signOut } from "~/app/[businessSlug]/dashboard/(home)/actions";
 
 export type SuperadminTab =
+  | "today"
   | "overview"
   | "economics"
   | "stores"
+  | "health"
+  | "support"
+  | "access"
   | "ai"
   | "queues"
   | "channels"
@@ -56,29 +55,20 @@ interface NavGroup {
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    title: "Platform Overview",
+    title: "Operations",
     items: [
-      { id: "overview", label: "Dashboard", icon: LayoutDashboard },
+      { id: "today", label: "Today's Queue", icon: Inbox },
+      { id: "overview", label: "Overview", icon: LayoutDashboard },
       { id: "economics", label: "Economics", icon: DollarSign },
       { id: "stores", label: "Stores Directory", icon: Store },
     ],
   },
   {
-    title: "System & AI Ops",
+    title: "System & Security",
     items: [
-      { id: "ai", label: "AI Observability", icon: Sparkles },
-      { id: "queues", label: "Queues & Workers", icon: Activity },
-      { id: "channels", label: "Channel Health", icon: Radio },
-      { id: "broadcasts", label: "System Broadcasts", icon: BellRing },
-    ],
-  },
-  {
-    title: "Administration & Security",
-    items: [
-      { id: "users", label: "Platform Users", icon: Users },
-      { id: "audit", label: "Security & Audit", icon: History },
-      { id: "payments", label: "Payment Gateways", icon: CreditCard },
-      { id: "bugs", label: "Bug Reports", icon: Bug },
+      { id: "health", label: "Platform Health", icon: Activity },
+      { id: "support", label: "Support & Comms", icon: LifeBuoy },
+      { id: "access", label: "Access & Security", icon: Users },
     ],
   },
 ];
@@ -137,7 +127,7 @@ function SidebarNavRow({
   item: NavItem;
   active: boolean;
   isCollapsed: boolean;
-  onClick: () => void;
+  onClick?: () => void;
 }) {
   const Icon = item.icon;
 
@@ -145,8 +135,8 @@ function SidebarNavRow({
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <button
-            type="button"
+          <Link
+            href={`/superadmin/${item.id}`}
             onClick={onClick}
             className={cn(
               "group relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-xl transition-all duration-150",
@@ -162,7 +152,7 @@ function SidebarNavRow({
               )}
             />
             <Icon className="h-4 w-4" />
-          </button>
+          </Link>
         </TooltipTrigger>
         <TooltipContent side="right" sideOffset={14}>
           {item.label}
@@ -172,8 +162,8 @@ function SidebarNavRow({
   }
 
   return (
-    <button
-      type="button"
+    <Link
+      href={`/superadmin/${item.id}`}
       onClick={onClick}
       className={cn(
         "group relative flex h-auto w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left text-[13px] font-medium transition-all duration-150",
@@ -202,7 +192,7 @@ function SidebarNavRow({
       {active && (
         <span className="bg-primary h-1.5 w-1.5 shrink-0 rounded-full" />
       )}
-    </button>
+    </Link>
   );
 }
 
@@ -212,10 +202,11 @@ export function SuperadminSidebar({
   user,
 }: {
   activeTab: SuperadminTab;
-  onSelectTab: (tab: SuperadminTab) => void;
+  onSelectTab?: (tab: SuperadminTab) => void;
   user?: { name: string; email: string; image?: string | null } | null;
 }) {
   const [collapsed, setCollapsed] = usePersistedCollapsed();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <>
@@ -279,7 +270,7 @@ export function SuperadminSidebar({
                       item={item}
                       active={activeTab === item.id}
                       isCollapsed={collapsed}
-                      onClick={() => onSelectTab(item.id)}
+                      onClick={() => onSelectTab?.(item.id)}
                     />
                   ))}
                 </div>
@@ -406,7 +397,7 @@ export function SuperadminSidebar({
 
       {/* Mobile Header Bar */}
       <div className="border-haze-divider bg-card/85 fixed top-0 right-0 left-0 z-40 flex h-14 items-center justify-between border-b px-4 shadow-md backdrop-blur-md md:hidden print:hidden">
-        <Sheet>
+        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
           <SheetTrigger asChild>
             <Button variant="ghost" size="icon" aria-label="Open menu">
               <Menu className="h-5 w-5" />
@@ -442,10 +433,13 @@ export function SuperadminSidebar({
                         const Icon = item.icon;
                         const active = activeTab === item.id;
                         return (
-                          <button
+                          <Link
                             key={item.id}
-                            type="button"
-                            onClick={() => onSelectTab(item.id)}
+                            href={`/superadmin/${item.id}`}
+                            onClick={() => {
+                              setMobileOpen(false);
+                              onSelectTab?.(item.id);
+                            }}
                             className={cn(
                               "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors",
                               active
@@ -455,7 +449,7 @@ export function SuperadminSidebar({
                           >
                             <Icon className="h-4 w-4" />
                             <span>{item.label}</span>
-                          </button>
+                          </Link>
                         );
                       })}
                     </div>

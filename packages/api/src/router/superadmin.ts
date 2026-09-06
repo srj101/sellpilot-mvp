@@ -1,7 +1,7 @@
 import type { TRPCRouterRecord } from "@trpc/server";
 import { z } from "zod/v4";
 
-import { and, desc, eq, gte, inArray, sql } from "@acme/db";
+import { and, desc, eq, gt, gte, inArray, lte, or, sql } from "@acme/db";
 import {
   activityLog,
   agentSession,
@@ -25,6 +25,27 @@ import { PLAN_CATALOG, PLAN_KEYS, type PlanKey } from "../lib/plans";
 import { microUsdToMicroBdt, MICRO } from "../lib/platform-cost";
 import { superadminProcedure } from "../trpc";
 import { env } from "@acme/env";
+
+export interface AttentionItem {
+  id: string;
+  businessId: string | null;
+  businessName: string;
+  businessSlug: string | null;
+  category:
+    | "past_due"
+    | "renewal_risk"
+    | "storage_limit"
+    | "channel_down"
+    | "bug_report"
+    | "unprofitable";
+  categoryLabel: string;
+  severity: "critical" | "warning" | "info";
+  title: string;
+  description: string;
+  actionUrl: string;
+  actionLabel: string;
+  timestamp: Date | string;
+}
 
 /**
  * Superadmin router — platform owner / developer only.
@@ -379,6 +400,105 @@ export const superadminRouter = {
     }),
 
   /**
+   * Complete store detail query for dedicated store route — Phase 2
+   */
+  getStoreDetail: superadminProcedure
+    .input(z.object({ businessId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const [b] = await ctx.db
+        .select({
+          id: business.id,
+          name: business.name,
+          slug: business.slug,
+          logo: business.logo,
+          createdAt: business.createdAt,
+        })
+        .from(business)
+        .where(eq(business.id, input.businessId))
+        .limit(1);
+
+      if (!b) return null;
+
+      const [owner] = await ctx.db
+        .select({
+          userId: user.id,
+          name: user.name,
+          email: user.email,
+          image: user.image,
+          banned: user.banned,
+          banReason: user.banReason,
+        })
+        .from(businessMember)
+        .innerJoin(user, eq(businessMember.userId, user.id))
+        .where(
+          and(
+            eq(businessMember.businessId, input.businessId),
+            eq(businessMember.role, "owner"),
+          ),
+        )
+        .limit(1);
+
+      const [memberCountRow] = await ctx.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(businessMember)
+        .where(eq(businessMember.businessId, input.businessId));
+
+      const [orderStatsRow] = await ctx.db
+        .select({
+          count: sql<number>`count(*)::int`,
+          gmv: sql<number>`coalesce(sum(case when status != 'cancelled' then total else 0 end), 0)::int`,
+        })
+        .from(order)
+        .where(eq(order.businessId, input.businessId));
+
+      const [productCountRow] = await ctx.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(product)
+        .where(eq(product.businessId, input.businessId));
+
+      const [subRow] = await ctx.db
+        .select({
+          id: subscription.id,
+          businessId: subscription.businessId,
+          plan: subscription.plan,
+          status: subscription.status,
+          amount: subscription.amount,
+          aiConversationsUsed: subscription.aiConversationsUsed,
+          extraConversations: subscription.extraConversations,
+          currentPeriodEnd: subscription.currentPeriodEnd,
+          storageUsedBytes: subscription.storageUsedBytes,
+          failedPaymentCount: subscription.failedPaymentCount,
+        })
+        .from(subscription)
+        .where(eq(subscription.businessId, input.businessId))
+        .limit(1);
+
+      const metaConns = await ctx.db
+        .select({
+          id: metaConnection.id,
+          platform: metaConnection.platform,
+          status: metaConnection.status,
+          platformAccountName: metaConnection.platformAccountName,
+          facebookPageName: metaConnection.facebookPageName,
+          instagramUsername: metaConnection.instagramUsername,
+          updatedAt: metaConnection.updatedAt,
+        })
+        .from(metaConnection)
+        .where(eq(metaConnection.businessId, input.businessId));
+
+      return {
+        ...b,
+        owner: owner ?? null,
+        membersCount: memberCountRow?.count ?? 0,
+        ordersCount: orderStatsRow?.count ?? 0,
+        totalGmv: orderStatsRow?.gmv ?? 0,
+        productsCount: productCountRow?.count ?? 0,
+        subscription: subRow ?? null,
+        metaConnections: metaConns,
+      };
+    }),
+
+  /**
    * Ban or unban a user account.
    * Banned users cannot log in.
    */
@@ -537,6 +657,43 @@ export const superadminRouter = {
     const totalEstimatedCostUsd = Number((totalConversationsUsed * 0.000188).toFixed(3));
     const totalEstimatedCostBdt = Math.round(totalEstimatedCostUsd * 120);
 
+    const aiSources = [
+      "dm_reply",
+      "comment_reply",
+      "conversation_followup",
+      "weekly_insights",
+      "copilot",
+      "product_keywords",
+      "transcription",
+    ];
+
+    const aiCostRows = await ctx.db
+      .select({
+        source: platformCostDaily.source,
+        microUsd: sql<number>`coalesce(sum(${platformCostDaily.costMicroUsd}), 0)::bigint`,
+      })
+      .from(platformCostDaily)
+      .where(inArray(platformCostDaily.source, aiSources))
+      .groupBy(platformCostDaily.source);
+
+    const toTaka = async (microUsd: number) =>
+      Math.round((await microUsdToMicroBdt(ctx.db, microUsd)) / MICRO);
+
+    let totalRecordedAiMicroUsd = 0;
+    const costByAiSource: { source: string; costUsd: number; costTaka: number }[] = [];
+    for (const row of aiCostRows) {
+      const mUsd = Number(row.microUsd);
+      totalRecordedAiMicroUsd += mUsd;
+      costByAiSource.push({
+        source: row.source,
+        costUsd: Number((mUsd / 1_000_000).toFixed(3)),
+        costTaka: await toTaka(mUsd),
+      });
+    }
+
+    const actualRecordedCostTaka = await toTaka(totalRecordedAiMicroUsd);
+    const actualRecordedCostUsd = Number((totalRecordedAiMicroUsd / 1_000_000).toFixed(3));
+
     return {
       kpis: {
         activeModel: env.OPENAI_MODEL,
@@ -546,6 +703,9 @@ export const superadminRouter = {
         estimatedCompletionTokens,
         totalEstimatedCostUsd,
         totalEstimatedCostBdt,
+        actualRecordedCostUsd,
+        actualRecordedCostTaka,
+        costByAiSource,
         totalAgentSessions,
         activeAiStores: storeLeaderboard.filter((s) => s.aiConversationsUsed > 0).length,
       },
@@ -1015,4 +1175,448 @@ export const superadminRouter = {
         marginByPlan,
       };
     }),
+
+  /**
+   * Per-store economics procedure — Phase 2
+   */
+  getStoreEconomics: superadminProcedure
+    .input(
+      z.object({
+        businessId: z.string(),
+        days: z.number().min(7).max(180).default(30),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const cutoff = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
+
+      const [revenueByDayRows, costByDayRows, costBySourceRows, storeRow] =
+        await Promise.all([
+          ctx.db
+            .select({
+              day: sql<string>`date_trunc('day', ${saasInvoice.paidAt})::date`,
+              taka: sql<number>`sum(${saasInvoice.amount})::int`,
+            })
+            .from(saasInvoice)
+            .where(
+              and(
+                eq(saasInvoice.businessId, input.businessId),
+                eq(saasInvoice.status, "paid"),
+                gte(saasInvoice.paidAt, cutoff),
+              ),
+            )
+            .groupBy(sql`1`)
+            .orderBy(sql`1`),
+
+          ctx.db
+            .select({
+              day: sql<string>`${platformCostDaily.day}::date`,
+              microUsd: sql<number>`sum(${platformCostDaily.costMicroUsd})::bigint`,
+            })
+            .from(platformCostDaily)
+            .where(
+              and(
+                eq(platformCostDaily.businessId, input.businessId),
+                gte(platformCostDaily.day, cutoff),
+              ),
+            )
+            .groupBy(platformCostDaily.day)
+            .orderBy(platformCostDaily.day),
+
+          ctx.db
+            .select({
+              source: platformCostDaily.source,
+              microUsd: sql<number>`sum(${platformCostDaily.costMicroUsd})::bigint`,
+            })
+            .from(platformCostDaily)
+            .where(
+              and(
+                eq(platformCostDaily.businessId, input.businessId),
+                gte(platformCostDaily.day, cutoff),
+              ),
+            )
+            .groupBy(platformCostDaily.source)
+            .orderBy(sql`2 desc`),
+
+          ctx.db
+            .select({
+              id: business.id,
+              name: business.name,
+              slug: business.slug,
+              plan: subscription.plan,
+            })
+            .from(business)
+            .leftJoin(subscription, eq(subscription.businessId, business.id))
+            .where(eq(business.id, input.businessId))
+            .limit(1),
+        ]);
+
+      const toTaka = async (microUsd: number) =>
+        Math.round((await microUsdToMicroBdt(ctx.db, microUsd)) / MICRO);
+
+      const revenueByDay = new Map(
+        revenueByDayRows.map((r) => [r.day, r.taka]),
+      );
+      const costByDayTaka = new Map<string, number>();
+      for (const r of costByDayRows) {
+        costByDayTaka.set(r.day, await toTaka(Number(r.microUsd)));
+      }
+
+      const days = [
+        ...new Set([...revenueByDay.keys(), ...costByDayTaka.keys()]),
+      ].sort();
+      const series = days.map((day) => ({
+        day,
+        revenueTaka: revenueByDay.get(day) ?? 0,
+        costTaka: costByDayTaka.get(day) ?? 0,
+      }));
+
+      const costBySource = await Promise.all(
+        costBySourceRows.map(async (r) => ({
+          source: r.source,
+          costTaka: await toTaka(Number(r.microUsd)),
+        })),
+      );
+
+      const totalRevenueTaka = revenueByDayRows.reduce((sum, r) => sum + r.taka, 0);
+      const totalCostTaka = Array.from(costByDayTaka.values()).reduce(
+        (sum, c) => sum + c,
+        0,
+      );
+      const marginTaka = totalRevenueTaka - totalCostTaka;
+      const marginPct =
+        totalRevenueTaka > 0
+          ? ((totalRevenueTaka - totalCostTaka) / totalRevenueTaka) * 100
+          : null;
+
+      return {
+        businessId: input.businessId,
+        businessName: storeRow[0]?.name ?? "Store",
+        plan: storeRow[0]?.plan ?? null,
+        days: input.days,
+        revenueTaka: totalRevenueTaka,
+        costTaka: totalCostTaka,
+        marginTaka,
+        marginPct,
+        series,
+        costBySource,
+      };
+    }),
+
+  /**
+   * The "Today" Attention Queue — Phase 3
+   * Consolidates cross-system priority signals requiring superadmin intervention.
+   */
+  getAttentionQueue: superadminProcedure.query(async ({ ctx }) => {
+    const now = new Date();
+    const inThreeDays = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    const [
+      failedSubRows,
+      renewalRiskRows,
+      allSubs,
+      pausedChannelRows,
+      openBugRows,
+      recentRevenueRows,
+      recentCostRows,
+    ] = await Promise.all([
+      // 1. Past due or failed payment count > 0
+      ctx.db
+        .select({
+          id: subscription.id,
+          businessId: subscription.businessId,
+          status: subscription.status,
+          failedPaymentCount: subscription.failedPaymentCount,
+          plan: subscription.plan,
+          businessName: business.name,
+          businessSlug: business.slug,
+          updatedAt: subscription.updatedAt,
+        })
+        .from(subscription)
+        .innerJoin(business, eq(subscription.businessId, business.id))
+        .where(
+          or(
+            eq(subscription.status, "past_due"),
+            gt(subscription.failedPaymentCount, 0),
+          ),
+        ),
+
+      // 2. Renewal due in <= 3 days
+      ctx.db
+        .select({
+          id: subscription.id,
+          businessId: subscription.businessId,
+          status: subscription.status,
+          currentPeriodEnd: subscription.currentPeriodEnd,
+          plan: subscription.plan,
+          businessName: business.name,
+          businessSlug: business.slug,
+        })
+        .from(subscription)
+        .innerJoin(business, eq(subscription.businessId, business.id))
+        .where(
+          and(
+            inArray(subscription.status, ["active", "trialing"]),
+            sql`${subscription.currentPeriodEnd} is not null`,
+            gte(subscription.currentPeriodEnd, now),
+            lte(subscription.currentPeriodEnd, inThreeDays),
+          ),
+        ),
+
+      // 3. Storage check
+      ctx.db
+        .select({
+          id: subscription.id,
+          businessId: subscription.businessId,
+          plan: subscription.plan,
+          storageUsedBytes: subscription.storageUsedBytes,
+          businessName: business.name,
+          businessSlug: business.slug,
+        })
+        .from(subscription)
+        .innerJoin(business, eq(subscription.businessId, business.id)),
+
+      // 4. Paused channels
+      ctx.db
+        .select({
+          id: metaConnection.id,
+          businessId: metaConnection.businessId,
+          platform: metaConnection.platform,
+          status: metaConnection.status,
+          updatedAt: metaConnection.updatedAt,
+          businessName: business.name,
+          businessSlug: business.slug,
+        })
+        .from(metaConnection)
+        .innerJoin(business, eq(metaConnection.businessId, business.id))
+        .where(eq(metaConnection.status, "paused")),
+
+      // 5. Unresolved bug reports
+      ctx.db
+        .select({
+          id: bugReport.id,
+          businessId: bugReport.businessId,
+          category: bugReport.category,
+          severity: bugReport.severity,
+          description: bugReport.description,
+          status: bugReport.status,
+          createdAt: bugReport.createdAt,
+          businessName: business.name,
+          businessSlug: business.slug,
+        })
+        .from(bugReport)
+        .leftJoin(business, eq(bugReport.businessId, business.id))
+        .where(sql`${bugReport.status} != 'resolved'`)
+        .orderBy(desc(bugReport.createdAt))
+        .limit(20),
+
+      // 6. Economics: 30d revenue per store
+      ctx.db
+        .select({
+          businessId: saasInvoice.businessId,
+          taka: sql<number>`sum(${saasInvoice.amount})::int`,
+        })
+        .from(saasInvoice)
+        .where(
+          and(
+            eq(saasInvoice.status, "paid"),
+            gte(saasInvoice.paidAt, thirtyDaysAgo),
+          ),
+        )
+        .groupBy(saasInvoice.businessId),
+
+      // 6. Economics: 30d cost per store
+      ctx.db
+        .select({
+          businessId: platformCostDaily.businessId,
+          microUsd: sql<number>`sum(${platformCostDaily.costMicroUsd})::bigint`,
+        })
+        .from(platformCostDaily)
+        .where(gte(platformCostDaily.day, thirtyDaysAgo))
+        .groupBy(platformCostDaily.businessId),
+    ]);
+
+    const toTaka = async (microUsd: number) =>
+      Math.round((await microUsdToMicroBdt(ctx.db, microUsd)) / MICRO);
+
+    const items: AttentionItem[] = [];
+
+    // 1. Process failed / past due
+    for (const sub of failedSubRows) {
+      items.push({
+        id: `past-due-${sub.id}`,
+        businessId: sub.businessId,
+        businessName: sub.businessName,
+        businessSlug: sub.businessSlug,
+        category: "past_due",
+        categoryLabel: "Billing Issue",
+        severity: "critical",
+        title:
+          sub.status === "past_due"
+            ? "Subscription Past Due"
+            : `Payment Failed (${sub.failedPaymentCount} retry attempts)`,
+        description: `Plan: ${sub.plan.toUpperCase()}. Immediate operator attention required to prevent service cutoff.`,
+        actionUrl: `/superadmin/stores/${sub.businessId}`,
+        actionLabel: "Review Store",
+        timestamp: sub.updatedAt ?? now,
+      });
+    }
+
+    // 2. Process renewal risk
+    for (const sub of renewalRiskRows) {
+      const daysLeft = sub.currentPeriodEnd
+        ? Math.max(
+            0,
+            Math.ceil(
+              (new Date(sub.currentPeriodEnd).getTime() - now.getTime()) /
+                (1000 * 60 * 60 * 24),
+            ),
+          )
+        : 0;
+      items.push({
+        id: `renewal-${sub.id}`,
+        businessId: sub.businessId,
+        businessName: sub.businessName,
+        businessSlug: sub.businessSlug,
+        category: "renewal_risk",
+        categoryLabel: "Renewal Risk",
+        severity: "warning",
+        title: `Renewal due in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`,
+        description: `Plan: ${sub.plan.toUpperCase()}. Current period ends on ${sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString() : "N/A"}.`,
+        actionUrl: `/superadmin/stores/${sub.businessId}`,
+        actionLabel: "View Store",
+        timestamp: sub.currentPeriodEnd ?? now,
+      });
+    }
+
+    // 3. Process storage near limit (> 90%)
+    for (const sub of allSubs) {
+      const planKey = (sub.plan as PlanKey) in PLAN_CATALOG ? (sub.plan as PlanKey) : "starter";
+      const limitGb = PLAN_CATALOG[planKey]?.limits.storageGb ?? 5;
+      const limitBytes = limitGb * 1024 * 1024 * 1024;
+      const usedBytes = sub.storageUsedBytes ?? 0;
+      const pct = limitBytes > 0 ? (usedBytes / limitBytes) * 100 : 0;
+      if (pct >= 90) {
+        items.push({
+          id: `storage-${sub.id}`,
+          businessId: sub.businessId,
+          businessName: sub.businessName,
+          businessSlug: sub.businessSlug,
+          category: "storage_limit",
+          categoryLabel: "Storage Quota",
+          severity: pct >= 98 ? "critical" : "warning",
+          title: `Storage at ${Math.round(pct)}% capacity`,
+          description: `Used ${(usedBytes / (1024 * 1024)).toFixed(1)} MB of ${limitGb * 1024} MB quota.`,
+          actionUrl: `/superadmin/stores/${sub.businessId}`,
+          actionLabel: "Manage Storage",
+          timestamp: now,
+        });
+      }
+    }
+
+    // 4. Process paused channels
+    for (const ch of pausedChannelRows) {
+      const platformName =
+        ch.platform === "facebook_page"
+          ? "Facebook Page"
+          : ch.platform === "instagram"
+            ? "Instagram"
+            : "WhatsApp";
+      items.push({
+        id: `channel-${ch.id}`,
+        businessId: ch.businessId,
+        businessName: ch.businessName,
+        businessSlug: ch.businessSlug,
+        category: "channel_down",
+        categoryLabel: "Channel Paused",
+        severity: "critical",
+        title: `${platformName} integration is paused`,
+        description: `Inbound messaging and automation disconnected for store /${ch.businessSlug}.`,
+        actionUrl: `/superadmin/stores/${ch.businessId}`,
+        actionLabel: "Inspect Store",
+        timestamp: ch.updatedAt ?? now,
+      });
+    }
+
+    // 5. Process open bug reports
+    for (const bug of openBugRows) {
+      const isCritical = bug.severity === "blocking";
+      const isWarning = bug.severity === "annoying";
+      const shortDesc =
+        bug.description.length > 60
+          ? `${bug.description.slice(0, 60)}…`
+          : bug.description;
+      items.push({
+        id: `bug-${bug.id}`,
+        businessId: bug.businessId,
+        businessName: bug.businessName ?? "General Platform",
+        businessSlug: bug.businessSlug ?? null,
+        category: "bug_report",
+        categoryLabel: "Support Bug",
+        severity: isCritical ? "critical" : isWarning ? "warning" : "info",
+        title: `Bug: ${shortDesc}`,
+        description: `Category: ${bug.category.toUpperCase()} · Severity: ${bug.severity.toUpperCase()} · Status: ${bug.status}`,
+        actionUrl: bug.businessId ? `/superadmin/stores/${bug.businessId}` : `/superadmin/support`,
+        actionLabel: "Triage Bug",
+        timestamp: bug.createdAt,
+      });
+    }
+
+    // 6. Process unprofitable stores (last 30d)
+    const revMap = new Map(recentRevenueRows.map((r) => [r.businessId, r.taka]));
+    const costMap = new Map<string, number>();
+    for (const r of recentCostRows) {
+      if (r.businessId) {
+        costMap.set(r.businessId, await toTaka(Number(r.microUsd)));
+      }
+    }
+
+    const businessMap = new Map(allSubs.map((s) => [s.businessId, s]));
+    for (const [businessId, costTaka] of costMap.entries()) {
+      const revenueTaka = revMap.get(businessId) ?? 0;
+      const marginTaka = revenueTaka - costTaka;
+      if (marginTaka < 0 && costTaka > 100) {
+        const s = businessMap.get(businessId);
+        items.push({
+          id: `unprofitable-${businessId}`,
+          businessId,
+          businessName: s?.businessName ?? "Store",
+          businessSlug: s?.businessSlug ?? null,
+          category: "unprofitable",
+          categoryLabel: "Losing Margin",
+          severity: "warning",
+          title: `Negative 30-day margin: -৳${Math.abs(marginTaka).toLocaleString()}`,
+          description: `Generated ৳${revenueTaka.toLocaleString()} revenue against ৳${costTaka.toLocaleString()} direct platform costs.`,
+          actionUrl: `/superadmin/stores/${businessId}`,
+          actionLabel: "View Economics",
+          timestamp: now,
+        });
+      }
+    }
+
+    // Sort order: critical -> warning -> info, then newest first
+    const severityRank: Record<AttentionItem["severity"], number> = {
+      critical: 0,
+      warning: 1,
+      info: 2,
+    };
+
+    items.sort((a, b) => {
+      const aRank = severityRank[a.severity] ?? 1;
+      const bRank = severityRank[b.severity] ?? 1;
+      const diff = aRank - bRank;
+      if (diff !== 0) return diff;
+      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    });
+
+    return {
+      items,
+      counts: {
+        total: items.length,
+        critical: items.filter((i) => i.severity === "critical").length,
+        warning: items.filter((i) => i.severity === "warning").length,
+        info: items.filter((i) => i.severity === "info").length,
+      },
+    };
+  }),
 } satisfies TRPCRouterRecord;

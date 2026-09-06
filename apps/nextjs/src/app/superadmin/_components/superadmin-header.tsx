@@ -4,13 +4,21 @@ import Link from "next/link";
 import {
   ArrowUpRight,
   ChevronDown,
+  CreditCard,
   LogOut,
   ShieldCheck,
   User as UserIcon,
 } from "lucide-react";
 
-import { cn } from "@acme/ui";
 import { Button } from "@acme/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@acme/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,19 +30,24 @@ import {
 import { ThemeToggle } from "@acme/ui/theme";
 
 import type { SuperadminTab } from "./superadmin-sidebar";
+import { PlatformPaymentSettings } from "./platform-payment-settings";
 import { signOut } from "~/app/[businessSlug]/dashboard/(home)/actions";
 
 const TAB_LABELS: Record<SuperadminTab, string> = {
+  today: "Today's Priorities",
   overview: "Platform Overview",
   economics: "Platform Economics",
   stores: "Stores Directory",
+  health: "Platform Health & Ops",
+  support: "Support & Incident Ops",
+  access: "Access & Security",
   ai: "AI Usage & Observability",
   queues: "Queues & Worker Health",
   channels: "Meta Channel Health",
   broadcasts: "System Broadcasts",
   users: "User Management",
   audit: "Platform Security & Audit Trail",
-  payments: "Payment Gateways",
+  payments: "Payment Configuration",
   bugs: "Bug Reports & Triage",
 };
 
@@ -68,6 +81,28 @@ export function SuperadminHeader({
 
       {/* Right Actions */}
       <div className="flex items-center gap-3">
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground h-8 gap-1.5 text-xs"
+            >
+              <CreditCard className="h-3.5 w-3.5" />
+              <span>Payments</span>
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Platform Payment Gateway</DialogTitle>
+              <DialogDescription>
+                Configure SellPilot's SSLCommerz merchant credentials for subscription billing.
+              </DialogDescription>
+            </DialogHeader>
+            <PlatformPaymentSettings />
+          </DialogContent>
+        </Dialog>
+
         <Button
           asChild
           variant="outline"

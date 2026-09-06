@@ -3,9 +3,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
-  AlertTriangle,
   BellRing,
-  CheckCircle2,
   Info,
   Loader2,
   Radio,
@@ -54,7 +52,7 @@ export function SystemBroadcasts() {
   const [link, setLink] = useState("");
   const [targetPlan, setTargetPlan] = useState<"all" | "starter" | "growth" | "pro">("all");
   const [recentBroadcasts, setRecentBroadcasts] = useState<
-    Array<{ id: string; title: string; body: string; target: string; time: string; count: number }>
+    { id: string; title: string; body: string; target: string; time: string; count: number }[]
   >([]);
 
   const broadcastMutation = useMutation(

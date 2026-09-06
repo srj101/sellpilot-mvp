@@ -45,8 +45,8 @@ function formatDate(date: Date | string) {
 export function PlatformOverview({
   onSwitchTab,
 }: {
-  onSwitchTab: (tab: "stores" | "users" | "payments" | "bugs") => void;
-}) {
+  onSwitchTab?: (tab: "stores" | "users" | "payments" | "bugs") => void;
+} = {}) {
   const trpc = useTRPC();
   const { data, isLoading } = useQuery(
     trpc.superadmin.getPlatformOverview.queryOptions(),
@@ -254,14 +254,27 @@ export function PlatformOverview({
                 Newly registered stores on SellPilot
               </CardDescription>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onSwitchTab("stores")}
-              className="text-primary h-8 gap-1 text-xs"
-            >
-              View all <ArrowUpRight className="h-3 w-3" />
-            </Button>
+            {onSwitchTab ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onSwitchTab("stores")}
+                className="text-primary h-8 gap-1 text-xs"
+              >
+                View all <ArrowUpRight className="h-3 w-3" />
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                asChild
+                className="text-primary h-8 gap-1 text-xs"
+              >
+                <Link href="/superadmin/stores">
+                  View all <ArrowUpRight className="h-3 w-3" />
+                </Link>
+              </Button>
+            )}
           </CardHeader>
           <CardContent className="p-0">
             <div className="divide-y text-sm">

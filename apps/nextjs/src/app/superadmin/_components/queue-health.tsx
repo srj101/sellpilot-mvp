@@ -1,15 +1,10 @@
 "use client";
 
 import {
-  Activity,
   AlertTriangle,
   CheckCircle2,
   Clock,
-  Database,
-  Layers,
-  ListOrdered,
   RefreshCw,
-  Server,
   Zap,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";

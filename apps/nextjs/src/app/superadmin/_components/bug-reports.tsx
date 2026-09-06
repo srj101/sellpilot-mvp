@@ -12,7 +12,6 @@ import {
   ExternalLink,
   Eye,
   Image as ImageIcon,
-  Loader2,
   MessageSquare,
   RefreshCw,
   Terminal,
@@ -90,9 +89,9 @@ export function BugReports() {
     const q = search.toLowerCase();
     return (
       r.description.toLowerCase().includes(q) ||
-      (r.businessName && r.businessName.toLowerCase().includes(q)) ||
-      (r.reporterEmail && r.reporterEmail.toLowerCase().includes(q)) ||
-      (r.category && r.category.toLowerCase().includes(q))
+      (r.businessName?.toLowerCase().includes(q) ?? false) ||
+      (r.reporterEmail?.toLowerCase().includes(q) ?? false) ||
+      r.category.toLowerCase().includes(q)
     );
   });
 
@@ -105,12 +104,12 @@ export function BugReports() {
       await updateStatusMutation.mutateAsync({
         id,
         status,
-        adminNote: note || undefined,
+        adminNote: note ?? undefined,
       });
       toast.success(`Bug marked as ${status === "fixed" ? "Resolved" : status === "seen" ? "Under Review" : "Closed"}`);
       void qc.invalidateQueries({ queryKey: trpc.bugReports.listAll.queryKey() });
-    } catch (e: any) {
-      toast.error(e?.message ?? "Failed to update status");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to update status");
     }
   }
 

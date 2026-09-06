@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound } from "lucide-react";
 
@@ -23,12 +23,9 @@ export function PlatformPaymentSettings() {
   const trpc = useTRPC();
   const qc = useQueryClient();
   const { data, isPending } = useQuery(trpc.superadmin.getPaymentSettings.queryOptions());
-  const [storeId, setStoreId] = useState("");
+  const [storeId, setStoreId] = useState<string | null>(null);
   const [storePassword, setStorePassword] = useState("");
-
-  useEffect(() => {
-    if (data) setStoreId(data.storeId);
-  }, [data]);
+  const currentStoreId = storeId ?? data?.storeId ?? "";
 
   const update = useMutation(
     trpc.superadmin.updatePaymentSettings.mutationOptions({
@@ -63,13 +60,13 @@ export function PlatformPaymentSettings() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              update.mutate({ storeId, storePassword: storePassword || undefined });
+              update.mutate({ storeId: currentStoreId, storePassword: storePassword || undefined });
             }}
             className="grid gap-4 sm:grid-cols-2 sm:items-end max-w-2xl"
           >
             <div className="space-y-1.5">
               <Label htmlFor="platform-ssl-store-id">Store ID</Label>
-              <Input id="platform-ssl-store-id" value={storeId} onChange={(e) => setStoreId(e.target.value)} placeholder="e.g. sellpilot_live" required />
+              <Input id="platform-ssl-store-id" value={currentStoreId} onChange={(e) => setStoreId(e.target.value)} placeholder="e.g. sellpilot_live" required />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="platform-ssl-store-password">Store Password</Label>
@@ -82,7 +79,7 @@ export function PlatformPaymentSettings() {
               />
             </div>
             <div className="sm:col-span-2">
-              <Button type="submit" size="sm" disabled={update.isPending || !storeId.trim()}>
+              <Button type="submit" size="sm" disabled={update.isPending || !currentStoreId.trim()}>
                 {update.isPending ? "Saving..." : "Save"}
               </Button>
             </div>

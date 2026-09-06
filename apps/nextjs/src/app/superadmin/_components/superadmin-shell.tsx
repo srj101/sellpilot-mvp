@@ -1,20 +1,55 @@
 "use client";
 
+import { usePathname } from "next/navigation";
+
 import type { SuperadminTab } from "./superadmin-sidebar";
 import { SuperadminHeader } from "./superadmin-header";
 import { SuperadminSidebar } from "./superadmin-sidebar";
 
+function getActiveTabFromPathname(pathname: string | null): SuperadminTab {
+  if (!pathname) return "today";
+  if (pathname.includes("/superadmin/today")) return "today";
+  if (pathname.includes("/superadmin/overview")) return "overview";
+  if (pathname.includes("/superadmin/economics")) return "economics";
+  if (pathname.includes("/superadmin/stores")) return "stores";
+  if (
+    pathname.includes("/superadmin/health") ||
+    pathname.includes("/superadmin/ai") ||
+    pathname.includes("/superadmin/queues") ||
+    pathname.includes("/superadmin/channels")
+  ) {
+    return "health";
+  }
+  if (
+    pathname.includes("/superadmin/support") ||
+    pathname.includes("/superadmin/bugs") ||
+    pathname.includes("/superadmin/broadcasts")
+  ) {
+    return "support";
+  }
+  if (
+    pathname.includes("/superadmin/access") ||
+    pathname.includes("/superadmin/users") ||
+    pathname.includes("/superadmin/audit")
+  ) {
+    return "access";
+  }
+  return "today";
+}
+
 export function SuperadminShell({
-  activeTab,
+  activeTab: controlledActiveTab,
   onSelectTab,
   user,
   children,
 }: {
-  activeTab: SuperadminTab;
-  onSelectTab: (tab: SuperadminTab) => void;
+  activeTab?: SuperadminTab;
+  onSelectTab?: (tab: SuperadminTab) => void;
   user?: { name: string; email: string; image?: string | null } | null;
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+  const activeTab = controlledActiveTab ?? getActiveTabFromPathname(pathname);
   return (
     <div className="text-foreground bg-background flex h-screen w-screen overflow-hidden">
       <SuperadminSidebar

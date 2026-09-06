@@ -19,6 +19,15 @@ import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@acme/ui/card";
 import { Skeleton } from "@acme/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableEmpty,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@acme/ui/table";
 import { cn } from "@acme/ui";
 
 import { useTRPC } from "~/trpc/react";
@@ -39,18 +48,20 @@ export function AiObservability() {
   const aiQuery = useQuery(trpc.superadmin.getAiObservability.queryOptions());
   const data = aiQuery.data;
 
+  const leaderboard = data?.leaderboard;
+
   const filteredLeaderboard = useMemo(() => {
-    if (!data?.leaderboard) return [];
-    if (!search.trim()) return data.leaderboard;
+    if (!leaderboard) return [];
+    if (!search.trim()) return leaderboard;
     const term = search.toLowerCase();
-    return data.leaderboard.filter(
+    return leaderboard.filter(
       (s) =>
         s.businessName.toLowerCase().includes(term) ||
         s.businessSlug.toLowerCase().includes(term) ||
         (s.owner?.name.toLowerCase().includes(term) ?? false) ||
         (s.owner?.email.toLowerCase().includes(term) ?? false),
     );
-  }, [data?.leaderboard, search]);
+  }, [leaderboard, search]);
 
   if (aiQuery.isLoading) {
     return (
@@ -73,6 +84,8 @@ export function AiObservability() {
     estimatedCompletionTokens: 0,
     totalEstimatedCostUsd: 0,
     totalEstimatedCostBdt: 0,
+    actualRecordedCostUsd: 0,
+    actualRecordedCostTaka: 0,
     totalAgentSessions: 0,
     activeAiStores: 0,
   };
@@ -90,7 +103,7 @@ export function AiObservability() {
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            Platform-wide LLM token tracking, estimated API cost, and store consumption limits.
+            Platform-wide LLM token tracking, ledger-recorded API costs, and store consumption limits.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -108,7 +121,7 @@ export function AiObservability() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {/* Total AI Conversations */}
         <Card className="border-border/60">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -130,11 +143,11 @@ export function AiObservability() {
           </CardContent>
         </Card>
 
-        {/* Estimated API Cost */}
-        <Card className="border-border/60">
+        {/* Ledger-Recorded Cost */}
+        <Card className="border-emerald-500/20 bg-emerald-500/5">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Estimated LLM Cost
+            <CardTitle className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+              Recorded Ledger Cost
             </CardTitle>
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
               <Coins className="h-4 w-4" />
@@ -142,10 +155,30 @@ export function AiObservability() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
+              ৳{kpis.actualRecordedCostTaka.toLocaleString()}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              ${kpis.actualRecordedCostUsd.toFixed(3)} USD actual ledger cost
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Estimated API Cost */}
+        <Card className="border-border/60">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              Estimated Quota Cost
+            </CardTitle>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Coins className="h-4 w-4" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold tracking-tight">
               ${kpis.totalEstimatedCostUsd.toFixed(2)}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Approx. <span className="font-semibold text-foreground">৳{kpis.totalEstimatedCostBdt.toLocaleString()} BDT</span> this billing cycle
+              Approx. <span className="font-semibold text-foreground">৳{kpis.totalEstimatedCostBdt.toLocaleString()} BDT</span> by quota
             </p>
           </CardContent>
         </Card>
@@ -291,29 +324,27 @@ export function AiObservability() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-muted/40 text-muted-foreground border-border/60 border-y font-medium">
-                <tr>
-                  <th className="px-4 py-2.5">Store</th>
-                  <th className="px-4 py-2.5">Owner</th>
-                  <th className="px-4 py-2.5">Plan</th>
-                  <th className="px-4 py-2.5 w-48">AI Quota Consumed</th>
-                  <th className="px-4 py-2.5 text-right">Est. Cost (USD)</th>
-                  <th className="px-4 py-2.5 text-right">Est. Cost (BDT)</th>
-                  <th className="px-4 py-2.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40 font-medium hover:bg-muted/40">
+                  <TableHead className="px-4 py-2.5">Store</TableHead>
+                  <TableHead className="px-4 py-2.5">Owner</TableHead>
+                  <TableHead className="px-4 py-2.5">Plan</TableHead>
+                  <TableHead className="px-4 py-2.5 w-48">AI Quota Consumed</TableHead>
+                  <TableHead className="px-4 py-2.5 text-right">Est. Cost (USD)</TableHead>
+                  <TableHead className="px-4 py-2.5 text-right">Est. Cost (BDT)</TableHead>
+                  <TableHead className="px-4 py-2.5 text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {filteredLeaderboard.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="text-muted-foreground p-6 text-center">
-                      No stores found matching your query.
-                    </td>
-                  </tr>
+                  <TableEmpty colSpan={7}>
+                    No stores found matching your query.
+                  </TableEmpty>
                 ) : (
                   filteredLeaderboard.map((store) => (
-                    <tr key={store.businessId} className="hover:bg-muted/20 transition-colors">
-                      <td className="px-4 py-3">
+                    <TableRow key={store.businessId} className="hover:bg-muted/20 transition-colors">
+                      <TableCell className="px-4 py-3">
                         <div className="flex items-center gap-2.5">
                           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary font-bold text-[11px]">
                             {store.businessName.slice(0, 2).toUpperCase()}
@@ -323,8 +354,8 @@ export function AiObservability() {
                             <p className="font-mono text-[10px] text-muted-foreground">/{store.businessSlug}</p>
                           </div>
                         </div>
-                      </td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
                         {store.owner ? (
                           <div>
                             <p className="font-medium text-foreground">{store.owner.name}</p>
@@ -333,13 +364,13 @@ export function AiObservability() {
                         ) : (
                           <span className="text-muted-foreground">Unassigned</span>
                         )}
-                      </td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
                         <Badge variant="outline" className="capitalize text-[10px]">
                           {store.plan}
                         </Badge>
-                      </td>
-                      <td className="px-4 py-3">
+                      </TableCell>
+                      <TableCell className="px-4 py-3">
                         <div className="space-y-1">
                           <div className="flex justify-between text-[11px]">
                             <span className="font-semibold text-foreground">{store.aiConversationsUsed.toLocaleString()}</span>
@@ -353,26 +384,26 @@ export function AiObservability() {
                             )}
                           />
                         </div>
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono font-medium text-foreground">
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-right font-mono font-medium text-foreground">
                         ${store.estimatedCostUsd.toFixed(3)}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono font-semibold text-foreground">
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-right font-mono font-semibold text-foreground">
                         ৳{store.estimatedCostBdt.toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3 text-right">
+                      </TableCell>
+                      <TableCell className="px-4 py-3 text-right">
                         <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
                           <Link href={`/${store.businessSlug}/dashboard`} target="_blank" rel="noopener noreferrer">
                             Enter
                             <ArrowUpRight className="ml-1 h-3 w-3" />
                           </Link>
                         </Button>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))
                 )}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </CardContent>
       </Card>

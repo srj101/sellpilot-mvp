@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   ArrowUpRight,
   CheckCircle2,
-  ExternalLink,
   MessageCircle,
   Radio,
   RefreshCw,
@@ -19,6 +18,15 @@ import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@acme/ui/card";
 import { Skeleton } from "@acme/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableEmpty,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@acme/ui/table";
 import { cn } from "@acme/ui";
 
 import { useTRPC } from "~/trpc/react";
@@ -30,10 +38,11 @@ export function ChannelHealth() {
 
   const channelQuery = useQuery(trpc.superadmin.getChannelHealth.queryOptions());
   const data = channelQuery.data;
+  const connections = data?.connections;
 
   const filteredConnections = useMemo(() => {
-    if (!data?.connections) return [];
-    return data.connections.filter((conn) => {
+    if (!connections) return [];
+    return connections.filter((conn) => {
       if (platformFilter !== "all" && conn.platform !== platformFilter) return false;
       if (!search.trim()) return true;
       const term = search.toLowerCase();
@@ -45,7 +54,7 @@ export function ChannelHealth() {
         (conn.instagramUsername?.toLowerCase().includes(term) ?? false)
       );
     });
-  }, [data?.connections, platformFilter, search]);
+  }, [connections, platformFilter, search]);
 
   if (channelQuery.isLoading) {
     return (
@@ -226,39 +235,36 @@ export function ChannelHealth() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-muted/40 text-muted-foreground border-border/60 border-y font-medium">
-                <tr>
-                  <th className="px-4 py-2.5">Platform</th>
-                  <th className="px-4 py-2.5">Store</th>
-                  <th className="px-4 py-2.5">Connected Identity</th>
-                  <th className="px-4 py-2.5">Status</th>
-                  <th className="px-4 py-2.5">Last Synced</th>
-                  <th className="px-4 py-2.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40 font-medium hover:bg-muted/40">
+                  <TableHead className="px-4 py-2.5">Platform</TableHead>
+                  <TableHead className="px-4 py-2.5">Store</TableHead>
+                  <TableHead className="px-4 py-2.5">Connected Identity</TableHead>
+                  <TableHead className="px-4 py-2.5">Status</TableHead>
+                  <TableHead className="px-4 py-2.5">Last Synced</TableHead>
+                  <TableHead className="px-4 py-2.5 text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {filteredConnections.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="text-muted-foreground p-6 text-center">
-                      No connected channels found matching your criteria.
-                    </td>
-                  </tr>
+                  <TableEmpty colSpan={6}>
+                    No connected channels found matching your criteria.
+                  </TableEmpty>
                 ) : (
                   filteredConnections.map((conn) => {
                     const isWa = conn.platform === "whatsapp";
                     const isFb = conn.platform === "facebook_page";
-                    const isIg = conn.platform === "instagram";
 
                     const displayName =
-                      conn.facebookPageName ||
-                      conn.instagramUsername ||
-                      conn.platformAccountName ||
+                      conn.facebookPageName ??
+                      conn.instagramUsername ??
+                      conn.platformAccountName ??
                       "Connected Account";
 
                     return (
-                      <tr key={conn.id} className="hover:bg-muted/20 transition-colors">
-                        <td className="px-4 py-3">
+                      <TableRow key={conn.id} className="hover:bg-muted/20 transition-colors">
+                        <TableCell className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <span
                               className={cn(
@@ -276,17 +282,17 @@ export function ChannelHealth() {
                               {isWa ? "WhatsApp" : isFb ? "Facebook Page" : "Instagram"}
                             </span>
                           </div>
-                        </td>
-                        <td className="px-4 py-3">
+                        </TableCell>
+                        <TableCell className="px-4 py-3">
                           <div>
                             <p className="font-semibold text-foreground">{conn.businessName}</p>
                             <p className="font-mono text-[10px] text-muted-foreground">/{conn.businessSlug}</p>
                           </div>
-                        </td>
-                        <td className="px-4 py-3">
+                        </TableCell>
+                        <TableCell className="px-4 py-3">
                           <span className="font-medium text-foreground">{displayName}</span>
-                        </td>
-                        <td className="px-4 py-3">
+                        </TableCell>
+                        <TableCell className="px-4 py-3">
                           <Badge
                             variant={conn.status === "active" ? "outline" : "destructive"}
                             className={cn(
@@ -301,16 +307,16 @@ export function ChannelHealth() {
                             )}
                             {conn.status}
                           </Badge>
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground font-mono text-[11px]">
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-muted-foreground font-mono text-[11px]">
                           {new Date(conn.updatedAt).toLocaleString(undefined, {
                             month: "short",
                             day: "numeric",
                             hour: "2-digit",
                             minute: "2-digit",
                           })}
-                        </td>
-                        <td className="px-4 py-3 text-right">
+                        </TableCell>
+                        <TableCell className="px-4 py-3 text-right">
                           <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
                             <Link
                               href={`/${conn.businessSlug}/dashboard/integrations`}
@@ -321,13 +327,13 @@ export function ChannelHealth() {
                               <ArrowUpRight className="ml-1 h-3 w-3" />
                             </Link>
                           </Button>
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     );
                   })
                 )}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </CardContent>
       </Card>
