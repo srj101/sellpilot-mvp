@@ -8,6 +8,7 @@
 import type { db as Db } from "@acme/db/client";
 import { env } from "@acme/env";
 
+import { recordLlmUsage, usageFromOpenAi, type OpenAiUsageBlock } from "./platform-cost";
 import { getChannelBreakdown, getSalesSummary, getTopProducts } from "./copilot-data";
 
 const DAY_MS = 86_400_000;
@@ -105,6 +106,7 @@ interface OpenAIMessage {
 
 interface OpenAIChatResponse {
   choices: { message: OpenAIMessage }[];
+  usage?: OpenAiUsageBlock;
 }
 
 function getConfig() {
@@ -119,7 +121,20 @@ function getConfig() {
   };
 }
 
-async function callChatCompletions(messages: OpenAIMessage[], tools: ToolDefinition[]): Promise<OpenAIMessage> {
+/**
+ * The Copilot runs an agentic tool loop, so ONE merchant question can be several billable
+ * calls. Cost is recorded per call, inside here, rather than once per question — otherwise
+ * the most expensive questions (the ones that fan out across many tools) would be counted
+ * the same as a one-shot answer.
+ *
+ * This is also the only LLM surface a merchant can trigger at will with no usage cap, which
+ * makes it the likeliest source of an unpleasant surprise on the OpenAI bill.
+ */
+async function callChatCompletions(
+  messages: OpenAIMessage[],
+  tools: ToolDefinition[],
+  cost: { db: typeof Db; businessId: string },
+): Promise<OpenAIMessage> {
   const { apiKey, baseUrl, model } = getConfig();
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
@@ -133,6 +148,18 @@ async function callChatCompletions(messages: OpenAIMessage[], tools: ToolDefinit
   }
 
   const result = (await response.json()) as OpenAIChatResponse;
+
+  const usage = usageFromOpenAi(result.usage);
+  if (usage) {
+    void recordLlmUsage({
+      db: cost.db,
+      businessId: cost.businessId,
+      model,
+      usage,
+      source: "copilot",
+    });
+  }
+
   const message = result.choices[0]?.message;
   if (!message) {
     throw new Error("Copilot chat-completions response had no message.");
@@ -204,7 +231,10 @@ export async function runCopilotQuery(
   ];
 
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-    const message = await callChatCompletions(messages, tools);
+    const message = await callChatCompletions(messages, tools, {
+      db: ctx.db,
+      businessId: params.businessId,
+    });
     messages.push(message);
 
     if (!message.tool_calls || message.tool_calls.length === 0) {

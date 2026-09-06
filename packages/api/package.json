@@ -54,6 +54,10 @@
     "./image-compress": {
       "types": "./dist/lib/image-compress.d.ts",
       "default": "./src/lib/image-compress.ts"
+    },
+    "./platform-cost": {
+      "types": "./dist/lib/platform-cost.d.ts",
+      "default": "./src/lib/platform-cost.ts"
     }
   },
   "license": "MIT",
@@ -66,7 +70,8 @@
     "typecheck": "tsc --noEmit --emitDeclarationOnly false",
     "with-env": "dotenv -e ../../.env --",
     "search:backfill": "pnpm with-env tsx src/scripts/backfill-search-text.ts",
-    "media:backfill": "pnpm with-env tsx src/scripts/backfill-conversation-media.ts"
+    "media:backfill": "pnpm with-env tsx src/scripts/backfill-conversation-media.ts",
+    "cost:seed": "pnpm with-env tsx src/scripts/seed-cost-rates.ts"
   },
   "dependencies": {
     "@acme/auth": "workspace:*",

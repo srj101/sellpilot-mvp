@@ -11,6 +11,7 @@ import type { BillingCycle, PlanKey } from "../lib/plans";
 import { BILLING_CYCLES, CYCLE_META, EXTRA_CONVERSATIONS_MAX_MULTIPLIER, PLAN_CATALOG, PLAN_KEYS, computeExtraConversationsCost, priceForCycle } from "../lib/plans";
 import { getStorageUsage } from "../lib/plan-limits";
 import { CARD_AND_BANK_GATEWAYS, initiatePayment, resolvePlatformCredentials as resolvePlatformCredentialsRaw, validatePayment } from "../lib/sslcommerz";
+import { bdtToMicroUsd, recordPercentCost } from "../lib/platform-cost";
 import { enqueueActivityLog } from "../lib/activity-queue";
 import { businessScopedProcedure, ownerOnlyProcedure, publicProcedure } from "../trpc";
 
@@ -574,6 +575,28 @@ export const subscriptionRouter = {
         .update(saasInvoice)
         .set({ status: "paid", paidAt: new Date(), provider: "sslcommerz", providerTransactionId: input.valId })
         .where(eq(saasInvoice.id, invoice.id));
+
+      // The gateway keeps a cut of every subscription charge, and until now that cut was
+      // read off the validation response and thrown away — so revenue was recorded gross
+      // and the commission never appeared as a cost anywhere. store_amount is what actually
+      // settles to us, making the fee exact rather than an estimate from a configured rate.
+      const settled = Number(result.raw?.store_amount);
+      if (Number.isFinite(settled) && settled > 0 && settled < result.amount) {
+        const feeTaka = result.amount - settled;
+        const feeMicroUsd = await bdtToMicroUsd(ctx.db, feeTaka);
+        if (feeMicroUsd !== null) {
+          void recordPercentCost({
+            db: ctx.db,
+            businessId: invoice.businessId,
+            service: "sslcommerz",
+            sku: "transaction",
+            source: "saas_billing",
+            baseMicroUsd: (await bdtToMicroUsd(ctx.db, result.amount)) ?? 0,
+            actualFeeMicroUsd: feeMicroUsd,
+            referenceId: invoice.id,
+          });
+        }
+      }
 
       await ctx.db
         .update(subscription)

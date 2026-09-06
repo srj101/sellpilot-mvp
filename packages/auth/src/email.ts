@@ -20,7 +20,37 @@ const client = new SESv2Client({
     : {}),
 });
 
-export async function sendEmail(params: { to: string; subject: string; html: string; text: string }): Promise<void> {
+/**
+ * Cost accounting, injected rather than imported.
+ *
+ * SES charges per email and @acme/api owns the cost ledger — but @acme/api already depends
+ * on @acme/auth (trpc.ts, roles.ts, business.ts), so importing it back would be a cycle.
+ * Injection is the same escape hatch setImageCompressor uses for sharp, and it keeps this
+ * module dependency-free.
+ *
+ * Unregistered means emails send and simply are not costed. Never the reverse: a password
+ * reset must not fail because accounting was not wired up.
+ */
+export type EmailCostRecorder = (params: {
+  businessId?: string | null;
+  count: number;
+}) => void;
+
+let emailCostRecorder: EmailCostRecorder | null = null;
+
+export function setEmailCostRecorder(fn: EmailCostRecorder): void {
+  emailCostRecorder = fn;
+}
+
+export async function sendEmail(params: {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  /** Which store to bill this to. Absent for account-level mail (verification, password
+   * reset) that belongs to the platform rather than any one store. */
+  businessId?: string | null;
+}): Promise<void> {
   const fromEmail = env.AWS_SES_FROM_EMAIL;
 
   try {
@@ -39,6 +69,10 @@ export async function sendEmail(params: { to: string; subject: string; html: str
         },
       }),
     );
+
+    // Only a delivered email costs money — a failed send falls through to the catch and is
+    // deliberately not counted.
+    emailCostRecorder?.({ businessId: params.businessId, count: 1 });
   } catch (err) {
     console.error("[SES] Failed to send email:", err);
     console.info(`[SES] (fallback log) To: ${params.to} | Subject: ${params.subject}\n${params.text}`);

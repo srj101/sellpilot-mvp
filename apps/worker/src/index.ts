@@ -33,7 +33,11 @@ import { runReviewRequestSweep } from "./handlers/review-request.js";
 import { handleOrderStatusNotify } from "./handlers/order-status-notify.js";
 import { handleActivityLog } from "./handlers/activity-log.js";
 import { runMediaRetentionSweep } from "./handlers/media-retention.js";
+import { runCostRollup } from "./handlers/cost-rollup.js";
 import { setImageCompressor } from "@acme/api/media-storage";
+import { setEmailCostRecorder } from "@acme/auth/email";
+import { db } from "@acme/db/client";
+import { recordCostEvent } from "@acme/api/platform-cost";
 import { compressImageWithSharp } from "@acme/api/image-compress";
 import {
   handleContactAvatarFetch,
@@ -92,6 +96,20 @@ if (config.queueProvider === "redis") {
 // compressor is injected rather than imported by media-storage so the Next.js image never
 // carries sharp's native binary.
 setImageCompressor(compressImageWithSharp);
+
+// SES bills per email and @acme/auth cannot import the cost ledger without a dependency
+// cycle, so the recorder is handed to it at start-up instead. Fire-and-forget: nothing an
+// email send does should wait on accounting.
+setEmailCostRecorder(({ businessId, count }) => {
+  void recordCostEvent({
+    db,
+    businessId,
+    service: "aws_ses",
+    sku: "email",
+    source: "email",
+    quantity: count,
+  });
+});
 
 // Initialize AI helpers (lazy loaded to avoid circular deps)
 async function initializeAIHelpers() {
@@ -456,6 +474,18 @@ function registerHandlers() {
       await runMediaRetentionSweep();
     },
     { onCompleted: rescheduleMediaRetention, onFailed: rescheduleMediaRetention },
+  );
+
+  // Daily, after midnight UTC: it meters the day that just ended, so running it more often
+  // would re-meter a day already priced and rolled up.
+  const rescheduleCostRollup = () =>
+    void queue.enqueue("cost-rollup", {}, { delay: DAY_MS, jobId: "cost-rollup-loop" });
+  queue.process(
+    "cost-rollup",
+    async () => {
+      await runCostRollup();
+    },
+    { onCompleted: rescheduleCostRollup, onFailed: rescheduleCostRollup },
   );
 
   const rescheduleContactRefresh = () =>

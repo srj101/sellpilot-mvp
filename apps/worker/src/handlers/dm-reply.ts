@@ -16,6 +16,7 @@ import {
 import type { ThreadCancelBroadcast } from "@acme/queue";
 import { searchProductsByImage } from "@acme/api/vector-search";
 import { storeMediaFromUrl } from "@acme/api/media-storage";
+import { recordCostEvent, recordLlmUsage } from "@acme/api/platform-cost";
 import { db } from "@acme/db/client";
 import { getMetaContactName } from "@acme/api/resolve-contact-names";
 import { getConversationSummary, generateAndSaveConversationSummary, getCustomerForThread, getBusinessProfile, createNotification, escalateToHuman, getRecentProductsForThread, getRepliedToMessage } from "@acme/db/helpers/aiHelpers";
@@ -34,7 +35,7 @@ import { CircuitBreaker } from "../middleware/circuit-breaker.js";
  * hosted API, so local and production transcribe through the same service — the request
  * shape never changes.
  */
-async function transcribeAudio(audioUrl: string, transcription: { baseUrl: string; apiKey: string; model: string }): Promise<string> {
+async function transcribeAudio(audioUrl: string, transcription: { baseUrl: string; apiKey: string; model: string }): Promise<{ text: string; durationSeconds: number }> {
   // Without this the request goes out with `Authorization: Bearer ` and comes back
   // as an opaque 401, which reads like a transcription failure rather than a
   // missing key. Fail with the actual cause instead.
@@ -48,19 +49,39 @@ async function transcribeAudio(audioUrl: string, transcription: { baseUrl: strin
   if (!response.ok) throw new Error(`Failed to fetch audio: ${response.status}`);
   const audioBuffer = await response.arrayBuffer();
 
-  const formData = new FormData();
-  formData.append("file", new Blob([audioBuffer]), "audio.ogg");
-  formData.append("model", transcription.model);
+  const post = async (responseFormat?: string) => {
+    const formData = new FormData();
+    formData.append("file", new Blob([audioBuffer]), "audio.ogg");
+    formData.append("model", transcription.model);
+    // Whisper is billed per second of audio, and the plain `json` response does not say how
+    // long the clip was — so without this the cost ledger has no quantity to price.
+    if (responseFormat) formData.append("response_format", responseFormat);
 
-  const res = await fetch(transcription.baseUrl, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${transcription.apiKey}` },
-    body: formData,
-  });
+    return fetch(transcription.baseUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${transcription.apiKey}` },
+      body: formData,
+    });
+  };
+
+  // TRANSCRIPTION_BASE_URL is deliberately provider-agnostic, and not every
+  // OpenAI-compatible endpoint implements verbose_json. Falling back keeps transcription
+  // working on those — we lose the duration, not the customer's message.
+  let res = await post("verbose_json");
+  let verbose = true;
+  if (!res.ok) {
+    res = await post();
+    verbose = false;
+  }
 
   if (!res.ok) throw new Error(`Transcription failed: ${res.status}`);
-  const data = (await res.json()) as { text?: string };
-  return data.text ?? "";
+
+  const data = (await res.json()) as { text?: string; duration?: number };
+  if (verbose && typeof data.duration !== "number") {
+    console.warn("[DMReply] Transcription response had no duration — cost not metered");
+  }
+
+  return { text: data.text ?? "", durationSeconds: data.duration ?? 0 };
 }
 
 /**
@@ -432,11 +453,23 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
       messageText = "[Customer sent a voice message. Voice messages aren't available on their current plan — politely ask them to type their question instead.]";
     } else {
       try {
-        messageText = await transcribeAudio(audioUrl, {
+        const transcribed = await transcribeAudio(audioUrl, {
           baseUrl: config.transcriptionBaseUrl,
           apiKey: config.transcriptionApiKey,
           model: config.transcriptionModel,
         });
+        messageText = transcribed.text;
+
+        void recordCostEvent({
+          db,
+          businessId: data.businessId,
+          service: "openai_transcription",
+          sku: `${config.transcriptionModel}:audio_second`,
+          source: "transcription",
+          quantity: Math.ceil(transcribed.durationSeconds),
+          referenceId: data.threadId,
+        });
+
         console.log(`[DMReply] Transcribed voice message: ${messageText.slice(0, 100)}`);
       } catch (err) {
         console.warn(`[DMReply] Failed to transcribe audio: ${audioUrl}`, err);
@@ -556,6 +589,23 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
     });
     responseText = response.response;
     tokensUsed = response.tokensUsed?.total ?? 0;
+
+    // The token counts used to reach a console.log and stop there, so nothing in the
+    // product could say what a conversation cost. Fire-and-forget: a customer is waiting,
+    // and recordLlmUsage never throws.
+    if (response.tokensUsed) {
+      void recordLlmUsage({
+        db,
+        businessId: data.businessId,
+        model: config.openaiModel,
+        usage: {
+          prompt: response.tokensUsed.prompt,
+          completion: response.tokensUsed.completion,
+        },
+        source: "dm_reply",
+        referenceId: data.threadId,
+      });
+    }
 
     // Auto-escalate on low confidence (FR-AGT-15 / FR-SET-01)
     const profile = await getBusinessProfile(data.businessId).catch(() => null);

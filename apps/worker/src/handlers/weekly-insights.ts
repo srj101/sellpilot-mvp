@@ -1,5 +1,6 @@
 import { and, eq, gte, inArray, lte, sql } from "@acme/db";
 import { db } from "@acme/db/client";
+import { recordLlmUsage, usageFromOpenAi, type OpenAiUsageBlock } from "@acme/api/platform-cost";
 import { business, businessMember, businessProfile, notificationPreference, order, orderItem, subscription, user } from "@acme/db/schema";
 import { sendEmail } from "@acme/auth/email";
 
@@ -19,6 +20,7 @@ interface AIInsightResult {
  * based on weekly merchant sales performance.
  */
 async function generateAiExecutiveInsights(
+  businessId: string,
   storeName: string,
   metrics: {
     currentRev: number;
@@ -80,7 +82,24 @@ Please synthesize executive insights and 3 strategic recommendations in English/
       throw new Error(`OpenAI API error: ${res.statusText}`);
     }
 
-    const data = (await res.json()) as any;
+    const data = (await res.json()) as {
+      choices?: { message?: { content?: string } }[];
+      usage?: OpenAiUsageBlock;
+    };
+
+    // Weekly insights run unprompted for every eligible store, so this is recurring spend
+    // no merchant action triggers — the kind that is easiest to forget is happening.
+    const usage = usageFromOpenAi(data.usage);
+    if (usage) {
+      void recordLlmUsage({
+        db,
+        businessId,
+        model,
+        usage,
+        source: "weekly_insights",
+      });
+    }
+
     const contentStr = data.choices?.[0]?.message?.content;
     if (!contentStr) throw new Error("Empty LLM response");
 
@@ -214,7 +233,7 @@ export async function processWeeklyInsightsJob(): Promise<{ processed: number }>
     }
 
     // Call Executive Copilot LLM to generate AI insights
-    const aiInsight = await generateAiExecutiveInsights(biz.name, {
+    const aiInsight = await generateAiExecutiveInsights(sub.businessId, biz.name, {
       currentRev,
       priorRev,
       revGrowth,

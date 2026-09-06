@@ -18,6 +18,7 @@ import { and, eq } from "@acme/db";
 import type { db as Db } from "@acme/db/client";
 import { product, productVariant } from "@acme/db/schema";
 import { env } from "@acme/env";
+import { recordLlmUsage, usageFromOpenAi, type OpenAiUsageBlock } from "./platform-cost";
 
 /** Generous but bounded: enough for both scripts plus synonyms, small enough that one bad
  * generation cannot bloat the index or drown the real title in noise. */
@@ -83,6 +84,10 @@ export async function generateProductKeywords(input: {
   description?: string | null;
   category?: string | null;
   gender?: string | null;
+  /** Attribution for the cost ledger. Optional because a product write must never fail for
+   * want of it — an unattributed keyword call still gets recorded, just against the
+   * platform rather than a store. */
+  cost?: { db: typeof Db; businessId: string };
 }): Promise<string | null> {
   const apiKey = env.OPENAI_API_KEY;
   if (!apiKey) return null;
@@ -110,7 +115,22 @@ export async function generateProductKeywords(input: {
       return null;
     }
 
-    const result = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+    const result = (await response.json()) as {
+      choices?: { message?: { content?: string } }[];
+      usage?: OpenAiUsageBlock;
+    };
+
+    const usage = usageFromOpenAi(result.usage);
+    if (usage && input.cost) {
+      void recordLlmUsage({
+        db: input.cost.db,
+        businessId: input.cost.businessId,
+        model: env.OPENAI_MODEL,
+        usage,
+        source: "product_keywords",
+      });
+    }
+
     const content = result.choices?.[0]?.message?.content;
     if (!content) return null;
 
@@ -217,6 +237,7 @@ export async function refreshProductKeywords(
     description: row.description,
     category: row.category,
     gender: row.gender,
+    cost: { db, businessId },
   });
 
   if (keywords) {

@@ -14,6 +14,7 @@
  */
 import { and, eq, inArray, isNull, lt } from "@acme/db";
 import { db } from "@acme/db/client";
+import { recordLlmUsage } from "@acme/api/platform-cost";
 import { agentSession, businessProfile, cart, metaConnection } from "@acme/db/schema";
 import { getBusinessProfile, getComboOffersForProduct, getProductById, createNotification } from "@acme/db/helpers/aiHelpers";
 import type { ActiveCartItem } from "@acme/db/helpers/aiHelpers";
@@ -103,6 +104,19 @@ async function generatePersonalizedFollowUp(
       },
     });
 
+    if (result.tokensUsed) {
+      void recordLlmUsage({
+        db,
+        businessId,
+        model: config.openaiModel,
+        usage: {
+          prompt: result.tokensUsed.prompt,
+          completion: result.tokensUsed.completion,
+        },
+        source: "conversation_followup",
+      });
+    }
+
     const text = result.response.trim();
     return { text: text || buildGenericFollowUpText(), usedAi: true };
   } catch (err) {
@@ -153,6 +167,19 @@ async function generatePersonalizedFollowUpForProduct(
         customerId: "system",
       },
     });
+
+    if (result.tokensUsed) {
+      void recordLlmUsage({
+        db,
+        businessId,
+        model: config.openaiModel,
+        usage: {
+          prompt: result.tokensUsed.prompt,
+          completion: result.tokensUsed.completion,
+        },
+        source: "conversation_followup",
+      });
+    }
 
     const text = result.response.trim();
     return { text: text || buildGenericFollowUpText(), usedAi: true };

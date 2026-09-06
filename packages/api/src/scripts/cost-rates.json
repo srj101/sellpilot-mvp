@@ -1,0 +1,139 @@
+{
+  "_readme": [
+    "The price book. Every number here must come from the vendor's own pricing page —",
+    "nothing in this file is guessed, and a null price is left null on purpose.",
+    "",
+    "A null entry is NOT an error. The ledger still records the usage at $0 and logs a",
+    "warning naming the sku, so volume is never lost while a price is missing. Fill the",
+    "number in, re-run `pnpm --filter @acme/api cost:seed`, and the rate applies from its",
+    "effectiveFrom onward. Past events keep the price that was frozen onto them.",
+    "",
+    "microUsdPerUnit is USD * 1,000,000 for `unitSize` base units.",
+    "  $2.50 per 1M input tokens  ->  microUsdPerUnit 2500000, unitSize 1000000",
+    "  $0.023 per GB-month        ->  microUsdPerUnit 23000,   unitSize 1000000",
+    "     (storage is metered in micro-GB-months, hence the 1000000 unitSize)",
+    "  2.5% gateway commission    ->  percentBps 250, microUsdPerUnit 0",
+    "",
+    "To change a price, edit the value and set a NEW effectiveFrom. Never rewrite history:",
+    "corrections are inserts, so a vendor price rise cannot silently restate last quarter."
+  ],
+
+  "effectiveFrom": "2026-09-01T00:00:00.000Z",
+
+  "rates": [
+    {
+      "service": "openai",
+      "sku": "gpt-5.4-mini:input",
+      "unit": "token",
+      "unitSize": 1000000,
+      "microUsdPerUnit": null,
+      "source": "https://openai.com/api/pricing/"
+    },
+    {
+      "service": "openai",
+      "sku": "gpt-5.4-mini:cached_input",
+      "unit": "token",
+      "unitSize": 1000000,
+      "microUsdPerUnit": null,
+      "source": "https://openai.com/api/pricing/"
+    },
+    {
+      "service": "openai",
+      "sku": "gpt-5.4-mini:output",
+      "unit": "token",
+      "unitSize": 1000000,
+      "microUsdPerUnit": null,
+      "source": "https://openai.com/api/pricing/"
+    },
+    {
+      "service": "openai_transcription",
+      "sku": "whisper-1:audio_second",
+      "unit": "audio_second",
+      "unitSize": 60,
+      "microUsdPerUnit": null,
+      "source": "https://openai.com/api/pricing/ — quoted per minute, so unitSize is 60"
+    },
+    {
+      "service": "aws_s3",
+      "sku": "storage_micro_gb_month",
+      "unit": "gb_month",
+      "unitSize": 1000000,
+      "microUsdPerUnit": null,
+      "source": "https://aws.amazon.com/s3/pricing/ — ap-southeast-1 standard"
+    },
+    {
+      "service": "aws_s3",
+      "sku": "egress_gb",
+      "unit": "gb",
+      "unitSize": 1,
+      "microUsdPerUnit": null,
+      "source": "https://aws.amazon.com/s3/pricing/ — data transfer out"
+    },
+    {
+      "service": "aws_ses",
+      "sku": "email",
+      "unit": "email",
+      "unitSize": 1000,
+      "microUsdPerUnit": null,
+      "source": "https://aws.amazon.com/ses/pricing/ — quoted per 1,000 emails"
+    },
+    {
+      "service": "sslcommerz",
+      "sku": "transaction",
+      "unit": "percent_bps",
+      "unitSize": 1,
+      "microUsdPerUnit": 0,
+      "percentBps": null,
+      "source": "SSLCommerz merchant agreement — commission on SellPilot's own subscription charges"
+    },
+    {
+      "service": "meta_whatsapp",
+      "sku": "conversation_bd",
+      "unit": "conversation",
+      "unitSize": 1,
+      "microUsdPerUnit": null,
+      "source": "https://developers.facebook.com/docs/whatsapp/pricing — Bangladesh rate"
+    },
+    {
+      "service": "nvidia",
+      "sku": "embedding",
+      "unit": "request",
+      "unitSize": 1,
+      "microUsdPerUnit": 0,
+      "source": "NVIDIA NIM free tier — priced at zero deliberately, so the volume is still tracked and the day it stops being free is visible"
+    },
+    {
+      "service": "hosting",
+      "sku": "monthly",
+      "unit": "month",
+      "unitSize": 1,
+      "microUsdPerUnit": null,
+      "source": "Coolify VPS invoice — fixed monthly, allocated across stores at read time"
+    },
+    {
+      "service": "neon",
+      "sku": "monthly",
+      "unit": "month",
+      "unitSize": 1,
+      "microUsdPerUnit": null,
+      "source": "https://neon.tech/pricing"
+    },
+    {
+      "service": "redis",
+      "sku": "monthly",
+      "unit": "month",
+      "unitSize": 1,
+      "microUsdPerUnit": null,
+      "source": "Redis host invoice — 0 if self-hosted on the same VPS as `hosting`, to avoid double-counting"
+    }
+  ],
+
+  "fx": [
+    {
+      "baseCurrency": "USD",
+      "quoteCurrency": "BDT",
+      "microRate": null,
+      "source": "Bank settlement rate — set this to the rate you actually convert at, not the mid-market rate"
+    }
+  ]
+}

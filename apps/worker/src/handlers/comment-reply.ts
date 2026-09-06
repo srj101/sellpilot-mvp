@@ -13,6 +13,8 @@ import { loadConfig } from "../config.js";
 import { RateLimiter } from "../middleware/rate-limiter.js";
 import { CircuitBreaker } from "../middleware/circuit-breaker.js";
 import { COMMENT_REPLY_SYSTEM_PROMPT } from "@acme/ai-agent";
+import { db } from "@acme/db/client";
+import { recordLlmUsage, usageFromOpenAi, type OpenAiUsageBlock } from "@acme/api/platform-cost";
 
 const config = loadConfig();
 const messagingService = new MessagingService();
@@ -30,7 +32,11 @@ const circuitBreaker = new CircuitBreaker({
 });
 
 // Simple LLM call for comment replies (no tools needed)
-async function generateCommentReply(commentText: string, signal?: AbortSignal): Promise<string> {
+async function generateCommentReply(
+  businessId: string,
+  commentText: string,
+  signal?: AbortSignal,
+): Promise<string> {
   // Use fetch directly to avoid complex dependencies. `signal` is passed through from
   // circuitBreaker.run so a timeout actually cancels this request instead of leaving it
   // to complete in the background as an untracked, still-billed "zombie" call.
@@ -62,7 +68,19 @@ async function generateCommentReply(commentText: string, signal?: AbortSignal): 
 
   const data = (await response.json()) as {
     choices: Array<{ message: { content: string } }>;
+    usage?: OpenAiUsageBlock;
   };
+
+  const usage = usageFromOpenAi(data.usage);
+  if (usage) {
+    void recordLlmUsage({
+      db,
+      businessId,
+      model: config.openaiModel,
+      usage,
+      source: "comment_reply",
+    });
+  }
 
   return data.choices[0]?.message?.content?.trim() ?? "";
 }
@@ -117,7 +135,7 @@ export async function handleCommentReply(
   try {
     // Generate reply with circuit breaker
     const replyText = await circuitBreaker.run(async (signal) => {
-      return generateCommentReply(data.commentText, signal);
+      return generateCommentReply(data.businessId, data.commentText, signal);
     });
 
     // Send the reply
