@@ -256,6 +256,24 @@ async function initializeAIHelpers() {
 
         const sendResult = await mediaMessagingService.sendImage(connection, connectionContext.recipientId, imageUrl);
 
+        // Sending someone a photo of a product is the strongest signal in the whole
+        // conversation that it is the product under discussion — and it was the one
+        // action that recorded nothing. markProductSelected fires only from getProduct
+        // and checkStock, so a conversation that went searchProducts -> sendProductImage
+        // left agent_session empty; a customer who then said "eita nite chai" had no
+        // product memory to fall back on and was refused.
+        await aiHelpers
+          .markProductSelected(
+            businessId,
+            connectionContext.platform,
+            `${connectionContext.platform}:${connectionContext.recipientId}`,
+            connectionContext.recipientId,
+            productId,
+          )
+          .catch((err: unknown) =>
+            console.error("[sendImageFn] Failed to record product selection:", err),
+          );
+
         // Mirror it into the merchant's own inbox. Without this the customer received a
         // photo on Messenger while the shop owner saw only the agent's sentence ("chobi
         // pathiye diyechi") with nothing beside it — they could not see what their own

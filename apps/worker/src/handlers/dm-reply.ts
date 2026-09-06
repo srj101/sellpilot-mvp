@@ -18,7 +18,7 @@ import { searchProductsByImage } from "@acme/api/vector-search";
 import { storeMediaFromUrl } from "@acme/api/media-storage";
 import { db } from "@acme/db/client";
 import { getMetaContactName } from "@acme/api/resolve-contact-names";
-import { getConversationSummary, generateAndSaveConversationSummary, getCustomerForThread, getBusinessProfile, createNotification, escalateToHuman, getRecentProductsForThread } from "@acme/db/helpers/aiHelpers";
+import { getConversationSummary, generateAndSaveConversationSummary, getCustomerForThread, getBusinessProfile, createNotification, escalateToHuman, getRecentProductsForThread, getRepliedToMessage } from "@acme/db/helpers/aiHelpers";
 
 import { checkAiConversationAvailability, incrementAiConversation } from "../lib/ai-conversations.js";
 import { getBusinessPlanKey } from "../lib/plan.js";
@@ -393,6 +393,25 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
       ? { name: existingCustomer.name, phone: existingCustomer.phone, address: existingCustomer.address }
       : undefined;
 
+  /**
+   * What the customer is quoting, if they used the platform's reply action.
+   *
+   * This is the most precise signal available. A customer sent two product photos and
+   * replied to the FIRST one with "eita nite chai" — unambiguous to a human, and the
+   * agent still refused the order because the quoted id reached nothing. The quoted
+   * message is almost always one of our own sends, so its text names the product.
+   */
+  const repliedTo = data.incomingMessage.replyToMessageId
+    ? await getRepliedToMessage(
+        data.businessId,
+        data.threadId,
+        data.incomingMessage.replyToMessageId,
+      ).catch((err) => {
+        console.warn("[DMReply] Failed to resolve replied-to message:", err);
+        return null;
+      })
+    : null;
+
   // Products already discussed here, so a customer who never typed a product name — the
   // photo path, or just "order korbo" — can still be understood. Best-effort: without it
   // the agent behaves exactly as it did before, which is to say it asks them to name the
@@ -424,6 +443,16 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
         messageText = "[Voice message - transcription failed]";
       }
     }
+  }
+
+  if (repliedTo) {
+    // Prefixed onto the message rather than passed as separate context: the customer's
+    // words only make sense next to what they were pointing at, and this is the same
+    // shape describeImagesForAgent already uses for photos.
+    const quoted = repliedTo.text?.trim()
+      ? `"${repliedTo.text.trim().slice(0, 200)}"`
+      : "an image you sent earlier";
+    messageText = `[The customer is replying to your earlier message: ${quoted}. Their reply is below — resolve any "this"/"eita"/"oita" against that message, not against anything else.]\n${messageText}`;
   }
 
   /**

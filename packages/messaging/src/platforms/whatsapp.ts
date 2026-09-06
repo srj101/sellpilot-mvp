@@ -334,6 +334,12 @@ export class WhatsAppPlatformProvider extends MetaBasePlatformProvider {
       type: attachments.length > 0 ? attachments[0]!.type : "text",
       text,
       attachments: attachments.length > 0 ? attachments : undefined,
+      // WhatsApp names the same thing differently: a reply carries `context.id` rather
+      // than Messenger's `message.reply_to.mid`. Same meaning, so it is normalised onto
+      // the same field.
+      replyToMessageId: (message.context as Record<string, unknown> | undefined)?.id as
+        | string
+        | undefined,
       timestamp: new Date(timestamp),
       rawPayload,
     };

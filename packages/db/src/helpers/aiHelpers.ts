@@ -1614,6 +1614,44 @@ function withRecentProduct(existing: string[] | undefined, productId: string): s
 }
 
 /**
+ * Resolve the message a customer replied to.
+ *
+ * Messenger, Instagram and WhatsApp all let a customer quote an earlier message. When they
+ * quote one of OUR sends — typically a product photo — they have named the product without
+ * typing its name: "eita nite chai" against the Nike Shoes image is unambiguous to a human
+ * and was completely opaque to us, because the quoted id was parsed by nothing.
+ *
+ * Matched on sourceId, which is where the platform's own message id is stored for both AI
+ * replies (logOutboundMessage) and images (logOutboundImage).
+ */
+export async function getRepliedToMessage(
+  businessId: string,
+  threadId: string,
+  messageId: string,
+): Promise<{ text: string | null; imageUrl: string | null } | null> {
+  const [row] = await db
+    .select({ rawPayload: metaWebhookEvent.rawPayload })
+    .from(metaWebhookEvent)
+    .where(
+      and(
+        eq(metaWebhookEvent.businessId, businessId),
+        eq(metaWebhookEvent.threadId, threadId),
+        eq(metaWebhookEvent.sourceId, messageId),
+      ),
+    )
+    .limit(1);
+
+  if (!row) return null;
+
+  const payload = row.rawPayload as Record<string, unknown>;
+  const text = typeof payload.text === "string" ? payload.text : null;
+  const imageUrl = typeof payload.imageUrl === "string" ? payload.imageUrl : null;
+  if (!text && !imageUrl) return null;
+
+  return { text, imageUrl };
+}
+
+/**
  * The products discussed in this conversation, newest first, with their titles.
  *
  * Fed into the agent's system prompt so a customer who never types a product name — the
@@ -1744,6 +1782,7 @@ export async function logOutboundImage(params: {
 
 // Export a convenience map of functions
 export const aiHelpers = {
+  getRepliedToMessage,
   logOutboundImage,
   getTopSellingProducts,
   getProductById,

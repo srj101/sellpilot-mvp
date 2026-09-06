@@ -152,6 +152,9 @@ export class FacebookPlatformProvider extends MetaBasePlatformProvider {
         text: String(message.text ?? ""),
         attachments,
         quickReplyPayload: quickReply?.payload as string | undefined,
+        replyToMessageId: (message.reply_to as Record<string, unknown> | undefined)?.mid as
+          | string
+          | undefined,
         timestamp: new Date(timestamp),
         rawPayload,
       };

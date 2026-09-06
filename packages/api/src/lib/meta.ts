@@ -33,7 +33,7 @@ export async function graphGet<T = Record<string, unknown>>(
     url.searchParams.set(key, value);
   }
 
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await fetch(url);
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
@@ -171,7 +171,7 @@ export async function getPagesWithInstagram(
   let nextUrl = response.paging?.next;
   let guard = 0;
   while (nextUrl && guard < 20) {
-    const res = await fetch(nextUrl, { cache: "no-store" });
+    const res = await fetch(nextUrl);
     const data = (await res.json().catch(() => ({}))) as PagesResponse;
     if (!res.ok) break;
     allPages.push(...(data.data ?? []));
@@ -363,7 +363,6 @@ async function graphPost<T = Record<string, unknown>>(
       "content-type": "application/x-www-form-urlencoded",
     },
     body,
-    cache: "no-store",
   });
 
   const data = await res.json().catch(() => ({}));
@@ -392,7 +391,6 @@ async function graphPostJson<T = Record<string, unknown>>(
       "content-type": "application/json",
     },
     body: JSON.stringify(body),
-    cache: "no-store",
   });
 
   const data = await res.json().catch(() => ({}));

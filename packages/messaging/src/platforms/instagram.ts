@@ -246,6 +246,10 @@ export class InstagramPlatformProvider extends MetaBasePlatformProvider {
         type: attachments.length > 0 ? attachments[0]!.type : "text",
         text: String(message.text ?? ""),
         attachments,
+        // Instagram carries the same message.reply_to shape as Messenger.
+        replyToMessageId: (message.reply_to as Record<string, unknown> | undefined)?.mid as
+          | string
+          | undefined,
         timestamp: new Date(timestamp),
         rawPayload,
       };

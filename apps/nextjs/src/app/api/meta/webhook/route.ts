@@ -257,6 +257,7 @@ export async function POST(req: NextRequest) {
                 ?.filter((a) => a.type === "audio")
                 .map((a) => a.url)
                 .slice(0, MAX_ATTACHMENTS_PER_MESSAGE),
+              replyToMessageId: event.message.replyToMessageId,
               timestamp: event.message.timestamp.getTime(),
             },
             accessToken: connection.accessToken ?? connection.facebookPageAccessToken ?? "",

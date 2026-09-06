@@ -87,6 +87,18 @@ export interface IncomingMessage {
   location?: MessageLocation;
   /** Quick reply payload */
   quickReplyPayload?: string;
+  /**
+   * The message id this one is a reply to, when the customer used the platform's
+   * reply/quote action.
+   *
+   * Meta sends it as message.reply_to.mid and it was previously dropped on the floor. A
+   * customer who sends two product photos and then replies to the FIRST with "eita nite
+   * chai" ("I'll take this one") has told us exactly which product they mean — the quoted
+   * message is one of our own outbound sends — while the message itself carries no
+   * attachment and no product name. Without this the agent had nothing to resolve "eita"
+   * against and refused the order.
+   */
+  replyToMessageId?: string;
   /** Postback payload */
   postbackPayload?: string;
   /** For comments: the post/media ID */

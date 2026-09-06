@@ -125,6 +125,13 @@ export interface MetaDMReplyJob {
     text?: string;
     imageUrls?: string[];
     audioUrls?: string[];
+    /**
+     * The message this one replies to, when the customer used the platform's reply/quote
+     * action. Usually points at one of OUR OWN outbound sends, which is what makes it
+     * valuable: a customer who replies to a specific product photo with "eita nite chai"
+     * has named the product without typing its name.
+     */
+    replyToMessageId?: string;
     timestamp: number;
   };
   accessToken: string;
