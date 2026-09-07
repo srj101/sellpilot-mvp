@@ -112,6 +112,7 @@ async function generatePersonalizedFollowUp(
         usage: {
           prompt: result.tokensUsed.prompt,
           completion: result.tokensUsed.completion,
+          cachedPrompt: result.tokensUsed.cachedPrompt,
         },
         source: "conversation_followup",
       });
@@ -176,6 +177,7 @@ async function generatePersonalizedFollowUpForProduct(
         usage: {
           prompt: result.tokensUsed.prompt,
           completion: result.tokensUsed.completion,
+          cachedPrompt: result.tokensUsed.cachedPrompt,
         },
         source: "conversation_followup",
       });

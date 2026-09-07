@@ -602,6 +602,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
         usage: {
           prompt: response.tokensUsed.prompt,
           completion: response.tokensUsed.completion,
+          cachedPrompt: response.tokensUsed.cachedPrompt,
         },
         source: "dm_reply",
         referenceId: data.threadId,

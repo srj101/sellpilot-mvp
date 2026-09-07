@@ -194,6 +194,13 @@ export interface AgentOutput {
     prompt: number;
     completion: number;
     total: number;
+    /** Of `prompt`, how many were served from OpenAI's prompt cache — read from
+     * usage_metadata.input_token_details.cache_read. Previously never extracted here, so
+     * every dm_reply call recorded cachedPrompt as 0 regardless of what OpenAI actually
+     * cached: the cost ledger silently overstated cost (billing the full fresh-input rate
+     * for tokens OpenAI had already discounted) and the cache-hit dashboard silently
+     * showed 0% no matter how well caching was actually performing. See docs/CACHING_PLAN.md. */
+    cachedPrompt?: number;
   };
   /** Self-reported confidence score (0-100) extracted from the [CONFIDENCE:XX] tag */
   confidence?: number;

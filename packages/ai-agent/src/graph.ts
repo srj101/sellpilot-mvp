@@ -228,6 +228,9 @@ export class SalesAgentGraph {
       let totalPromptTokens = 0;
       let totalCompletionTokens = 0;
       let totalTokens = 0;
+      // Was never read at all before this — see the comment on AgentOutput.tokensUsed in
+      // types.ts for what that silently cost.
+      let totalCachedPromptTokens = 0;
 
       const newMessages = finalMessages.slice(initialMessageCount);
       for (const msg of newMessages) {
@@ -238,7 +241,12 @@ export class SalesAgentGraph {
             totalPromptTokens += msg.usage_metadata.input_tokens ?? 0;
             totalCompletionTokens += msg.usage_metadata.output_tokens ?? 0;
             totalTokens += msg.usage_metadata.total_tokens ?? 0;
+            totalCachedPromptTokens += msg.usage_metadata.input_token_details?.cache_read ?? 0;
           } else if (msg.response_metadata) {
+            // Legacy fallback for providers that don't populate usage_metadata directly —
+            // OpenAI always does (confirmed live, every test this session), so this branch
+            // is effectively unreached for the provider actually in use. Its shape carries
+            // no cached-token field to extract even if it were hit.
             const meta = msg.response_metadata as any;
             const tokenUsage = meta.tokenUsage || meta.llmOutput?.tokenUsage || meta.estimatedTokenUsage;
 
@@ -294,6 +302,7 @@ export class SalesAgentGraph {
           prompt: totalPromptTokens,
           completion: totalCompletionTokens,
           total: totalTokens,
+          cachedPrompt: totalCachedPromptTokens,
         },
       };
     } catch (error) {
@@ -515,6 +524,7 @@ Never use markdown formatting.`),
           prompt: meta.input_tokens ?? 0,
           completion: meta.output_tokens ?? 0,
           total: meta.total_tokens ?? 0,
+          cachedPrompt: meta.input_token_details?.cache_read ?? 0,
         };
       } else if ("response_metadata" in response && response.response_metadata) {
         const meta = response.response_metadata as any;
