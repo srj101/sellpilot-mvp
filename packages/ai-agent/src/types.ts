@@ -60,6 +60,14 @@ export interface AgentConfig {
    * purchase history are excluded for Starter). Defaults to "starter" (most restrictive)
    * if omitted, never to an unlimited tier. */
   planKey?: PlanKey;
+  /**
+   * Groups this business's calls for OpenAI's prompt cache routing (`prompt_cache_key`).
+   * The system prompt's large static block (buildSalesAgentSystemPrompt) is identical on
+   * every call for the same business and different for every other one, so the key is the
+   * businessId — grouping across businesses would pool unrelated prefixes onto one key and
+   * defeat the point; omitting it leaves cache routing to chance. See docs/CACHING_PLAN.md.
+   */
+  businessId?: string;
 }
 
 // ============================================

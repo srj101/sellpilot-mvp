@@ -64,6 +64,16 @@ export class SalesAgentGraph {
       configuration: config.baseUrl ? { baseURL: config.baseUrl } : undefined,
       temperature: config.temperature ?? 0.7,
       maxTokens: config.maxTokens ?? 800,
+      // The system prompt's static block (buildSalesAgentSystemPrompt) is thousands of
+      // tokens, identical on every call for this business, and different for every other
+      // one — grouping by businessId routes repeat calls to the machine already holding
+      // this business's cached prefix instead of leaving it to chance. Omitted (not an
+      // error) when no businessId is known — caching still activates automatically, just
+      // without the routing hint. See docs/CACHING_PLAN.md.
+      promptCacheKey: config.businessId,
+      // Explicit rather than relying on the account default, which depends on Zero Data
+      // Retention status and can change under an account setting nobody touched here.
+      promptCacheRetention: "24h",
     });
 
     this.planKey = config.planKey ?? "starter";

@@ -84,6 +84,10 @@ interface AgentOptions {
   simple?: boolean;
   /** Subscription plan tier — see AgentConfig.planKey. Defaults to "starter" if omitted. */
   planKey?: PlanKey;
+  /** See AgentConfig.businessId — powers OpenAI prompt-cache routing. Not used by
+   * SimpleChatAgent (its prompt is a fixed ~40-token string, well under OpenAI's
+   * 1024-token cache floor regardless of any key) — only SalesAgentGraph reads it. */
+  businessId?: string;
 }
 
 /**
@@ -101,6 +105,7 @@ export function createSalesAgent(options: AgentOptions = {}): {
     maxTokens: options.maxTokens ?? 800,
     debug: options.debug ?? env.NODE_ENV !== "production",
     planKey: options.planKey,
+    businessId: options.businessId,
   };
 
   // Tool-calling is required for product lookups, pricing, and order creation/tracking.

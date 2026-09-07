@@ -106,6 +106,16 @@ export async function generateProductKeywords(input: {
         // reproducibility matters more than variety here. At 0.4 a regeneration silently
         // dropped "juta" from a shoe — exactly the term the whole feature exists to catch.
         temperature: 0.2,
+        // KEYWORD_SYSTEM_PROMPT is a pure constant — no business data, no date, nothing
+        // that varies — so every call across every business shares one byte-identical
+        // prefix. One shared key pools ALL of that traffic into a single cache lineage,
+        // rather than fragmenting it per-business the way dm_reply's key correctly does
+        // (that prompt genuinely differs per business; this one doesn't). The -v1 suffix
+        // is deliberate: bump it if this prompt's text ever changes, so an edited prompt
+        // can't silently serve cached computation from before the edit under the same key.
+        // See docs/CACHING_PLAN.md.
+        prompt_cache_key: "product-keywords-v1",
+        prompt_cache_retention: "24h",
       }),
     });
 

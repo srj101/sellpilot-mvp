@@ -578,6 +578,7 @@ export async function handleDMReply(job: Job<MetaDMReplyJob>): Promise<void> {
         model: config.openaiModel,
         debug: config.debug,
         planKey,
+        businessId: data.businessId,
       });
 
       // Combine the circuit breaker's own timeout signal with this job's cancel
