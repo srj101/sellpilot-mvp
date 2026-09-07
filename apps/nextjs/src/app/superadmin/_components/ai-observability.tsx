@@ -31,6 +31,7 @@ import {
 import { cn } from "@acme/ui";
 
 import { useTRPC } from "~/trpc/react";
+import { PromptCachePanel } from "./prompt-cache-panel";
 
 function ProgressBar({ value, className, barClassName }: { value: number; className?: string; barClassName?: string }) {
   const pct = Math.min(100, Math.max(0, value));
@@ -226,6 +227,8 @@ export function AiObservability() {
           </CardContent>
         </Card>
       </div>
+
+      <PromptCachePanel />
 
       {/* Workload Breakdown & Safety Banner */}
       <div className="grid gap-6 lg:grid-cols-3">

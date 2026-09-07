@@ -13,6 +13,7 @@ import {
   notification,
   order,
   platformCostDaily,
+  platformCostRate,
   platformSettings,
   product,
   saasInvoice,
@@ -1619,4 +1620,196 @@ export const superadminRouter = {
       },
     };
   }),
+
+  /**
+   * Prompt cache visibility — is OpenAI's caching actually working, per source and over
+   * time. See docs/CACHING_PLAN.md for why dm_reply, copilot and product_keywords carry a
+   * prompt_cache_key and the other three sources never will (their prompts sit under
+   * OpenAI's 1024-token cache floor regardless of any key).
+   *
+   * Reads platformCostDaily exclusively, never the raw event table — the rollup's whole
+   * purpose is to keep a dashboard query to a handful of grouped sums.
+   *
+   * "Messages", not just tokens: a call can be a PARTIAL cache hit (some tokens fresh, some
+   * cached) or a full miss, and token-level percentages alone don't say how many distinct
+   * replies actually benefited at all. Counted from eventCount rather than a stored
+   * per-call flag — recordCostEvent only ever writes a `:cached_input` row when a call had
+   * SOME cached tokens (a zero-quantity write is skipped, see platform-cost.ts), so summing
+   * eventCount on that sku IS the count of calls with a hit. `:output` is the "one row per
+   * call" denominator instead of `:input`, because a 100%-cached call (no fresh tokens at
+   * all) writes no `:input` row either — but every real reply says something, so `:output`
+   * is written unconditionally.
+   */
+  getPromptCacheStats: superadminProcedure
+    .input(z.object({ days: z.number().min(7).max(180).default(30) }).default({ days: 30 }))
+    .query(async ({ ctx, input }) => {
+      const cutoff = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
+      const llmSources = [
+        "dm_reply",
+        "comment_reply",
+        "conversation_followup",
+        "weekly_insights",
+        "copilot",
+        "product_keywords",
+      ];
+
+      const [bySourceRows, byDayRows] = await Promise.all([
+        ctx.db
+          .select({
+            source: platformCostDaily.source,
+            // Suffix match, since sku carries the model name too ("gpt-5.4-mini:input").
+            kind: sql<"fresh" | "cached" | "output" | "other">`
+              case
+                when ${platformCostDaily.sku} like '%:cached_input' then 'cached'
+                when ${platformCostDaily.sku} like '%:input' then 'fresh'
+                when ${platformCostDaily.sku} like '%:output' then 'output'
+                else 'other'
+              end`,
+            tokens: sql<number>`sum(${platformCostDaily.quantity})::bigint`,
+            calls: sql<number>`sum(${platformCostDaily.eventCount})::bigint`,
+          })
+          .from(platformCostDaily)
+          .where(
+            and(
+              gte(platformCostDaily.day, cutoff),
+              inArray(platformCostDaily.source, llmSources),
+              eq(platformCostDaily.service, "openai"),
+            ),
+          )
+          .groupBy(platformCostDaily.source, sql`2`),
+
+        ctx.db
+          .select({
+            day: sql<string>`${platformCostDaily.day}::date`,
+            kind: sql<"fresh" | "cached" | "other">`
+              case
+                when ${platformCostDaily.sku} like '%:cached_input' then 'cached'
+                when ${platformCostDaily.sku} like '%:input' then 'fresh'
+                else 'other'
+              end`,
+            tokens: sql<number>`sum(${platformCostDaily.quantity})::bigint`,
+          })
+          .from(platformCostDaily)
+          .where(
+            and(
+              gte(platformCostDaily.day, cutoff),
+              inArray(platformCostDaily.source, llmSources),
+              eq(platformCostDaily.service, "openai"),
+            ),
+          )
+          .groupBy(platformCostDaily.day, sql`2`)
+          .orderBy(platformCostDaily.day),
+      ]);
+
+      // Fold the (source, kind) rows into one record per source.
+      const bySource = new Map<
+        string,
+        { freshTokens: number; cachedTokens: number; outputCalls: number; hitCalls: number }
+      >();
+      for (const row of bySourceRows) {
+        const entry = bySource.get(row.source) ?? {
+          freshTokens: 0,
+          cachedTokens: 0,
+          outputCalls: 0,
+          hitCalls: 0,
+        };
+        if (row.kind === "fresh") entry.freshTokens += Number(row.tokens);
+        else if (row.kind === "cached") {
+          entry.cachedTokens += Number(row.tokens);
+          entry.hitCalls += Number(row.calls); // one eventCount per call that had a hit
+        } else if (row.kind === "output") entry.outputCalls += Number(row.calls);
+        bySource.set(row.source, entry);
+      }
+
+      const perSource = llmSources
+        .map((source) => {
+          const e = bySource.get(source) ?? {
+            freshTokens: 0,
+            cachedTokens: 0,
+            outputCalls: 0,
+            hitCalls: 0,
+          };
+          const totalPromptTokens = e.freshTokens + e.cachedTokens;
+          return {
+            source,
+            freshTokens: e.freshTokens,
+            cachedTokens: e.cachedTokens,
+            // Null, not 0, when there's simply no traffic yet — 0% reads as "broken",
+            // "no data" reads as "nothing to judge yet". Different facts.
+            tokenCacheRatePct:
+              totalPromptTokens > 0 ? Math.round((e.cachedTokens / totalPromptTokens) * 100) : null,
+            totalCalls: e.outputCalls,
+            hitCalls: e.hitCalls,
+            messageCacheRatePct: e.outputCalls > 0 ? Math.round((e.hitCalls / e.outputCalls) * 100) : null,
+          };
+        })
+        // Sources with zero traffic still get a row (so the "why" — under the cache floor,
+        // or just unused — is visible), but the ones with real volume lead.
+        .sort((a, b) => b.totalCalls - a.totalCalls);
+
+      const totals = perSource.reduce(
+        (acc, s) => ({
+          freshTokens: acc.freshTokens + s.freshTokens,
+          cachedTokens: acc.cachedTokens + s.cachedTokens,
+          totalCalls: acc.totalCalls + s.totalCalls,
+          hitCalls: acc.hitCalls + s.hitCalls,
+        }),
+        { freshTokens: 0, cachedTokens: 0, totalCalls: 0, hitCalls: 0 },
+      );
+      const totalPromptTokens = totals.freshTokens + totals.cachedTokens;
+
+      // What a cache hit is actually worth: cached input is priced far below fresh input
+      // (see cost-rates.json), so every cached token is a token that would otherwise have
+      // cost the fresh rate. Read from the live price book rather than hardcoded, so this
+      // number tracks a rate change automatically.
+      const [inputRate, cachedRate] = await Promise.all([
+        ctx.db
+          .select({ microUsdPerUnit: platformCostRate.microUsdPerUnit, unitSize: platformCostRate.unitSize })
+          .from(platformCostRate)
+          .where(and(eq(platformCostRate.service, "openai"), sql`${platformCostRate.sku} like '%:input'`))
+          .orderBy(desc(platformCostRate.effectiveFrom))
+          .limit(1),
+        ctx.db
+          .select({ microUsdPerUnit: platformCostRate.microUsdPerUnit, unitSize: platformCostRate.unitSize })
+          .from(platformCostRate)
+          .where(and(eq(platformCostRate.service, "openai"), sql`${platformCostRate.sku} like '%:cached_input'`))
+          .orderBy(desc(platformCostRate.effectiveFrom))
+          .limit(1),
+      ]);
+      const freshMicroPerToken = inputRate[0] ? inputRate[0].microUsdPerUnit / inputRate[0].unitSize : 0;
+      const cachedMicroPerToken = cachedRate[0] ? cachedRate[0].microUsdPerUnit / cachedRate[0].unitSize : 0;
+      const savedMicroUsd = Math.round(totals.cachedTokens * (freshMicroPerToken - cachedMicroPerToken));
+      const savedTaka = Math.round((await microUsdToMicroBdt(ctx.db, Math.max(0, savedMicroUsd))) / MICRO);
+
+      // Daily trend — token-level only (the clearer signal at a daily granularity; message-
+      // level would need a third grouped query for a chart nobody asked to see per-day).
+      const byDay = new Map<string, { fresh: number; cached: number }>();
+      for (const row of byDayRows) {
+        if (row.kind !== "fresh" && row.kind !== "cached") continue;
+        const entry = byDay.get(row.day) ?? { fresh: 0, cached: 0 };
+        entry[row.kind] += Number(row.tokens);
+        byDay.set(row.day, entry);
+      }
+      const series = [...byDay.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([day, { fresh, cached }]) => ({
+          day,
+          hitRatePct: fresh + cached > 0 ? Math.round((cached / (fresh + cached)) * 100) : null,
+        }));
+
+      return {
+        days: input.days,
+        kpis: {
+          tokenCacheRatePct: totalPromptTokens > 0 ? Math.round((totals.cachedTokens / totalPromptTokens) * 100) : null,
+          messageCacheRatePct: totals.totalCalls > 0 ? Math.round((totals.hitCalls / totals.totalCalls) * 100) : null,
+          totalCalls: totals.totalCalls,
+          hitCalls: totals.hitCalls,
+          freshTokens: totals.freshTokens,
+          cachedTokens: totals.cachedTokens,
+          savedTaka,
+        },
+        perSource,
+        series,
+      };
+    }),
 } satisfies TRPCRouterRecord;
