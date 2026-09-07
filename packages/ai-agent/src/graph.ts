@@ -76,6 +76,16 @@ export class SalesAgentGraph {
       promptCacheRetention: "24h",
     });
 
+    // Whether this specific process actually sent prompt_cache_key on its requests is
+    // otherwise unobservable — recordLlmUsage's [cache] HIT/MISS line reports what OpenAI
+    // did with the request, never what request was actually sent, so a wiring gap here
+    // (an old deploy, businessId dropped somewhere upstream) reads identically to a
+    // legitimately cold cache. This line exists to tell those two apart on sight, once per
+    // agent instance rather than once per call — cheap enough to leave in permanently.
+    console.log(
+      `[SalesAgent] promptCacheKey=${config.businessId ?? "(none — caching still automatic, just no routing hint)"}`,
+    );
+
     this.planKey = config.planKey ?? "starter";
     this.tools = getAllTools(this.planKey);
     this.toolNode = new ToolNode(this.tools);
