@@ -315,7 +315,7 @@ export function AiObservability() {
           <div>
             <CardTitle className="text-base font-semibold">Top AI Consumers Leaderboard</CardTitle>
             <CardDescription>
-              Stores ranked by conversation volume, quota consumption, and estimated cost.
+              Stores ranked by conversation volume, quota consumption, and recorded cost.
             </CardDescription>
           </div>
           <div className="relative w-full sm:w-64">

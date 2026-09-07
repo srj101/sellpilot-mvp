@@ -3,11 +3,18 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Gauge, MessageSquareText, Wallet, Zap } from "lucide-react";
+import { Gauge, Info, MessageSquareText, Wallet, Zap } from "lucide-react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@acme/ui/card";
 import { Skeleton } from "@acme/ui/skeleton";
 import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from "@acme/ui/table";
+// Aliased — recharts already owns the bare "Tooltip" name in this file, for the chart's
+// own hover layer.
+import {
+  Tooltip as UiTooltip,
+  TooltipContent as UiTooltipContent,
+  TooltipTrigger as UiTooltipTrigger,
+} from "@acme/ui/tooltip";
 
 import { useTRPC } from "~/trpc/react";
 
@@ -247,10 +254,30 @@ export function PromptCachePanel() {
             once every row is individually meaningful, which all 6 sources are here). */}
         <Card className="p-0">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold">By source</CardTitle>
-            <CardDescription>
-              The three sources with no row here are never eligible — see docs/CACHING_PLAN.md.
-            </CardDescription>
+            <div className="flex items-center gap-1.5">
+              <CardTitle className="text-sm font-semibold">By source</CardTitle>
+              {/* An "i" the reader can actually open, in place of a raw file path — a
+                  superadmin looking at their own dashboard has no way to open a file in
+                  this repo, so pointing them at one there was a dead end, not a citation. */}
+              <UiTooltip>
+                <UiTooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground inline-flex h-4 w-4 items-center justify-center rounded-full"
+                    aria-label="Why only three sources"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                  </button>
+                </UiTooltipTrigger>
+                <UiTooltipContent side="right" className="max-w-64 text-xs">
+                  Comment replies, cart follow-ups and weekly insights never appear here —
+                  their messages are only a few hundred tokens, well under OpenAI&apos;s
+                  1,024-token minimum for caching to switch on at all. No setting changes
+                  that.
+                </UiTooltipContent>
+              </UiTooltip>
+            </div>
+            <CardDescription>Only sources large enough to ever cache are shown.</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
