@@ -618,46 +618,6 @@ export const superadminRouter = {
       .from(agentSession);
     const totalAgentSessions = agentSessionsRow?.count ?? 0;
 
-    let totalConversationsUsed = 0;
-    const storeLeaderboard = subs.map((sub) => {
-      const planKey = (sub.plan as PlanKey) in PLAN_CATALOG ? (sub.plan as PlanKey) : "starter";
-      const planConfig = PLAN_CATALOG[planKey];
-      const baseQuota = planConfig?.limits.aiConversationsPerMonth ?? 500;
-      const totalQuota = baseQuota + (sub.extraConversations ?? 0);
-      const used = sub.aiConversationsUsed ?? 0;
-      totalConversationsUsed += used;
-
-      const estimatedCostUsd = Number((used * 0.000188).toFixed(4));
-      const estimatedCostBdt = Math.round(estimatedCostUsd * 120);
-      const usagePct = totalQuota > 0 ? Math.min(100, Math.round((used / totalQuota) * 100)) : 0;
-
-      return {
-        businessId: sub.businessId,
-        businessName: sub.businessName,
-        businessSlug: sub.businessSlug,
-        businessLogo: sub.businessLogo,
-        owner: ownerByBusiness.get(sub.businessId ?? "") ?? null,
-        plan: sub.plan,
-        status: sub.status,
-        aiConversationsUsed: used,
-        extraConversations: sub.extraConversations ?? 0,
-        baseQuota,
-        totalQuota,
-        usagePct,
-        estimatedCostUsd,
-        estimatedCostBdt,
-        currentPeriodEnd: sub.currentPeriodEnd,
-      };
-    });
-
-    storeLeaderboard.sort((a, b) => b.aiConversationsUsed - a.aiConversationsUsed);
-
-    const estimatedPromptTokens = totalConversationsUsed * 650;
-    const estimatedCompletionTokens = totalConversationsUsed * 150;
-    const totalTokens = estimatedPromptTokens + estimatedCompletionTokens;
-    const totalEstimatedCostUsd = Number((totalConversationsUsed * 0.000188).toFixed(3));
-    const totalEstimatedCostBdt = Math.round(totalEstimatedCostUsd * 120);
-
     const aiSources = [
       "dm_reply",
       "comment_reply",
@@ -668,53 +628,155 @@ export const superadminRouter = {
       "transcription",
     ];
 
-    const aiCostRows = await ctx.db
-      .select({
-        source: platformCostDaily.source,
-        microUsd: sql<number>`coalesce(sum(${platformCostDaily.costMicroUsd}), 0)::bigint`,
-      })
-      .from(platformCostDaily)
-      .where(inArray(platformCostDaily.source, aiSources))
-      .groupBy(platformCostDaily.source);
+    // Real cost and real tokens, both from platform_cost_daily — the same table Economics
+    // and the Prompt Cache panel already read, so every dollar figure on this console
+    // agrees with every other. Nothing here is a guessed-at rate applied to a conversation
+    // count; "how many tokens did dm_reply/copilot/etc. actually use, at what price" is the
+    // only question this asks.
+    const [aiCostBySourceRows, aiCostByStoreRows, aiTokensBySkuRows] = await Promise.all([
+      ctx.db
+        .select({
+          source: platformCostDaily.source,
+          microUsd: sql<number>`coalesce(sum(${platformCostDaily.costMicroUsd}), 0)::bigint`,
+        })
+        .from(platformCostDaily)
+        .where(inArray(platformCostDaily.source, aiSources))
+        .groupBy(platformCostDaily.source),
+
+      ctx.db
+        .select({
+          businessId: platformCostDaily.businessId,
+          microUsd: sql<number>`coalesce(sum(${platformCostDaily.costMicroUsd}), 0)::bigint`,
+        })
+        .from(platformCostDaily)
+        .where(inArray(platformCostDaily.source, aiSources))
+        .groupBy(platformCostDaily.businessId),
+
+      // Suffix match on sku ("gpt-5.4-mini:input" etc.) to separate prompt from completion
+      // tokens — see getPromptCacheStats for the same pattern, used there for cache rate.
+      ctx.db
+        .select({
+          kind: sql<"prompt" | "completion" | "other">`
+            case
+              when ${platformCostDaily.sku} like '%:input' then 'prompt'
+              when ${platformCostDaily.sku} like '%:cached_input' then 'prompt'
+              when ${platformCostDaily.sku} like '%:output' then 'completion'
+              else 'other'
+            end`,
+          tokens: sql<number>`coalesce(sum(${platformCostDaily.quantity}), 0)::bigint`,
+        })
+        .from(platformCostDaily)
+        .where(and(inArray(platformCostDaily.source, aiSources), eq(platformCostDaily.service, "openai")))
+        .groupBy(sql`1`),
+    ]);
 
     const toTaka = async (microUsd: number) =>
       Math.round((await microUsdToMicroBdt(ctx.db, microUsd)) / MICRO);
 
     let totalRecordedAiMicroUsd = 0;
-    const costByAiSource: { source: string; costUsd: number; costTaka: number }[] = [];
-    for (const row of aiCostRows) {
+    const costByAiSource: { source: string; costUsd: number; costTaka: number; tokens: number }[] = [];
+    // Real per-source token totals feed both costByAiSource (the leaderboard) and
+    // workloadBreakdown (the "where does the workload go" card) — one real number, two
+    // views of it, rather than the old hardcoded 82/11/7% that named categories
+    // ("Vector Embeddings & Semantic Search") this codebase's cost ledger has never
+    // actually tracked as a source in the first place.
+    const sourceTokenRows = await ctx.db
+      .select({
+        source: platformCostDaily.source,
+        tokens: sql<number>`coalesce(sum(${platformCostDaily.quantity}), 0)::bigint`,
+      })
+      .from(platformCostDaily)
+      .where(and(inArray(platformCostDaily.source, aiSources), eq(platformCostDaily.service, "openai")))
+      .groupBy(platformCostDaily.source);
+    const tokensBySource = new Map(sourceTokenRows.map((r) => [r.source, Number(r.tokens)]));
+
+    for (const row of aiCostBySourceRows) {
       const mUsd = Number(row.microUsd);
       totalRecordedAiMicroUsd += mUsd;
       costByAiSource.push({
         source: row.source,
         costUsd: Number((mUsd / 1_000_000).toFixed(3)),
         costTaka: await toTaka(mUsd),
+        tokens: tokensBySource.get(row.source) ?? 0,
       });
     }
+    costByAiSource.sort((a, b) => b.tokens - a.tokens);
 
     const actualRecordedCostTaka = await toTaka(totalRecordedAiMicroUsd);
     const actualRecordedCostUsd = Number((totalRecordedAiMicroUsd / 1_000_000).toFixed(3));
+
+    const costByStoreMicroUsd = new Map<string, number>();
+    for (const row of aiCostByStoreRows) {
+      if (row.businessId) costByStoreMicroUsd.set(row.businessId, Number(row.microUsd));
+    }
+
+    let totalPromptTokens = 0;
+    let totalCompletionTokens = 0;
+    for (const row of aiTokensBySkuRows) {
+      if (row.kind === "prompt") totalPromptTokens += Number(row.tokens);
+      else if (row.kind === "completion") totalCompletionTokens += Number(row.tokens);
+    }
+    const totalTokens = totalPromptTokens + totalCompletionTokens;
+
+    let totalConversationsUsed = 0;
+    const storeLeaderboard = await Promise.all(
+      subs.map(async (sub) => {
+        const planKey = (sub.plan as PlanKey) in PLAN_CATALOG ? (sub.plan as PlanKey) : "starter";
+        const planConfig = PLAN_CATALOG[planKey];
+        const baseQuota = planConfig?.limits.aiConversationsPerMonth ?? 500;
+        const totalQuota = baseQuota + (sub.extraConversations ?? 0);
+        const used = sub.aiConversationsUsed ?? 0;
+        totalConversationsUsed += used;
+
+        const usagePct = totalQuota > 0 ? Math.min(100, Math.round((used / totalQuota) * 100)) : 0;
+        const storeMicroUsd = sub.businessId ? (costByStoreMicroUsd.get(sub.businessId) ?? 0) : 0;
+
+        return {
+          businessId: sub.businessId,
+          businessName: sub.businessName,
+          businessSlug: sub.businessSlug,
+          businessLogo: sub.businessLogo,
+          owner: ownerByBusiness.get(sub.businessId ?? "") ?? null,
+          plan: sub.plan,
+          status: sub.status,
+          aiConversationsUsed: used,
+          extraConversations: sub.extraConversations ?? 0,
+          baseQuota,
+          totalQuota,
+          usagePct,
+          // Real, from the cost ledger — not aiConversationsUsed run through a guessed rate.
+          costUsd: Number((storeMicroUsd / 1_000_000).toFixed(4)),
+          costTaka: await toTaka(storeMicroUsd),
+          currentPeriodEnd: sub.currentPeriodEnd,
+        };
+      }),
+    );
+
+    storeLeaderboard.sort((a, b) => b.aiConversationsUsed - a.aiConversationsUsed);
 
     return {
       kpis: {
         activeModel: env.OPENAI_MODEL,
         totalConversationsUsed,
         totalTokens,
-        estimatedPromptTokens,
-        estimatedCompletionTokens,
-        totalEstimatedCostUsd,
-        totalEstimatedCostBdt,
+        promptTokens: totalPromptTokens,
+        completionTokens: totalCompletionTokens,
         actualRecordedCostUsd,
         actualRecordedCostTaka,
         costByAiSource,
         totalAgentSessions,
         activeAiStores: storeLeaderboard.filter((s) => s.aiConversationsUsed > 0).length,
       },
-      workloadBreakdown: [
-        { label: "Customer DM Replies", pct: 82, tokens: Math.round(totalTokens * 0.82) },
-        { label: "Product Vision & Catalog Ingestion", pct: 11, tokens: Math.round(totalTokens * 0.11) },
-        { label: "Vector Embeddings & Semantic Search", pct: 7, tokens: Math.round(totalTokens * 0.07) },
-      ],
+      // Real shares of real tokens, by the actual CostSource values this ledger tracks —
+      // replaces three hardcoded percentages naming categories ("Product Vision & Catalog
+      // Ingestion") that were never real sources this codebase measures.
+      workloadBreakdown: costByAiSource
+        .filter((s) => s.tokens > 0)
+        .map((s) => ({
+          label: s.source,
+          tokens: s.tokens,
+          pct: totalTokens > 0 ? Math.round((s.tokens / totalTokens) * 100) : 0,
+        })),
       leaderboard: storeLeaderboard,
     };
   }),

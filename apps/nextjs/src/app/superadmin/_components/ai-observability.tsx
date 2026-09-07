@@ -33,6 +33,19 @@ import { cn } from "@acme/ui";
 import { useTRPC } from "~/trpc/react";
 import { PromptCachePanel } from "./prompt-cache-panel";
 
+/** Human names for the real CostSource values the ledger tracks — see
+ * packages/api/src/lib/platform-cost.ts. Matches prompt-cache-panel.tsx's own map; kept
+ * local rather than shared since it's a small presentation-only lookup. */
+const SOURCE_LABELS: Record<string, string> = {
+  dm_reply: "Customer DM Replies",
+  comment_reply: "Comment Replies",
+  conversation_followup: "Cart Follow-ups",
+  weekly_insights: "Weekly Insights",
+  copilot: "Merchant Copilot",
+  product_keywords: "Product Keyword Generation",
+  transcription: "Voice Transcription",
+};
+
 function ProgressBar({ value, className, barClassName }: { value: number; className?: string; barClassName?: string }) {
   const pct = Math.min(100, Math.max(0, value));
   return (
@@ -81,10 +94,8 @@ export function AiObservability() {
   const kpis = data?.kpis ?? {
     totalConversationsUsed: 0,
     totalTokens: 0,
-    estimatedPromptTokens: 0,
-    estimatedCompletionTokens: 0,
-    totalEstimatedCostUsd: 0,
-    totalEstimatedCostBdt: 0,
+    promptTokens: 0,
+    completionTokens: 0,
     actualRecordedCostUsd: 0,
     actualRecordedCostTaka: 0,
     totalAgentSessions: 0,
@@ -164,27 +175,10 @@ export function AiObservability() {
           </CardContent>
         </Card>
 
-        {/* Estimated API Cost */}
-        <Card className="border-border/60">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Estimated Quota Cost
-            </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Coins className="h-4 w-4" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold tracking-tight">
-              ${kpis.totalEstimatedCostUsd.toFixed(2)}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Approx. <span className="font-semibold text-foreground">৳{kpis.totalEstimatedCostBdt.toLocaleString()} BDT</span> by quota
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Total Tokens Consumed */}
+        {/* Total Tokens Consumed — real, from platform_cost_daily. The tile that used to
+            sit here ("Estimated Quota Cost") showed a guessed rate applied to a
+            conversation count, and duplicated what Recorded Ledger Cost already shows for
+            real in both currencies — removed rather than replaced. */}
         <Card className="border-border/60">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -199,7 +193,7 @@ export function AiObservability() {
               {(kpis.totalTokens / 1000).toFixed(1)}k
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {(kpis.estimatedPromptTokens / 1000).toFixed(1)}k input · {(kpis.estimatedCompletionTokens / 1000).toFixed(1)}k output
+              {(kpis.promptTokens / 1000).toFixed(1)}k input · {(kpis.completionTokens / 1000).toFixed(1)}k output
             </p>
           </CardContent>
         </Card>
@@ -232,32 +226,42 @@ export function AiObservability() {
 
       {/* Workload Breakdown & Safety Banner */}
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Token Workload Distribution */}
+        {/* Token Workload Distribution — real shares of real tokens, by the actual
+            CostSource values the ledger tracks (see docs/CACHING_PLAN.md for the full
+            list). Previously three hardcoded percentages under invented category names
+            ("Vector Embeddings & Semantic Search") that don't correspond to anything this
+            codebase actually measures as a source. */}
         <Card className="border-border/60 lg:col-span-2">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">AI Workload & Token Breakdown</CardTitle>
             <CardDescription>
-              Distribution of token consumption across conversational, vision, and semantic search models.
+              Where prompt and completion tokens actually went, by product feature.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {data?.workloadBreakdown.map((item) => (
-              <div key={item.label} className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs font-medium">
-                  <span className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-primary" />
-                    {item.label}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {item.pct}% ({item.tokens.toLocaleString()} tokens)
-                  </span>
+            {!data?.workloadBreakdown.length ? (
+              <p className="text-muted-foreground py-8 text-center text-sm">No AI usage recorded in this window yet.</p>
+            ) : (
+              data.workloadBreakdown.map((item) => (
+                <div key={item.label} className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs font-medium">
+                    <span className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-primary" />
+                      {SOURCE_LABELS[item.label] ?? item.label}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {item.pct}% ({item.tokens.toLocaleString()} tokens)
+                    </span>
+                  </div>
+                  <ProgressBar value={item.pct} className="h-2" />
                 </div>
-                <ProgressBar value={item.pct} className="h-2" />
-              </div>
-            ))}
+              ))
+            )}
 
             <div className="mt-4 rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
-              <span className="font-semibold text-foreground">Model Cost Reference:</span> Multi-tenant prompt caching is active. Primary response engine: <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-semibold text-primary">{data?.kpis.activeModel ?? "gpt-5.4-mini"}</code> ($0.15/1M in, $0.60/1M out). Vision model: <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-semibold text-foreground">gpt-5.4-mini-vision</code>.
+              <span className="font-semibold text-foreground">Model:</span> every AI reply on the platform currently runs on{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] font-semibold text-primary">{data?.kpis.activeModel ?? "—"}</code>.
+              Real per-token pricing is in the platform cost rate book, not repeated here — it changes when a vendor's price does.
             </div>
           </CardContent>
         </Card>
@@ -334,8 +338,8 @@ export function AiObservability() {
                   <TableHead className="px-4 py-2.5">Owner</TableHead>
                   <TableHead className="px-4 py-2.5">Plan</TableHead>
                   <TableHead className="px-4 py-2.5 w-48">AI Quota Consumed</TableHead>
-                  <TableHead className="px-4 py-2.5 text-right">Est. Cost (USD)</TableHead>
-                  <TableHead className="px-4 py-2.5 text-right">Est. Cost (BDT)</TableHead>
+                  <TableHead className="px-4 py-2.5 text-right">Cost (USD)</TableHead>
+                  <TableHead className="px-4 py-2.5 text-right">Cost (BDT)</TableHead>
                   <TableHead className="px-4 py-2.5 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -389,10 +393,10 @@ export function AiObservability() {
                         </div>
                       </TableCell>
                       <TableCell className="px-4 py-3 text-right font-mono font-medium text-foreground">
-                        ${store.estimatedCostUsd.toFixed(3)}
+                        ${store.costUsd.toFixed(4)}
                       </TableCell>
                       <TableCell className="px-4 py-3 text-right font-mono font-semibold text-foreground">
-                        ৳{store.estimatedCostBdt.toLocaleString()}
+                        ৳{store.costTaka.toLocaleString()}
                       </TableCell>
                       <TableCell className="px-4 py-3 text-right">
                         <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs">
