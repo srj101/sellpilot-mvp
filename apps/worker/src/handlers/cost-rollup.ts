@@ -26,6 +26,13 @@ function yesterdayUtc(): { start: Date; end: Date } {
   return { start, end };
 }
 
+/** Midnight UTC of the day a given instant falls in, through the following midnight. */
+function utcDayOf(at: Date): { start: Date; end: Date } {
+  const start = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start, end };
+}
+
 /**
  * Price one day of every business's stored bytes.
  *
@@ -64,43 +71,60 @@ async function meterStorage(day: Date): Promise<number> {
 /**
  * Collapse one day of raw events into platform_cost_daily.
  *
- * Done as a single INSERT ... SELECT rather than by reading rows into the worker: a busy
- * day is a lot of rows, and none of them need to travel over the wire to be summed.
+ * The grouping happens in SQL — a busy day is a lot of raw rows, and none of them need to
+ * travel over the wire to be summed — but the aggregated result comes back into the worker
+ * and is written with an ordinary insert, not a single INSERT...SELECT. Drizzle's
+ * `.insert(table).select(subquery)` requires the subquery's selected columns to line up
+ * with the target table's declared column order exactly, silently including the
+ * auto-generated ones (id, createdAt) that this query never meant to supply — it rejected
+ * every shape tried here with "selected fields are not the same or are in a different order
+ * compared to the table definition." A handful of grouped buckets a day is not a volume
+ * that needs a single-statement optimization badly enough to fight that.
  *
  * The conflict clause makes a re-run idempotent. Re-running a day must overwrite that day's
  * buckets, never add to them — otherwise a retry silently doubles the cost history, and a
  * doubled cost figure is indistinguishable from a real one.
  */
 async function rollUpDay(start: Date, end: Date): Promise<number> {
-  const result = await db
+  const grouped = await db
+    .select({
+      businessId: platformCostEvent.businessId,
+      service: platformCostEvent.service,
+      sku: platformCostEvent.sku,
+      source: platformCostEvent.source,
+      quantity: sql<number>`sum(${platformCostEvent.quantity})::bigint`,
+      costMicroUsd: sql<number>`sum(${platformCostEvent.costMicroUsd})::bigint`,
+      eventCount: sql<number>`count(*)::int`,
+    })
+    .from(platformCostEvent)
+    .where(
+      and(
+        gte(platformCostEvent.occurredAt, start),
+        lt(platformCostEvent.occurredAt, end),
+      ),
+    )
+    .groupBy(
+      platformCostEvent.businessId,
+      platformCostEvent.service,
+      platformCostEvent.sku,
+      platformCostEvent.source,
+    );
+
+  if (grouped.length === 0) return 0;
+
+  await db
     .insert(platformCostDaily)
-    .select(
-      db
-        .select({
-          businessId: platformCostEvent.businessId,
-          day: sql<Date>`${start}::timestamp`.as("day"),
-          service: platformCostEvent.service,
-          sku: platformCostEvent.sku,
-          source: platformCostEvent.source,
-          quantity: sql<number>`sum(${platformCostEvent.quantity})`.as("quantity"),
-          costMicroUsd: sql<number>`sum(${platformCostEvent.costMicroUsd})`.as(
-            "cost_micro_usd",
-          ),
-          eventCount: sql<number>`count(*)::int`.as("event_count"),
-        })
-        .from(platformCostEvent)
-        .where(
-          and(
-            gte(platformCostEvent.occurredAt, start),
-            lt(platformCostEvent.occurredAt, end),
-          ),
-        )
-        .groupBy(
-          platformCostEvent.businessId,
-          platformCostEvent.service,
-          platformCostEvent.sku,
-          platformCostEvent.source,
-        ),
+    .values(
+      grouped.map((row) => ({
+        businessId: row.businessId,
+        day: start,
+        service: row.service,
+        sku: row.sku,
+        source: row.source,
+        quantity: Number(row.quantity),
+        costMicroUsd: Number(row.costMicroUsd),
+        eventCount: row.eventCount,
+      })),
     )
     .onConflictDoUpdate({
       target: [
@@ -117,11 +141,19 @@ async function rollUpDay(start: Date, end: Date): Promise<number> {
       },
     });
 
-  return result.rowCount ?? 0;
+  return grouped.length;
 }
 
-export async function runCostRollup(): Promise<void> {
-  const { start, end } = yesterdayUtc();
+/**
+ * @param forDay Roll up the UTC day this instant falls in, instead of yesterday. For an
+ * on-demand re-check (a superadmin wants to see today's activity now, not after the next
+ * nightly run) — the nightly cron never passes this, and always gets yesterday's completed
+ * day. Idempotent either way: rollUpDay's onConflictDoUpdate means running today's partial
+ * day now and letting the nightly job overwrite it with the completed totals tomorrow is
+ * safe, not a double-count.
+ */
+export async function runCostRollup(forDay?: Date): Promise<void> {
+  const { start, end } = forDay ? utcDayOf(forDay) : yesterdayUtc();
 
   // Storage first: it writes events dated to that day, so the rollup below must run after
   // it or the day's storage cost lands in the ledger but not in the summary the dashboard
