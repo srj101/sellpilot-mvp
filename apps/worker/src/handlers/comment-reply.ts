@@ -52,7 +52,16 @@ async function generateCommentReply(
       },
       body: JSON.stringify({
         model: config.openaiModel,
-        max_tokens: 120,
+        // Not max_tokens — gpt-5.4-mini (and the whole gpt-5/o-series reasoning family)
+        // rejects it outright with a 400 ("Unsupported parameter: 'max_tokens' ... Use
+        // 'max_completion_tokens' instead"), confirmed live against the real API. Every
+        // comment-reply call was failing before this fix, silently falling back to
+        // circuitBreaker's fallbackMessage below instead of ever reaching the model.
+        // max_completion_tokens is OpenAI's forward-compatible replacement, safe on both
+        // reasoning and non-reasoning models — unlike graph.ts, this call is a raw fetch
+        // with no per-model branching, so it needs the one name that works everywhere
+        // rather than picking based on isReasoningModel() the way LangChain does internally.
+        max_completion_tokens: 120,
         messages: [
           { role: "system", content: COMMENT_REPLY_SYSTEM_PROMPT },
           { role: "user", content: commentText },
