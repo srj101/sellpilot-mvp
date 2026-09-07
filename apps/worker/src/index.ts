@@ -512,6 +512,7 @@ function scheduleBillingJobs() {
   void queue.enqueue("review-request-sweep", {}, { delay: initialDelayMs, jobId: "review-request-sweep-loop" });
   void queue.enqueue("contact-refresh-sweep", {}, { delay: initialDelayMs, jobId: "contact-refresh-sweep-loop" });
   void queue.enqueue("media-retention-sweep", {}, { delay: initialDelayMs, jobId: "media-retention-sweep-loop" });
+  void queue.enqueue("cost-rollup", {}, { delay: initialDelayMs, jobId: "cost-rollup-loop" });
 }
 
 // Graceful shutdown

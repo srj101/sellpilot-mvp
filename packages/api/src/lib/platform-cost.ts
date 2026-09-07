@@ -242,6 +242,32 @@ export async function recordLlmUsage(params: {
   // negative amount for fresh input.
   const freshPrompt = Math.max(0, usage.prompt - cached);
 
+  // A visible line, not just a queryable row — "is caching actually working" is a question
+  // that deserves an answer readable straight out of the deploy logs, not a SQL query. One
+  // line here covers every one of the six call sites that funnel through this function,
+  // since none of them log this individually.
+  //
+  // The threshold is OpenAI's own: caching cannot activate below 1,024 prompt tokens no
+  // matter what, so a call under it logs NOT ELIGIBLE rather than MISS — a permanent "miss"
+  // reads as something to fix; a prompt this small was never going to cache regardless of
+  // prompt_cache_key, and printing MISS for it would send someone chasing a non-problem.
+  if (usage.prompt >= 1024) {
+    const pct = usage.prompt > 0 ? Math.round((cached / usage.prompt) * 100) : 0;
+    if (cached > 0) {
+      console.log(
+        `[cache] ${source} ${model} HIT — ${cached}/${usage.prompt} prompt tokens cached (${pct}%)`,
+      );
+    } else {
+      console.log(
+        `[cache] ${source} ${model} MISS — ${usage.prompt} prompt tokens, none cached`,
+      );
+    }
+  } else {
+    console.log(
+      `[cache] ${source} ${model} NOT ELIGIBLE — ${usage.prompt} prompt tokens, below OpenAI's 1024-token floor`,
+    );
+  }
+
   const parts: { sku: string; quantity: number }[] = [
     { sku: `${model}:input`, quantity: freshPrompt },
     { sku: `${model}:cached_input`, quantity: cached },
